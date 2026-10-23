@@ -1309,13 +1309,19 @@ export class TaskBlueprintComponent implements OnInit {
    * wrong call is worse than none.
    */
   mcpToolCallResult(call: IMcpToolCallTrace): IChatGPTLogsContextItem | undefined {
-    if (call.status !== 'completed') {
+    if (!call || call.status !== 'completed') {
       return undefined;
     }
     const calls = this.plan?.executionResult?.mcpToolCalls || [];
     const items = this.plan?.contextPlan?.chatgptLogsContext || [];
+    if (!Array.isArray(calls) || !Array.isArray(items)
+      || calls.filter((candidate) => candidate === call).length !== 1
+      || calls.filter((candidate) => candidate?.status === 'completed').length !== items.length) {
+      return undefined;
+    }
     let position = -1;
     for (const candidate of calls) {
+      if (!candidate || typeof candidate.status !== 'string') return undefined;
       if (candidate.status === 'completed') {
         position += 1;
       }
@@ -1324,7 +1330,7 @@ export class TaskBlueprintComponent implements OnInit {
       }
     }
     const item = position >= 0 ? items[position] : undefined;
-    return item && item.tool === call.tool ? item : undefined;
+    return item && item.tool === call.tool && typeof item.content === 'string' ? item : undefined;
   }
 
   mcpToolCallResultText(call: IMcpToolCallTrace): string {

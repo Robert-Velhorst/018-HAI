@@ -273,6 +273,46 @@ external outcome, deployed browser acceptance or a full workflow-controller
 audit. No production component behavior changes in this reconciliation. The
 retained original is not eligible for deletion yet.
 
+## Task Planning controller reconciliation
+
+Read the complete retained controller and its complete current integration delta.
+All 95 retained method/getter names remain; 74 method bodies are unchanged and
+21 have reviewed adaptations. Preserve the newer plan-first/reviewed-request
+fingerprints, persistent uncertain-outcome restrictions, history-dependent run
+gates, participant prerequisites, explicit Basic/Advanced view, copied-plan
+context reset, MCP inspection and cautious outcome presentation. Source-member
+presence is not a claim that every runtime path is correct.
+
+The MCP result lookup could return the last same-tool context item even when
+the supplied call did not belong to the current plan. Reproduce this with a
+foreign clone and a stale call from another plan. Also reproduce ambiguous
+repeated references, malformed call collections, non-string content and a
+missing call. Five of the initial six new cases fail before the fix; the
+malformed-context positive guard already behaves safely.
+
+Require exactly one reference to the requested call in the current trace, array
+collections, matching counts of successful calls and context records, matching
+tool names and string content. Two additional cases reject a missing or extra
+context item, particularly important when consecutive calls use the same tool.
+Keep valid mixed success/failure ordering and bounded text previews. The backend
+tool loop appends a context item for each completed trace and carries retry
+traces in order; this supports the local pairing invariant, not independent
+proof of the upstream result's authenticity or semantic correctness.
+
+After repair, all 1,649 browser tests in the 55-spec reconciliation group and
+all 190 native frontend contract tests pass. The initial six regression cases
+pass in a separate 64-test focused run; the final combined group also includes
+the two context-count cases. No deployed visual or live-provider acceptance is
+claimed from these fixture tests.
+
+Lifecycle cancellation remains a known follow-up: this controller still has no
+destruction hook for its route/service subscriptions or delayed focus callback.
+This review does not certify comprehensive response-schema validation, stale
+planning-draft handling or approval-dialog context binding. Keep the original
+and the broader task-service sources until those paths and main preservation
+are resolved. No execution permission, provider configuration or deployment is
+enabled by this change.
+
 ## Brain catalog template reconciliation
 
 Read the complete retained template and its integration delta. Preserve Basic

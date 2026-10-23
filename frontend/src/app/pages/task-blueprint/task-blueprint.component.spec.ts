@@ -1147,6 +1147,69 @@ describe('TaskBlueprintComponent task conversation', () => {
     expect(component.mcpToolCallResultText(calls[0] as any)).toBe('');
   });
 
+  it('does not attach current MCP content to a foreign or stale same-tool call', () => {
+    const { component } = createComponent();
+    const current = { round: 1, tool: 'search_insights', status: 'completed', resultChars: 3 };
+    const content = { provider: 'chatgpt-logs', tool: current.tool, query: '', content: 'one', sourceUri: 'mcp://history', untrusted: true };
+    component.plan = {
+      executionResult: { mcpToolCalls: [current] },
+      contextPlan: { chatgptLogsContext: [content] },
+    } as any;
+    expect(component.mcpToolCallResult(current as any)).toBe(content as any);
+    expect(component.mcpToolCallResult({ ...current } as any)).toBeUndefined();
+    expect(component.mcpToolCallResultText({ ...current } as any)).toBe('');
+
+    component.plan = {
+      executionResult: { mcpToolCalls: [{ ...current }] },
+      contextPlan: { chatgptLogsContext: [{ ...content, content: 'new plan' }] },
+    } as any;
+    expect(component.mcpToolCallResult(current as any)).toBeUndefined();
+  });
+
+  it('refuses an ambiguous repeated MCP call reference', () => {
+    const { component } = createComponent();
+    const call = { round: 1, tool: 'search_insights', status: 'completed', resultChars: 3 };
+    component.plan = {
+      executionResult: { mcpToolCalls: [call, call] },
+      contextPlan: { chatgptLogsContext: [
+        { tool: call.tool, content: 'one' }, { tool: call.tool, content: 'two' },
+      ] },
+    } as any;
+    expect(component.mcpToolCallResult(call as any)).toBeUndefined();
+  });
+
+  for (const itemCount of [1, 3]) {
+    it(`does not infer MCP result pairing when two calls have ${itemCount} context items`, () => {
+      const { component } = createComponent();
+      const first = { round: 1, tool: 'search_insights', status: 'completed', resultChars: 3 };
+      const second = { ...first, round: 2 };
+      component.plan = {
+        executionResult: { mcpToolCalls: [first, second] },
+        contextPlan: { chatgptLogsContext: Array.from({ length: itemCount }, (_, index) => ({
+          tool: first.tool, content: `result ${index}`,
+        })) },
+      } as any;
+      expect(component.mcpToolCallResult(first as any)).toBeUndefined();
+      expect(component.mcpToolCallResult(second as any)).toBeUndefined();
+    });
+  }
+
+  for (const malformed of ['calls', 'context', 'content', 'call']) {
+    it(`does not display malformed MCP ${malformed} data`, () => {
+      const { component } = createComponent();
+      const call = { round: 1, tool: 'search_insights', status: 'completed', resultChars: 3 };
+      component.plan = {
+        executionResult: { mcpToolCalls: malformed === 'calls' ? {} : [call] },
+        contextPlan: { chatgptLogsContext: malformed === 'context' ? {} : [
+          { tool: call.tool, content: malformed === 'content' ? { text: 'one' } : 'one' },
+        ] },
+      } as any;
+      const selected = malformed === 'call' ? undefined : call;
+      expect(component.mcpToolCallResult(selected as any)).toBeUndefined();
+      expect(component.mcpToolCallResultText(selected as any)).toBe('');
+    });
+  }
+
   it('truncates a long result and says how much it withheld', () => {
     const { component } = createComponent();
     const calls = [{ round: 1, tool: 'search', status: 'completed', resultChars: 4100 }];
