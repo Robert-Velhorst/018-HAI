@@ -87,3 +87,44 @@ No launcher, tunnel, Docker operation, ngrok account, provider, credential or
 installed configuration was used or changed. No original was removed. This
 record closes the source-location question, not the integration or deletion
 gate for these files.
+
+## Complete helper-source follow-up, 24 October
+
+The retained preparation, discovery and ownership-test helpers were subsequently
+read completely together with the launcher, rather than inferred from their
+filenames or function names. Their inspected source hashes are:
+
+| Historical path | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `scripts/prepare-ngrok-windows.ps1` | 4556 | `8ee02f5d8a2634f37562302cef87b2d31f61275fc7c64b594672453354827dea` |
+| `scripts/discover-ngrok-windows.ps1` | 6135 | `248832e52da11850e2c2724e22847c468cd374a3b70f28f53e0bc48fa8a85a3d` |
+| `scripts/test-ngrok-ownership.ps1` | 4992 | `37362b6ff7a695ee9c5cf823918394d07c2022220a71413305cbd62f342168b1` |
+
+Additional integration issues remain:
+
+- Preparation exposes `-PublishA2A`, sets the public flag and rewrites the A2A
+  endpoint, whereas the retained launcher requires that flag to be false and
+  the canonical bridge requires a private endpoint. Do not copy that switch as
+  an operational capability or silently weaken the bridge boundary.
+- The ownership-test scenarios accept a generic `service=backend` response when
+  a caller-supplied boolean says the current tunnel is running. That marker
+  does not bind a remote response to this installation, project or authenticated
+  owner. Even implementing the missing functions would not by itself make this
+  a sufficient endpoint-ownership acceptance test.
+- The discovery helper starts a real agent against loopback port 1 to discover
+  an account endpoint. Reading it is not authorization to launch that agent or
+  contact an account. It also reads each entire supplied diagnostic log before
+  truncating the final summary; a port should bound input bytes, not only output.
+- Preparation treats external values as regular-expression replacement text
+  when editing dotenv declarations and does not establish a single-declaration
+  or single-line value contract. Use literal structured edits, reject ambiguous
+  declarations and newline/control-character values, and preserve the canonical
+  protected-environment and fail-closed initialization behavior. No real token
+  or installed environment was read to establish this source-level concern.
+
+The canonical Windows installer already has tested project/working-directory/
+Compose-file ownership inspection and explicit project selection. Evaluate reuse
+before introducing another independent ownership implementation; do not weaken
+that existing path to accommodate the older launcher. The source review above
+does not execute any helper, create a public endpoint, recover a working profile
+or close the integration/deletion gate.
