@@ -411,6 +411,86 @@ func TestGitHubPendingWorkflowRunRefreshFailureReturnsNoCursor(t *testing.T) {
 	}
 }
 
+func TestGitHubPendingRefreshPreservesExactNumericIdentity(t *testing.T) {
+	for _, test := range []struct {
+		name, requestedID, responseID string
+		wantError                     bool
+	}{
+		{"large integer", "9007199254740993", "9007199254740993", false},
+		{"fraction that rounds to integer", "901", "901.0000000000000001", true},
+		{"ordinary integer", "901", "901", false},
+		{"different run", "901", "902", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/repos/acme/demo/actions/runs/"+test.requestedID {
+					t.Errorf("unexpected detail path %q", r.URL.Path)
+				}
+				writeGitHubJSON(w, `{"id":`+test.responseID+`,"status":"completed","conclusion":"success"}`)
+			}))
+			defer server.Close()
+			configureGitHubPaginationFixture(t, server)
+			base, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			records, err := fetchGitHubPendingWorkflowRuns(t.Context(), base, "/repos/acme/demo/actions/runs", []string{test.requestedID}, "")
+			if (err != nil) != test.wantError {
+				t.Fatalf("refresh err=%v, want error=%v", err, test.wantError)
+			}
+			if !test.wantError && (len(records) != 1 || githubImportRecordIdentifier(records[0], "workflow_run") != test.requestedID) {
+				t.Fatalf("run identity was not preserved: %#v", records)
+			}
+		})
+	}
+}
+
+func TestGitHubJSONDecoderRequiresExactlyOneDocument(t *testing.T) {
+	for _, test := range []struct {
+		name, body string
+		wantError  bool
+	}{
+		{"one document and whitespace", "{\"id\":901} \n", false},
+		{"second JSON document", `{"id":901}{"id":902}`, true},
+		{"trailing non-JSON", `{"id":901}unexpected`, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				writeGitHubJSON(w, test.body)
+			}))
+			defer server.Close()
+			configureGitHubPaginationFixture(t, server)
+			base, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = fetchGitHubJSONWithQuery(t.Context(), base, "/repos/acme/demo", url.Values{}, "")
+			if (err != nil) != test.wantError {
+				t.Fatalf("decode err=%v, want error=%v", err, test.wantError)
+			}
+		})
+	}
+}
+
+func TestGitHubResponseCountRequiresBoundedNonnegativeInteger(t *testing.T) {
+	for _, test := range []struct {
+		value string
+		want  int
+		valid bool
+	}{
+		{"0", 0, true}, {"101", 101, true}, {"1000", 1000, true},
+		{"-1", 0, false}, {"1.0000000000000001", 0, false},
+		{"1e3", 0, false}, {"9223372036854775808", 0, false},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			got, valid := githubResponseCount(json.Number(test.value))
+			if valid != test.valid || (valid && got != test.want) {
+				t.Fatalf("count=%d valid=%v, want %d/%v", got, valid, test.want, test.valid)
+			}
+		})
+	}
+}
+
 func TestGitHubIncrementalIncompleteCommitOrRunScanReturnsNoCursor(t *testing.T) {
 	tests := []struct {
 		name string

@@ -315,7 +315,21 @@ func (s *service) Search(ctx context.Context, request SearchRequest) ([]Match, e
 		ids = append(ids, row.ExtractionID)
 	}
 	var extractions []models.SourceExtraction
-	if err := s.db.WithContext(ctx).Where("id IN ?", ids).Find(&extractions).Error; err != nil {
+	load := s.db.WithContext(ctx).Model(&models.SourceExtraction{}).Select("source_extractions.*").
+		Joins("JOIN connected_sources cs ON cs.id = source_extractions.source_id").
+		Where("source_extractions.id IN ?", ids).
+		Where("source_extractions.archived = ?", false).
+		Where("cs.revoked_at IS NULL AND LOWER(COALESCE(cs.status, '')) <> 'revoked'")
+	if !request.IncludeSensitive {
+		load = load.Where("source_extractions.sensitive = ?", false)
+	}
+	if projectKey := strings.TrimSpace(request.ProjectKey); projectKey != "" {
+		load = load.Where("source_extractions.project_key = ?", projectKey)
+	}
+	if owner := strings.TrimSpace(request.OwnerIdentity); owner != "" {
+		load = load.Where("(cs.owner_identity = ? OR cs.owner_identity = '' OR cs.owner_identity IS NULL)", owner)
+	}
+	if err := load.Find(&extractions).Error; err != nil {
 		return nil, fmt.Errorf("semantic: load extraction results: %w", err)
 	}
 	byID := make(map[uuid.UUID]models.SourceExtraction, len(extractions))
@@ -398,7 +412,15 @@ func (s *service) SearchMemory(ctx context.Context, request MemorySearchRequest)
 		ids = append(ids, row.MemoryID)
 	}
 	var memories []models.ContextMemory
-	if err := s.db.WithContext(ctx).Where("id IN ?", ids).Find(&memories).Error; err != nil {
+	// Ranking and loading are separate reads; eligibility may change between them.
+	load := s.db.WithContext(ctx).Where("id IN ?", ids).Where("archived = ?", false)
+	if owner := strings.TrimSpace(request.OwnerIdentity); owner != "" {
+		load = load.Where("owner_identity = ?", owner)
+	}
+	if projectKey := strings.TrimSpace(request.ProjectKey); projectKey != "" {
+		load = load.Where("(project_key = ? OR project_key = '' OR project_key IS NULL)", projectKey)
+	}
+	if err := load.Find(&memories).Error; err != nil {
 		return nil, fmt.Errorf("semantic: load memory results: %w", err)
 	}
 	byID := make(map[uuid.UUID]models.ContextMemory, len(memories))

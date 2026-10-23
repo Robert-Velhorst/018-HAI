@@ -241,7 +241,7 @@ func waitForModelMaintenanceScheduler(ctx context.Context, delay time.Duration, 
 
 func runScheduledModelMaintenance(ctx context.Context, backgroundAllowed func() bool, run func(context.Context) ModelMaintenanceRun) ModelMaintenanceRun {
 	if ctx == nil || run == nil || ctx.Err() != nil {
-		return ModelMaintenanceRun{}
+		return ModelMaintenanceRun{Cancelled: true}
 	}
 	finish, admitted := lifecycle.Enter(ctx, "llm-maintenance-run")
 	if !admitted {
@@ -291,6 +291,10 @@ func runScheduledModelMaintenance(ctx context.Context, backgroundAllowed func() 
 			return ModelMaintenanceRun{Cancelled: true}
 		}
 		maintenanceRun := run(runCtx)
+		// Capture interruption before cancelling our monitor for normal cleanup.
+		if runCtx.Err() != nil {
+			maintenanceRun.Cancelled = true
+		}
 		cancel()
 		<-monitorDone
 		reportModelMaintenanceRun(maintenanceRun)

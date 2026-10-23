@@ -4738,11 +4738,11 @@ func fetchGitHubWorkflowRunWindow(ctx context.Context, base *url.URL, resourcePa
 		if !ok {
 			return nil, fmt.Errorf("GitHub Actions response omitted workflow_runs; cursor was not advanced")
 		}
-		count, ok := object["total_count"].(float64)
-		if !ok || count < 0 || count != math.Trunc(count) {
+		count, ok := githubResponseCount(object["total_count"])
+		if !ok {
 			return nil, fmt.Errorf("GitHub Actions response omitted a valid total_count; cursor was not advanced")
 		}
-		totalCount = int(count)
+		totalCount = count
 		pageRecords = append(pageRecords, githubRecordSlice(list)...)
 		if totalCount >= 1000 {
 			break
@@ -4812,12 +4812,15 @@ func fetchGitHubInitialPages(ctx context.Context, base *url.URL, resourcePath, k
 				return nil, fmt.Errorf("GitHub Actions response omitted workflow_runs")
 			}
 			items = append(items, githubRecordSlice(list)...)
-			count, hasTotal := object["total_count"].(float64)
-			if hasTotal && count >= 0 && len(items) >= int(count) {
+			count, hasTotal := githubResponseCount(object["total_count"])
+			if _, supplied := object["total_count"]; supplied && !hasTotal {
+				return nil, fmt.Errorf("GitHub Actions response omitted a valid total_count; cursor was not advanced")
+			}
+			if hasTotal && len(items) >= count {
 				return items, nil
 			}
 			if len(list) < githubSourcePageSize {
-				if hasTotal && len(items) < int(count) {
+				if hasTotal && len(items) < count {
 					return nil, fmt.Errorf("GitHub Actions initial listing was incomplete; cursor was not advanced")
 				}
 				return items, nil
@@ -4865,11 +4868,26 @@ func fetchGitHubJSONWithQuery(ctx context.Context, base *url.URL, resourcePath s
 		return nil, newProviderSyncErrorWithOptions("GitHub", 0, errors.New("provider response exceeded the configured size limit"), providerSyncErrorOptions{RetryableOverride: &retryable})
 	}
 	var value any
-	if err := json.Unmarshal(body, &value); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		retryable := false
+		return nil, newProviderSyncErrorWithOptions("GitHub", 0, errors.New("provider returned malformed JSON"), providerSyncErrorOptions{RetryableOverride: &retryable})
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
 		retryable := false
 		return nil, newProviderSyncErrorWithOptions("GitHub", 0, errors.New("provider returned malformed JSON"), providerSyncErrorOptions{RetryableOverride: &retryable})
 	}
 	return value, nil
+}
+
+func githubResponseCount(value any) (int, bool) {
+	number, ok := value.(json.Number)
+	if !ok {
+		return 0, false
+	}
+	count, err := strconv.Atoi(number.String())
+	return count, err == nil && count >= 0
 }
 
 func fetchGitHubJSON(ctx context.Context, base *url.URL, resourcePath, cursor string, page int, token string) (any, error) {
@@ -5066,6 +5084,8 @@ func githubString(record map[string]any, keys ...string) string {
 				if strings.TrimSpace(typed) != "" {
 					return strings.TrimSpace(typed)
 				}
+			case json.Number:
+				return typed.String()
 			case float64:
 				return strconv.FormatInt(int64(typed), 10)
 			}
