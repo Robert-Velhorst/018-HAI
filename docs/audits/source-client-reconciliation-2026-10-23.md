@@ -1596,3 +1596,29 @@ behavior and contract consistency, not signed-session verification, real databas
 commit/rollback, complete cross-endpoint semantic validation, live framework
 selection or provider acceptance. The retained controller remains intact until
 its preservation on main is verified.
+
+## OSS Insight evidence and runner dependency reconciliation
+
+Read the retained OSS Insight screening ledger and its integration delta. Keep
+its July collection and upstream-review notes explicitly historical: this pass
+did not repeat the remote screening or advance upstream verification dates.
+Replace stale current-version claims with links to the actual runner build
+inputs and hash locks. The three runner Dockerfiles install requirements.txt;
+the local Compose file defines the pgvector image and PostgreSQL target. Neither
+an integration profile nor a build pin proves installation, compatibility,
+provider evaluation or completed database migration. Legacy database volumes
+remain protected.
+
+The Python runner policy previously skipped exact dependency pins containing
+extras. Compare canonical package, extras and version identities for the simple
+pin syntax used by these manifests, without claiming a general dependency
+resolver. Two new regression cases fail before repair and all eight runner
+policy tests pass afterward. Preserve the existing lock/build-input equality
+and hash requirements.
+
+The complete braincatalog package passes 84 top-level tests and ten subtests;
+the focused go vet check also passes. New evidence tests cover the historical
+snapshot boundary and the three runner manifest links. The 122 CI contract
+tests pass. These are local source and fixture checks, not live upstream,
+container, provider or database acceptance. No dependency installation, runtime
+upgrade or original-file deletion was performed.
