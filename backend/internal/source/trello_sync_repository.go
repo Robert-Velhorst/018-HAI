@@ -102,7 +102,8 @@ func validateTrelloPageCursorProgress(
 	if page.CursorBefore != before {
 		return errors.New("Trello page cursor-before does not match the durable checkpoint")
 	}
-	if next.PagesProcessed != current.PagesProcessed+1 || current.RecordsProcessed < 0 || next.RecordsProcessed < current.RecordsProcessed ||
+	if next.PagesProcessed <= current.PagesProcessed || next.PagesProcessed != current.PagesProcessed+1 ||
+		current.RecordsProcessed < 0 || next.RecordsProcessed < current.RecordsProcessed ||
 		next.RecordsProcessed-current.RecordsProcessed != int64(page.RecordCount) {
 		return errors.New("Trello page progress counters do not match its durable records")
 	}
