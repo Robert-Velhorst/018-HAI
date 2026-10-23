@@ -1390,9 +1390,17 @@ func probeProviderWithContext(parent context.Context, provider Provider, policy 
 		}
 		return result
 	}
-	if !json.Valid(raw) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &envelope); err != nil || envelope == nil {
 		result.Status = "failed"
-		result.Reason = "provider returned an invalid JSON model-list response"
+		result.Reason = "provider returned an invalid JSON model-list object response"
+		return result
+	}
+	if providerError, present := envelope["error"]; present &&
+		!bytes.Equal(bytes.TrimSpace(providerError), []byte("null")) &&
+		!bytes.Equal(bytes.TrimSpace(providerError), []byte(`""`)) {
+		result.Status = "failed"
+		result.Reason = "provider returned an error model-list response"
 		return result
 	}
 	if parent.Err() != nil {
