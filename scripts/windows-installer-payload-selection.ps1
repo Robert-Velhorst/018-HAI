@@ -22,16 +22,26 @@ function Assert-HaiInstallerSourceFileSafe {
         [Parameter(Mandatory = $true)][string]$RelativePath
     )
 
-    $root = [IO.Path]::GetFullPath($RepositoryRoot).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $root = [IO.Path]::GetFullPath($RepositoryRoot)
     $normalized = $RelativePath -replace '\\', '/'
     if ([string]::IsNullOrWhiteSpace($normalized) -or [IO.Path]::IsPathRooted($normalized) -or
         $normalized -match '(^|/)\.\.?(/|$)' -or $normalized.Contains(':')) {
         throw 'Installer source path is not a normalized repository-relative path.'
     }
     $candidate = [IO.Path]::GetFullPath((Join-Path $root ($normalized -replace '/', [IO.Path]::DirectorySeparatorChar)))
-    $rootPrefix = $root + [IO.Path]::DirectorySeparatorChar
+    $rootPrefix = $root.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
     if (-not $candidate.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
         throw 'Installer source path resolves outside the repository checkout.'
+    }
+
+    # The checkout or one of its ancestors can redirect before relative traversal starts.
+    $ancestor = $root
+    while (-not [string]::IsNullOrEmpty($ancestor)) {
+        $item = Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
+        if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Installer source root ancestry must contain only regular directories, not reparse points.'
+        }
+        $ancestor = [IO.Path]::GetDirectoryName($ancestor.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar))
     }
 
     $current = $root
