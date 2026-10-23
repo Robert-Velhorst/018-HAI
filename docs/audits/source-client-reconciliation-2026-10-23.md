@@ -1550,3 +1550,49 @@ specification files, plus 69 native controls and 122 CI contracts. No full
 framework-controller review, live authorization/provider mutation, deployed
 browser screenshot or full-app visual acceptance is claimed. The retained
 template remains intact pending verified preservation on main.
+
+## Framework registry controller reconciliation
+
+Read the complete retained controller and its complete current delta, including
+the existing preference-history plumbing, eager detection and local disclosure
+helpers. Preserve independent refresh failures and previous records, deterministic
+catalogue/history ordering, non-authoritative selection hints, protected-framework
+limits, explicit owner gating, immutable Constitution drafts, exact activation
+phrase, conflict recovery, restrictive typed-rule recognition, stable inspector
+identity, reduced-motion focus behavior and per-module view reset.
+
+All 14 service call sites now defer invocation and observe one response with
+explicit empty-completion failure. Read deadlines use the shared eight-second
+policy; writes use thirty seconds. Existing destruction teardown is retained,
+and destroyed controllers cannot start new service calls. This catches service
+construction errors inside the same error/finalization path instead of leaving
+controls permanently pending. A focused 102-case matrix initially reports 74
+failures; it then passes after repair. The final suite adds denial, stale
+inspector, response-identity, raw-error and deferred-focus regressions.
+
+Require boolean authentication and permission fields plus a nonempty subject in
+the component. This is defense in depth: the existing real session service
+already normalizes those fields strictly, and the backend remains the authority.
+A denied write clears component authority and cancels an older pending refresh
+so its late owner snapshot cannot re-enable another mutation. Bind framework
+detail and preference responses to their requested record. A preference receipt
+can update its catalogue entry, but cannot replace a newer inspector or its
+edits, even after navigating away and back to the same ID. Delayed focus callbacks
+also stop after destruction or superseding inspection/selection.
+
+Do not echo raw backend validation strings through a keyword-denylist. Keep
+explicit session/permission and Constitution-conflict guidance, with static
+operation-specific copy otherwise. Transport failure, empty response or timeout
+does not establish that a write was rolled back: selection, preference, draft
+and activation failures now direct the operator to inspect current records before
+deliberate retry rather than asserting that nothing changed. No automatic retry
+or authority escalation is introduced.
+
+All 112 new controller cases pass within 1,622 Chrome cases across 52 specification
+files. That run also includes the 24 existing framework-registry and session
+service cases through mocked HTTP and the previously rendered registry controls.
+Separately, 69 native control-room checks and 122 CI contracts pass. These prove local client
+behavior and contract consistency, not signed-session verification, real database
+commit/rollback, complete cross-endpoint semantic validation, live framework
+selection or provider acceptance. The retained controller remains intact until
+its preservation on main is verified.

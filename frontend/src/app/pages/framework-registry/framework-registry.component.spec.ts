@@ -830,7 +830,7 @@ describe('FrameworkRegistryComponent', () => {
     component.selectFrameworks();
 
     expect(component.selectionError).toBe(
-      'HAI could not create a framework recommendation. No execution was started.'
+      'HAI could not confirm whether the recommendation was recorded. Inspect selection history before retrying. No execution was started.'
     );
     expect(component.selectionError).not.toContain('super-secret-value');
   });
