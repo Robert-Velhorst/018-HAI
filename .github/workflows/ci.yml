@@ -457,6 +457,36 @@ jobs:
           do
             grep -q -- "^--- PASS: ${test_name} (" "$rotation_log"
           done
+      - name: Password reset and account mutation PostgreSQL regressions
+        shell: bash
+        env:
+          HAI_IDP_TEST_DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/hai_idp_auth_test?sslmode=disable"
+          HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS: "true"
+        run: |
+          set -euo pipefail
+          tests=(
+            TestPasswordResetDigestAtRestAndLegacyTokenMigration
+            TestPasswordResetTokenCanBeConsumedOnlyOnceUnderConcurrency
+            TestConcurrentFailedLoginsAtomicallyIncrementAndLockAccount
+            TestFailedLoginAfterExpiredLockoutStartsNewCounterWindow
+            TestStaleUserUpdateCannotRestoreConsumedResetTokenOrSessionVersion
+            TestAuthenticatedPasswordChangeRevokesSessionsAndPendingResetTokens
+            TestDeletingAndReactivatingUserDoesNotRestoreOldSessionOrResetToken
+            TestPasswordChangeWithStaleValidatedSessionCannotOverwriteReset
+            TestAtomicAccountUpdateChangesEmailAndPasswordWithSessionGuard
+            TestEmailOnlyAccountUpdateInvalidatesPendingPasswordReset
+            TestSetPasswordResetTokenRejectsStaleAccountVersion
+          )
+          selection="$(IFS='|'; printf '%s' "${tests[*]}")"
+          reset_log="$(mktemp "$RUNNER_TEMP/idp-password-reset.XXXXXX.log")"
+          go test -count=1 -race -p=1 -parallel=1 -timeout=180s -run "^(${selection})$" ./internal/app/authentication -v 2>&1 | tee "$reset_log"
+          if grep -Eq -- '^[[:space:]]*--- (SKIP|FAIL):|^FAIL([[:space:]]|$)' "$reset_log"; then
+            echo "Password reset regressions reported SKIP or FAIL" >&2
+            exit 1
+          fi
+          for test_name in "${tests[@]}"; do
+            grep -q -- "^--- PASS: ${test_name} (" "$reset_log"
+          done
       - name: Durable session PostgreSQL and Redis real-store regressions
         shell: bash
         env:

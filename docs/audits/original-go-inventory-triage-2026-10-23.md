@@ -69,3 +69,15 @@ old file versions. Structural equality does not establish dependency behavior,
 initialization ordering, side effects, external integrations, or operator
 acceptance. No deletion eligibility or whole-HAI completion follows from this
 triage, and no source or archive was removed.
+
+## Subsequent bounded reviews
+
+The counts and unresolved leads above describe the original triage checkpoint.
+Later [verification reconciliation](verification-source-reconciliation-2026-10-23.md)
+recovered the relevance guard and added finalization acknowledgement checks.
+[Extraction and routing reconciliation](extraction-routing-reconciliation-2026-10-23.md)
+traced the removed helper/wrapper to current owner-scoped paging and lifecycle
+initialization. The [three test-file ambiguities](original-test-ambiguities-reconciliation-2026-10-23.md)
+now have direct text-delta dispositions, without weakening the declaration
+analyzer. These follow-ups do not turn the whole inventory into a semantic
+review or authorize deletion.
