@@ -964,3 +964,43 @@ this classification only, with exact raw-file integrity recorded privately.
 The raw state remains local and is not main-preserved or deletion eligible.
 The structural check does not claim cryptographic receipt authenticity. This
 completes one additional selected-file review, not the entire recovery scope.
+
+## Login source and specification reconciliation
+
+Read the complete retained login implementation and component specification,
+then every difference against current code. Preserve operator-only registration,
+explicit local preview, remember-me bindings, masked confirmation, inline linked
+validation and guarded internal return destinations. Keep the current Unicode
+code-point minimum and UTF-8 byte maximum, callback-error explanations, recovery
+rate-limit handling and the distinction between enabled email recovery and actual
+delivery. The older wording that implied a code had been sent must not return.
+Retain the newer rendered form, viewport and disabled-provider coverage rather
+than replacing it with the smaller historical suite.
+
+Twenty-six new regression cases failed before repair. All seven authentication
+request paths now defer setup, take one response, reject empty completion and
+unsubscribe when the login component is destroyed. Capabilities retain a
+five-second deadline, sign-in/session/registration/preview fifteen seconds, and
+the two password-recovery stages forty-five seconds. Strict boolean capability
+and session checks reject truthy strings rather than enabling optional flows.
+The local busy flags clear on teardown; this is not proof that a dispatched
+server write was cancelled or rolled back.
+
+Session retry cannot overlap sign-in, registration or local preview. A cancelled
+retry navigation receives an actionable failure message; late navigation
+feedback cannot mutate a destroyed login view. No HTTP action is automatically
+replayed after uncertainty. This does not change server permissions, bootstrap
+roles, OAuth configuration, SMTP settings or installed credentials. Neither
+mocked request acknowledgements nor local component tests establish real sign-in,
+mail delivery, complete response-schema validation or deployed acceptance.
+
+The initial 26 regression cases pass after repair. Additional positive/lifecycle
+controls and the combined existing frontend suites are verified separately
+below. Both retained originals remain intact, with exact hashes recorded
+privately; no archive or whole-worktree deletion follows from this scoped review.
+
+The combined selection now includes 33 frontend specification files: all 719
+cases pass in Chrome Headless, including all 30 new login observation cases and
+both Runtime Control suites. The logged `offline` error is the existing Home
+negative-path fixture, not a live service observation. This is not the entire
+frontend suite, a production build or a deployed browser acceptance run.

@@ -1,10 +1,10 @@
-import { ChangeDetectionStrategy, Component, Inject, OnInit } from "@angular/core";
+import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit } from "@angular/core";
 import { FormBuilder, FormGroup, Validators } from "@angular/forms";
 import { NzNotificationService } from "ng-zorro-antd/notification";
 import { AUTH_SERVICE_TOKEN } from "../../services/auth/auth.service.token";
 import { IAuthService } from "../../services/auth.service.interface";
 import { ActivatedRoute, Router } from "@angular/router";
-import { TimeoutError, timeout } from 'rxjs';
+import { defer, map, Observable, Subject, take, takeUntil, throwIfEmpty, TimeoutError, timeout } from 'rxjs';
 import { safePostOnboardingDestination } from '../../services/auth/guards/safe-return-url';
 
 @Component({
@@ -14,7 +14,7 @@ import { safePostOnboardingDestination } from '../../services/auth/guards/safe-r
     styleUrls: ["./login.component.scss"],
     standalone: false
 })
-export class LoginComponent implements OnInit {
+export class LoginComponent implements OnInit, OnDestroy {
   readonly minimumRegistrationPasswordLength = 12;
   readonly maximumRegistrationPasswordBytes = 72;
   hidePassword: boolean = true;
@@ -38,6 +38,8 @@ export class LoginComponent implements OnInit {
   localPreviewEnabled = false;
   openingLocalPreview = false;
   validateForm: FormGroup = this.fb.group({});
+  private destroyed = false;
+  private readonly destroyed$ = new Subject<void>();
 
   constructor(
     private fb: FormBuilder,
@@ -48,6 +50,7 @@ export class LoginComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    if (this.destroyed) return;
     this.onInitForm();
     const authError = this.route.snapshot.queryParamMap.get('error');
     this.signInErrorMessage = this.authenticationErrorMessage(authError);
@@ -55,15 +58,38 @@ export class LoginComponent implements OnInit {
     this.loadAuthCapabilities();
   }
 
+  ngOnDestroy(): void {
+    this.destroyed = true;
+    this.destroyed$.next();
+    this.destroyed$.complete();
+    this.authCapabilitiesLoading = false;
+    this.authenticationRetrying = false;
+    this.openingLocalPreview = false;
+    this.signingIn = false;
+    this.registering = false;
+    this.recovering = false;
+  }
+
+  private observeAuthentication<T>(request: () => Observable<T>, deadline = this.signInTimeoutMs): Observable<T> {
+    return defer(request).pipe(
+      timeout(deadline), take(1),
+      throwIfEmpty(() => new Error('Authentication returned no response')),
+      takeUntil(this.destroyed$),
+    );
+  }
+
   retryAuthentication(): void {
-    if (this.authenticationRetrying || this.signingIn || this.registering || this.recovering) {
+    if (this.destroyed || this.authenticationRetrying || this.signingIn || this.registering || this.recovering || this.openingLocalPreview) {
       return;
     }
     this.authenticationRetrying = true;
-    this.authService.loggedIn().pipe(timeout(this.signInTimeoutMs)).subscribe({
+    this.observeAuthentication(() => this.authService.loggedIn()).pipe(map(authenticated => {
+      if (typeof authenticated !== 'boolean') throw new Error('Invalid authentication response');
+      return authenticated;
+    })).subscribe({
       next: (authenticated) => {
-        this.authenticationRetrying = false;
         if (!authenticated) {
+          this.authenticationRetrying = false;
           this.authenticationUnavailable = false;
           this.signInErrorMessage = 'The authentication service is responding. Sign in with your account to continue.';
           return;
@@ -71,9 +97,18 @@ export class LoginComponent implements OnInit {
 
         this.authenticationUnavailable = false;
         this.signInErrorMessage = '';
-        this.router.navigateByUrl(this.authenticationDestination()).catch(() => {
+        const navigationFailed = () => {
+          if (this.destroyed) return;
+          this.authenticationRetrying = false;
           this.signInErrorMessage = 'Authentication was confirmed, but HAI could not open the requested page. Retry the connection or sign in again.';
-        });
+        };
+        try {
+          this.router.navigateByUrl(this.authenticationDestination()).then(navigated => {
+            if (this.destroyed) return;
+            this.authenticationRetrying = false;
+            if (!navigated || String(this.router.url || '').split(/[?#]/, 1)[0] === '/login') navigationFailed();
+          }, navigationFailed);
+        } catch { navigationFailed(); }
       },
       error: () => {
         this.authenticationRetrying = false;
@@ -99,12 +134,20 @@ export class LoginComponent implements OnInit {
   }
 
   loadAuthCapabilities(): void {
-    if (this.authCapabilitiesLoading) {
+    if (this.destroyed || this.authCapabilitiesLoading) {
       return;
     }
     this.authCapabilitiesLoading = true;
     this.authCapabilitiesLoaded = false;
-    this.authService.getCapabilities().subscribe({
+    this.googleLoginEnabled = false;
+    this.passwordRecoveryEmailEnabled = false;
+    this.localPreviewEnabled = false;
+    this.observeAuthentication(() => this.authService.getCapabilities(), 5000).pipe(map(capabilities => {
+      if (!capabilities || ['googleLoginEnabled', 'passwordRecoveryEmailEnabled', 'localPreviewEnabled'].some(key => typeof capabilities[key as keyof typeof capabilities] !== 'boolean')) {
+        throw new Error('Invalid authentication capabilities');
+      }
+      return capabilities;
+    })).subscribe({
       next: (capabilities) => {
         this.googleLoginEnabled = Boolean(capabilities.googleLoginEnabled);
         this.passwordRecoveryEmailEnabled = Boolean(capabilities.passwordRecoveryEmailEnabled);
@@ -139,7 +182,7 @@ export class LoginComponent implements OnInit {
   // browser must follow Google's redirects and land back on the app with the
   // session cookies set by the callback.
   loginWithGoogle(): void {
-    if (this.registering || this.recovering || this.signingIn || this.openingLocalPreview) {
+    if (this.destroyed || this.authenticationRetrying || this.registering || this.recovering || this.signingIn || this.openingLocalPreview) {
       return;
     }
     window.location.href = this.googleLoginURL();
@@ -151,15 +194,16 @@ export class LoginComponent implements OnInit {
   }
 
   openLocalPreview(): void {
-    if (this.openingLocalPreview || this.registering || this.recovering || this.signingIn) {
+    if (this.destroyed || this.authenticationRetrying || this.openingLocalPreview || this.registering || this.recovering || this.signingIn) {
       return;
     }
     this.openingLocalPreview = true;
-    this.authService.openLocalPreview().pipe(timeout(this.signInTimeoutMs)).subscribe({
+    this.observeAuthentication(() => this.authService.openLocalPreview()).subscribe({
       next: () => {
         try {
           this.router.navigateByUrl(this.authenticationDestination()).then(
             (navigated) => {
+              if (this.destroyed) return;
               this.openingLocalPreview = false;
               const currentPath = String(this.router.url || '').split(/[?#]/, 1)[0];
               if (!navigated || currentPath === '/login') {
@@ -167,6 +211,7 @@ export class LoginComponent implements OnInit {
               }
             },
             () => {
+              if (this.destroyed) return;
               this.openingLocalPreview = false;
               this.notification.error('Local dashboard did not open', 'HAI could not open the requested page. Refresh the app and try again.');
             }
@@ -189,7 +234,7 @@ export class LoginComponent implements OnInit {
   }
 
   submitForm(): void {
-    if (this.registering || this.recovering || this.signingIn || this.openingLocalPreview) {
+    if (this.destroyed || this.authenticationRetrying || this.registering || this.recovering || this.signingIn || this.openingLocalPreview) {
       return;
     }
     this.clearSignInError();
@@ -214,18 +259,17 @@ export class LoginComponent implements OnInit {
     }
 
     this.signingIn = true;
-    this.authService
-      .login(
+    this.observeAuthentication(() => this.authService.login(
         this.validateForm.value.userName,
         this.validateForm.value.password,
         Boolean(this.validateForm.value.remember)
-      )
-      .pipe(timeout(this.signInTimeoutMs))
+      ))
       .subscribe({
         next: () => {
           try {
             this.router.navigateByUrl(this.authenticationDestination()).then(
               (navigated) => {
+                if (this.destroyed) return;
                 this.signingIn = false;
                 const currentPath = String(this.router.url || '').split(/[?#]/, 1)[0];
                 if (!navigated || currentPath === '/login') {
@@ -236,6 +280,7 @@ export class LoginComponent implements OnInit {
                 }
               },
               () => {
+                if (this.destroyed) return;
                 this.signingIn = false;
                 this.reportSignInFailure(
                   'Workspace did not open',
@@ -253,7 +298,7 @@ export class LoginComponent implements OnInit {
         },
         error: (error) => {
           this.signingIn = false;
-          if (error.status === 401) {
+          if (error?.status === 401) {
             this.reportSignInFailure(
               'Login failed',
               'The email or password is incorrect. Check both fields and try again.'
@@ -292,7 +337,7 @@ export class LoginComponent implements OnInit {
   }
 
   toggleRegistration(): void {
-    if (this.registering || this.recovering || this.signingIn || this.openingLocalPreview) {
+    if (this.destroyed || this.authenticationRetrying || this.registering || this.recovering || this.signingIn || this.openingLocalPreview) {
       return;
     }
     this.clearSignInError();
@@ -406,7 +451,8 @@ export class LoginComponent implements OnInit {
     }
 
     this.recovering = true;
-    this.authService.requestPasswordReset(String(emailControl.value).trim()).pipe(timeout(this.passwordRecoveryTimeoutMs)).subscribe({
+    const email = String(emailControl.value).trim();
+    this.observeAuthentication(() => this.authService.requestPasswordReset(email), this.passwordRecoveryTimeoutMs).subscribe({
       next: () => this.finishRecoveryRequest(),
       // Keep the response identical when delivery is temporarily unavailable or the email is unknown.
       error: (error) => {
@@ -487,7 +533,7 @@ export class LoginComponent implements OnInit {
     }
 
     this.recovering = true;
-    this.authService.confirmPasswordReset(token, password).pipe(timeout(this.passwordRecoveryTimeoutMs)).subscribe({
+    this.observeAuthentication(() => this.authService.confirmPasswordReset(token, password), this.passwordRecoveryTimeoutMs).subscribe({
       next: () => {
         this.recovering = false;
         this.backToLogin();
@@ -555,7 +601,7 @@ export class LoginComponent implements OnInit {
       return;
     }
     this.registering = true;
-    this.authService.register(email, password).pipe(timeout(this.signInTimeoutMs)).subscribe({
+    this.observeAuthentication(() => this.authService.register(email, password)).subscribe({
       next: () => {
         this.registering = false;
         this.registrationMode = false;
@@ -620,7 +666,7 @@ export class LoginComponent implements OnInit {
   }
 
   showPasswordHelp(): void {
-    if (this.registering || this.recovering || this.signingIn || this.openingLocalPreview) {
+    if (this.destroyed || this.authenticationRetrying || this.registering || this.recovering || this.signingIn || this.openingLocalPreview) {
       return;
     }
     this.fieldValidationMessages = {};
@@ -638,7 +684,7 @@ export class LoginComponent implements OnInit {
   }
 
   showResetConfirmation(): void {
-    if (this.recovering || this.signingIn) {
+    if (this.destroyed || this.authenticationRetrying || this.registering || this.openingLocalPreview || this.recovering || this.signingIn) {
       return;
     }
     this.fieldValidationMessages = {};
@@ -647,7 +693,7 @@ export class LoginComponent implements OnInit {
   }
 
   backToLogin(): void {
-    if (this.registering || this.recovering || this.signingIn || this.openingLocalPreview) {
+    if (this.destroyed || this.authenticationRetrying || this.registering || this.recovering || this.signingIn || this.openingLocalPreview) {
       return;
     }
     this.clearSignInError();
