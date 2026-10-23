@@ -49,9 +49,22 @@ The already running CI is allowed to finish before another push.
 The same CI run independently rejected the Promptfoo runner's production
 dependency graph. A read-only lockfile audit confirmed Zod 4.6.5 and the
 high-severity [GHSA-mrhx-c7xc-m3w5 advisory](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5),
-whose patched version is 4.6.6. A targeted dependency update is awaiting owner
-approval; the audit gate is not bypassed. This is separate from the frontend
-workflow assertion correction.
+whose patched version is 4.6.6. The owner subsequently approved this exact
+security update. Only Zod's version, registry tarball URL and integrity fields
+in the runner lockfile change; the package manifest and every other dependency
+record remain unchanged. The official registry metadata supplies the patched
+tarball and integrity value. Both existing consumer ranges accept 4.6.6.
+
+The post-patch production lockfile audit reports zero high and zero critical
+advisories. It still reports one separate moderate advisory for `ip-address`
+([GHSA-rxp7-6hxx-x8q5](https://github.com/advisories/GHSA-rxp7-6hxx-x8q5));
+this narrowly approved change does not fix that dependency. The default audit
+therefore returns a nonzero result, while the unchanged high-severity release
+threshold passes. Three local runner contracts pass. These contracts do not
+install or exercise the complete Promptfoo dependency graph, build its image,
+or run a real model evaluation. Exact-head CI must verify the image. No global
+npm upgrade, provider configuration change or live deployment was performed.
+This remains separate from the frontend workflow assertion correction.
 
 Original sources, other clones and transcript archives remain retained. These
 three file reviews do not establish that the entire original checkout or any
