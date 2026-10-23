@@ -62,6 +62,28 @@ func rememberMeValue(persistent bool) string {
 	return rememberMeSessionValue
 }
 
+func ambiguousSessionCookies(request *http.Request) bool {
+	if request == nil {
+		return true
+	}
+	accessSeen, refreshSeen := false, false
+	for _, cookie := range request.Cookies() {
+		switch cookie.Name {
+		case "access_token":
+			if accessSeen {
+				return true
+			}
+			accessSeen = true
+		case "refresh_token":
+			if refreshSeen {
+				return true
+			}
+			refreshSeen = true
+		}
+	}
+	return false
+}
+
 // Sessions issued before remember-me existed were persistent. Preserve that
 // behavior for clients that do not yet send the preference cookie.
 func authCookiesShouldPersist(r *http.Request) bool {
