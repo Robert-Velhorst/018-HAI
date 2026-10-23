@@ -247,7 +247,7 @@ func maintenanceEndpointKey(raw string) (string, error) {
 		return "", fmt.Errorf("unsupported endpoint path")
 	}
 	for _, segment := range segments {
-		if strings.EqualFold(segment, "v1") || !endpointPathSegment.MatchString(segment) {
+		if segment == "." || segment == ".." || strings.EqualFold(segment, "v1") || !endpointPathSegment.MatchString(segment) {
 			return "", fmt.Errorf("unsupported endpoint path")
 		}
 	}
