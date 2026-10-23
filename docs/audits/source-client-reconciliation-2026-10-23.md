@@ -759,3 +759,38 @@ The combined frontend run covering 28 selected spec files also exits zero.
 Its final output was unavailable, so no combined assertion count is claimed.
 No runtime execution permission, provider setting, account or source original
 was modified. The recovery worktrees and transcript archives remain retained.
+
+## Grounded answers request and observation boundary
+
+Read the complete retained component and its complete current delta. Preserve
+lazy provider/history reads, per-module disclosure, pursuit linking, audit
+warnings and the explicit distinction between discovered candidate evidence and
+verified claims. The retained implementation is already present apart from the
+current Angular change-detection declaration; do not restore older UI plumbing.
+
+Eighteen new negative controls fail before repair: eleven synchronous service
+factory exceptions, duplicate answer submission, two negative endpoint probes
+reported as success, obsolete detail replacement, silent status reads, empty
+history completion and observation/dispatch after teardown. All 32 focused tests
+pass after repair. Centralize the repeated deferred, one-response, nonempty,
+deadline-bound observation contract in this component. Status/history/detail
+reads and endpoint probes use six seconds; answer and retrieval requests use
+thirty seconds. Every API entry point refuses dispatch after teardown. Cancel
+an older detail read before selecting another detail or starting a new answer.
+
+A negative or missing reachable flag cannot produce a successful health toast.
+An answer timeout or transport error does not prove that a verification run or
+an explicitly permitted memory update was not saved. Retain the question and
+tell the operator to inspect history before retrying. Unsubscribing does not undo
+backend work. Existing evidence request fields and backend authorization remain
+unchanged; this is not independent verification of provider output.
+
+Complete response-schema validation, binding editable evidence to its original
+candidate, durable idempotency across reloads, live source acceptance, deployed
+visual review and a full production build remain outside this repair's proof.
+Four additional controls cover uncertain answer timeout, empty answer completion,
+one-result observation and detail cancellation before a new answer. All 618
+tests across 29 selected frontend spec files pass together in ChromeHeadless,
+including the resulting 36 grounded-answer tests. These test counts are not
+counts of recovered source files or live-provider acceptance evidence.
+No original worktree file or transcript archive has been removed.

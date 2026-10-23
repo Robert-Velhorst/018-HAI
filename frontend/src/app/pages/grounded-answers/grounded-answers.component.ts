@@ -1,7 +1,8 @@
-import { ChangeDetectionStrategy, Component, Inject, OnInit, QueryList, ViewChildren } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit, QueryList, ViewChildren } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
+import { defer, EMPTY, Observable, Subject, Subscription, take, takeUntil, throwIfEmpty } from 'rxjs';
 import { finalize, timeout } from 'rxjs/operators';
 import {
   IResearchCandidateEvidence,
@@ -26,10 +27,13 @@ import { HaiProgressiveSectionComponent } from '../../control-room/progressive-s
     styleUrls: ['./grounded-answers.component.scss'],
     standalone: false
 })
-export class GroundedAnswersComponent implements OnInit {
+export class GroundedAnswersComponent implements OnInit, OnDestroy {
   @ViewChildren(HaiProgressiveSectionComponent) progressiveSections?: QueryList<HaiProgressiveSectionComponent>;
 
   readonly moduleId = 'grounded-answers';
+  private readonly destroyed$ = new Subject<void>();
+  private destroyed = false;
+  private detailSubscription?: Subscription;
   result?: IVerificationResult;
   runs: IVerificationRun[] = [];
   runsLoading = false;
@@ -93,6 +97,19 @@ export class GroundedAnswersComponent implements OnInit {
     return this.viewPreferences.get(this.moduleId).mode === 'advanced';
   }
 
+  ngOnDestroy(): void {
+    this.destroyed = true;
+    this.destroyed$.next();
+    this.destroyed$.complete();
+  }
+
+  private observe<T>(request: () => Observable<T>, settle: () => void, deadlineMs = 6000): Observable<T> {
+    if (this.destroyed) return EMPTY;
+    return defer(request).pipe(
+      timeout(deadlineMs), take(1), throwIfEmpty(), takeUntil(this.destroyed$), finalize(settle),
+    );
+  }
+
   ngOnInit(): void {
     const params = this.route.snapshot.queryParamMap;
     this.answerForm.patchValue({
@@ -132,14 +149,14 @@ export class GroundedAnswersComponent implements OnInit {
   }
 
   answer(): void {
-    if (this.answerForm.invalid) {
+    if (this.destroyed || this.loading || this.answerForm.invalid) {
       return;
     }
+    this.detailSubscription?.unsubscribe();
     this.loading = true;
     this.answerError = '';
     const snippet = String(this.answerForm.value.evidenceSnippet || '').trim();
-    this.verificationService
-      .answer({
+    this.observe(() => this.verificationService.answer({
         question: this.answerForm.value.question,
         projectKey: this.answerForm.value.projectKey,
         pursuitId: this.answerForm.value.pursuitId,
@@ -168,7 +185,7 @@ export class GroundedAnswersComponent implements OnInit {
               },
             ]
           : [],
-      })
+      }), () => this.loading = false, 30000)
       .subscribe({
         next: (result) => {
           this.result = result;
@@ -182,21 +199,18 @@ export class GroundedAnswersComponent implements OnInit {
         },
         error: () => {
           this.loading = false;
-          this.answerError = 'The answer could not be verified. No approval or external action was created.';
+          this.answerError = 'Verification completion could not be confirmed. Refresh history before retrying; a run or permitted memory update may already have been saved.';
           this.notification.error('Error', 'Failed to create grounded answer.');
         },
       });
   }
 
   loadRuns(): void {
-    if (this.runsLoading) {
+    if (this.destroyed || this.runsLoading) {
       return;
     }
     this.runsLoading = true;
-    this.verificationService.runs().pipe(
-      timeout(10_000),
-      finalize(() => (this.runsLoading = false))
-    ).subscribe({
+    this.observe(() => this.verificationService.runs(), () => this.runsLoading = false).subscribe({
       next: (runs) => {
         this.runs = runs;
         this.runsUnavailable = false;
@@ -210,9 +224,9 @@ export class GroundedAnswersComponent implements OnInit {
   }
 
   loadResearchStatus(force = false): void {
-    if (this.researchStatusLoading || (this.researchStatusLoaded && !force)) return;
+    if (this.destroyed || this.researchStatusLoading || (this.researchStatusLoaded && !force)) return;
     this.researchStatusLoading = true;
-    this.researchService.status().subscribe({
+    this.observe(() => this.researchService.status(), () => this.researchStatusLoading = false).subscribe({
       next: (status) => {
         this.researchStatus = status;
         this.researchStatusLoaded = true;
@@ -227,11 +241,16 @@ export class GroundedAnswersComponent implements OnInit {
   }
 
   probeResearch(): void {
-    if (!this.researchStatus?.configured || this.researchProbeLoading) return;
+    if (this.destroyed || !this.researchStatus?.configured || this.researchProbeLoading) return;
     this.researchProbeLoading = true;
-    this.researchService.probe().subscribe({
+    this.observe(() => this.researchService.probe(), () => this.researchProbeLoading = false).subscribe({
       next: (probe) => {
         this.researchProbeLoading = false;
+        if (probe?.reachable !== true) {
+          this.researchProbe = undefined;
+          this.notification.warning('Local SearXNG unavailable', 'The endpoint did not report a successful health check. No source candidates were added.');
+          return;
+        }
         this.researchProbe = probe;
         this.notification.success('Local SearXNG reachable', 'Endpoint health passed. Search result provenance and verification are still required.');
       },
@@ -245,10 +264,10 @@ export class GroundedAnswersComponent implements OnInit {
 
   searchResearch(): void {
     const query = String(this.answerForm.value.question || '').trim();
-    if (!query || this.researchLoading) return;
+    if (this.destroyed || !query || this.researchLoading) return;
     this.researchLoading = true;
     this.researchResults = [];
-    this.researchService.search(query).subscribe({
+    this.observe(() => this.researchService.search(query), () => this.researchLoading = false, 30000).subscribe({
       next: (response) => {
         this.researchLoading = false;
         this.researchResults = response.results || [];
@@ -284,9 +303,9 @@ export class GroundedAnswersComponent implements OnInit {
   }
 
   loadRAGFlowStatus(force = false): void {
-    if (this.ragflowStatusLoading || (this.ragflowStatusLoaded && !force)) return;
+    if (this.destroyed || this.ragflowStatusLoading || (this.ragflowStatusLoaded && !force)) return;
     this.ragflowStatusLoading = true;
-    this.ragflowService.status().subscribe({
+    this.observe(() => this.ragflowService.status(), () => this.ragflowStatusLoading = false).subscribe({
       next: (status) => {
         this.ragflowStatus = status;
         this.ragflowStatusLoaded = true;
@@ -301,12 +320,17 @@ export class GroundedAnswersComponent implements OnInit {
   }
 
   probeRAGFlow(): void {
-    if (!this.ragflowStatus?.configured || this.ragflowProbeLoading) return;
+    if (this.destroyed || !this.ragflowStatus?.configured || this.ragflowProbeLoading) return;
     this.ragflowProbeLoading = true;
     this.ragflowProbe = undefined;
-    this.ragflowService.probe().subscribe({
+    this.observe(() => this.ragflowService.probe(), () => this.ragflowProbeLoading = false).subscribe({
       next: (probe) => {
         this.ragflowProbeLoading = false;
+        if (probe?.reachable !== true) {
+          this.ragflowProbe = undefined;
+          this.notification.error('Local RAGFlow unavailable', 'The endpoint did not report a successful health check. No dataset was queried and no evidence was added.');
+          return;
+        }
         this.ragflowProbe = probe;
         this.notification.success('Local RAGFlow reachable', 'HAI checked only the configured health endpoint. No dataset was queried and no evidence was added.');
       },
@@ -319,10 +343,10 @@ export class GroundedAnswersComponent implements OnInit {
 
   searchRAGFlow(): void {
     const query = String(this.answerForm.value.question || '').trim();
-    if (!query || this.ragflowLoading) return;
+    if (this.destroyed || !query || this.ragflowLoading) return;
     this.ragflowLoading = true;
     this.ragflowResults = [];
-    this.ragflowService.retrieve(query).subscribe({
+    this.observe(() => this.ragflowService.retrieve(query), () => this.ragflowLoading = false, 30000).subscribe({
       next: (response) => {
         this.ragflowLoading = false;
         this.ragflowResults = response.results || [];
@@ -355,9 +379,9 @@ export class GroundedAnswersComponent implements OnInit {
   }
 
   loadAnythingLLMStatus(force = false): void {
-    if (this.anythingLLMStatusLoading || (this.anythingLLMStatusLoaded && !force)) return;
+    if (this.destroyed || this.anythingLLMStatusLoading || (this.anythingLLMStatusLoaded && !force)) return;
     this.anythingLLMStatusLoading = true;
-    this.anythingLLMService.status().subscribe({
+    this.observe(() => this.anythingLLMService.status(), () => this.anythingLLMStatusLoading = false).subscribe({
       next: (status) => {
         this.anythingLLMStatus = status;
         this.anythingLLMStatusLoaded = true;
@@ -373,10 +397,10 @@ export class GroundedAnswersComponent implements OnInit {
 
   searchAnythingLLM(workspaceSlug: string): void {
     const query = String(this.answerForm.value.question || '').trim();
-    if (!query || !workspaceSlug || this.anythingLLMLoading) return;
+    if (this.destroyed || !query || !workspaceSlug || this.anythingLLMLoading) return;
     this.anythingLLMLoading = true;
     this.anythingLLMResults = [];
-    this.anythingLLMService.retrieve(query, workspaceSlug).subscribe({
+    this.observe(() => this.anythingLLMService.retrieve(query, workspaceSlug), () => this.anythingLLMLoading = false, 30000).subscribe({
       next: (response) => {
         this.anythingLLMLoading = false;
         this.anythingLLMResults = response.results || [];
@@ -409,7 +433,9 @@ export class GroundedAnswersComponent implements OnInit {
   }
 
   loadDetails(run: IVerificationRun): void {
-    this.verificationService.runDetails(run.id).subscribe({
+    if (this.destroyed || this.loading) return;
+    this.detailSubscription?.unsubscribe();
+    this.detailSubscription = this.observe(() => this.verificationService.runDetails(run.id), () => {}).subscribe({
       next: (details) => {
         details.run = run;
         this.result = details;
