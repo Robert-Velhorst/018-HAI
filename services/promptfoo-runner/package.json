@@ -10,6 +10,9 @@
     "promptfoo": "0.125.0"
   },
   "overrides": {
+    "@azure/identity": {
+      "@azure/msal-node": "7.1.1"
+    },
     "get-uri": {
       "basic-ftp": "6.2.1"
     }
