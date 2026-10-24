@@ -1,0 +1,44 @@
+name: Public runner dependency metadata
+
+on:
+  pull_request:
+    paths:
+      - services/garak-runner/requirements.in
+      - services/evidently-runner/requirements.in
+      - scripts/resolve_runner_lock_metadata.py
+      - .github/workflows/runner-lock-metadata.yml
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve public metadata (${{ matrix.runner }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [garak-runner, evidently-runner]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.15.1"
+      - name: Resolve source metadata in restricted public-only SDK
+        env:
+          METADATA_OUTPUT: ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}
+          HAI_METADATA_RUNNER: ${{ matrix.runner }}
+        run: python scripts/resolve_runner_lock_metadata.py --runner "$HAI_METADATA_RUNNER" --output "$METADATA_OUTPUT"
+      - name: Retain generated locks and provenance
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: public-runner-metadata-${{ matrix.runner }}
+          path: |
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/outputs/requirements.lock
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/receipt.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/resolution.log
+          if-no-files-found: error

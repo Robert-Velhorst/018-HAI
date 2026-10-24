@@ -34,13 +34,13 @@ jobs:
             python-version: "3.15.1"
             requirements-lock: services/docling-runner/requirements.lock
           - name: evidently-runner
-            python-version: "3.12"
+            python-version: "3.14.9"
             requirements-lock: services/evidently-runner/requirements.lock
           - name: fastmcp-bridge
             python-version: "3.15.1"
             requirements-lock: services/fastmcp-bridge/requirements.lock
           - name: garak-runner
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: services/garak-runner/requirements.lock
           - name: gitleaks-runner
             python-version: "3.13"
@@ -91,15 +91,19 @@ jobs:
             services/*/requirements.txt
             services/*/requirements.in
       - name: Install hash-locked Python build metadata tools
-        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner"]'), matrix.name)
+        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner"]'), matrix.name)
         run: |
           python -m pip install --disable-pip-version-check --only-binary :all: --require-hashes -r "services/${{ matrix.name }}/requirements-build.lock"
       - name: Install refreshed hash-locked runner dependencies
-        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner"]'), matrix.name)
+        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner"]'), matrix.name)
         run: python -m pip install --disable-pip-version-check --no-build-isolation --require-hashes -r "${{ matrix.requirements-lock }}"
       - name: Install hash-locked runner dependencies
-        if: matrix.requirements-lock != '' && !contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner"]'), matrix.name)
+        if: matrix.requirements-lock != '' && !contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner"]'), matrix.name)
         run: python -m pip install --disable-pip-version-check --require-hashes -r "${{ matrix.requirements-lock }}"
+      - name: Apply reviewed Evidently Pandas compatibility import
+        if: matrix.name == 'evidently-runner'
+        working-directory: services/evidently-runner
+        run: python apply_vendor_compat.py --apply-to-sdk
       - name: Compile runner and run isolated contract tests
         working-directory: services/${{ matrix.name }}
         env:
