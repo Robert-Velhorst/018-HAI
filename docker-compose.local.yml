@@ -681,7 +681,7 @@ services:
   # internal-only network; SearXNG has separate egress for search providers.
   # It returns candidates only and has no published host port.
   searxng:
-    image: ghcr.io/searxng/searxng:2026.10.17-decdfa6f7
+    image: ghcr.io/searxng/searxng:2026.10.19-d47cb96bf
     profiles: ["research-discovery"]
     restart: unless-stopped
     environment:
