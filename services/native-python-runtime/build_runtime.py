@@ -20,7 +20,9 @@ from urllib.request import HTTPRedirectHandler, build_opener
 
 ROOT = Path("/native-build")
 PREFIX = Path("/opt/hai-native")
-OUTPUT = Path("/native-out")
+OUTPUT = ROOT / "out"
+INSTALL = ROOT / "install"
+SDK_PREFIX = INSTALL / str(PREFIX).lstrip("/")
 
 
 def check_url(value):
@@ -100,11 +102,11 @@ def build_openssl(spec, source, folder, architecture):
     command(["./Configure", "shared", "--prefix=" + str(PREFIX), "--libdir=lib",
              "--openssldir=/etc/ssl", "-Wl,-rpath," + str(PREFIX / "lib")], source)
     command(["make", "-j2"], source)
-    command(["make", "install_sw"], source)
+    command(["make", "install_sw", "DESTDIR=" + str(INSTALL)], source)
     root = folder / "openssl-package"
     libraries = {}
     for name in ["libssl.so.4", "libcrypto.so.4", "ossl-modules/legacy.so"]:
-        original = PREFIX / "lib" / name
+        original = SDK_PREFIX / "lib" / name
         target = root / str(PREFIX / "lib" / name).lstrip("/")
         libraries[str(PREFIX / "lib" / name)] = copy_regular(original, target)
     doc = root / "usr/share/doc/hai-openssl4/copyright"
@@ -114,7 +116,7 @@ def build_openssl(spec, source, folder, architecture):
 
 
 def build_sqlite(spec, source, folder, architecture):
-    library = PREFIX / "lib/libsqlite3.so.0"
+    library = SDK_PREFIX / "lib/libsqlite3.so.0"
     flags = ["-O2", "-fPIC", "-shared", "-Wl,-soname,libsqlite3.so.0",
              "-DSQLITE_THREADSAFE=1", "-DSQLITE_USE_URI=1", "-DSQLITE_ENABLE_COLUMN_METADATA",
              "-DSQLITE_SECURE_DELETE", "-DSQLITE_ENABLE_UNLOCK_NOTIFY", "-DSQLITE_ENABLE_RTREE",
@@ -128,7 +130,7 @@ def build_sqlite(spec, source, folder, architecture):
     if native.sqlite3_libversion().decode("ascii") != spec["version"]:
         raise RuntimeError("Generated SQLite library has the wrong version")
     root = folder / "sqlite-package"
-    target = root / str(library).lstrip("/")
+    target = root / str(PREFIX / "lib/libsqlite3.so.0").lstrip("/")
     digest = copy_regular(library, target)
     doc = root / "usr/share/doc/hai-sqlite3/copyright"
     doc.parent.mkdir(parents=True)
@@ -159,18 +161,13 @@ def rebuild_python(spec, source):
         original_hash = hashlib.sha256(original.read_bytes()).hexdigest()
         output = export / original.name
         includes = [Path(sysconfig.get_path("include")), source / "Include", source / "Include/internal",
-                    source / "Modules", source / "Modules/_ssl", PREFIX / "include"]
+                    source / "Modules", source / "Modules/_ssl", SDK_PREFIX / "include"]
         command(["cc", "-shared", "-fPIC", "-O2", "-DNDEBUG", "-DPy_BUILD_CORE_MODULE=1",
                  *["-I" + str(p) for p in includes], str(source / "Modules" / filename),
-                 "-L" + str(PREFIX / "lib"), "-Wl,-rpath," + str(PREFIX / "lib"),
+                 "-L" + str(SDK_PREFIX / "lib"), "-Wl,-rpath," + str(PREFIX / "lib"),
                  *["-l" + name for name in libraries], "-o", str(output)], source, timeout=300)
-        # Preserve mapped old inodes in this process; a fresh interpreter below
-        # loads only the replacement modules and their OpenSSL 4 dependencies.
-        staged = original.with_name(original.name + ".hai-new")
-        if staged.exists() or staged.is_symlink():
-            raise RuntimeError("Unexpected existing SDK staging file")
-        shutil.copyfile(output, staged)
-        os.replace(staged, original)
+        # The SDK's original interpreter is read-only to this build user.
+        # Only the exported modules are loaded by the explicit probe below.
         result[original.name] = {"original_sha256": original_hash,
                                  "sha256": hashlib.sha256(output.read_bytes()).hexdigest()}
     copy_regular(source / "LICENSE", OUTPUT / "CPython-LICENSE")
@@ -179,7 +176,7 @@ def rebuild_python(spec, source):
 
 
 def main():
-    if (sys.platform != "linux" or Path(__file__).resolve().parent != ROOT
+    if (sys.platform != "linux" or os.geteuid() != 10001 or Path(__file__).resolve().parent != ROOT
             or os.environ.get("HAI_DISPOSABLE_BUILD_SDK") != "1"):
         raise RuntimeError("Native compilation is restricted to the marked disposable SDK")
     os_release = Path("/etc/os-release").read_text()
@@ -190,7 +187,8 @@ def main():
     python = profile["python"]
     if python not in manifest["cpython"] or sys.version.split()[0] != python or manifest["prefix"] != str(PREFIX):
         raise RuntimeError("Native SDK version/profile does not match the pinned sources")
-    if PREFIX.exists() or PREFIX.is_symlink() or OUTPUT.exists() or OUTPUT.is_symlink():
+    if (PREFIX.exists() or PREFIX.is_symlink() or OUTPUT.exists() or OUTPUT.is_symlink()
+            or INSTALL.exists() or INSTALL.is_symlink()):
         raise RuntimeError("Native SDK output must be absent before this build")
     OUTPUT.mkdir()
     architecture = subprocess.check_output(["dpkg", "--print-architecture"], text=True).strip()
@@ -202,8 +200,9 @@ def main():
         ssl_result = build_openssl(manifest["openssl"], ssl, folder, architecture)
         sqlite_result = build_sqlite(manifest["sqlite"], sqlite, folder, architecture)
         python_result = rebuild_python(manifest["cpython"][python], cpython)
-    env = {**os.environ, "LD_LIBRARY_PATH": str(PREFIX / "lib"), "OPENSSL_MODULES": str(PREFIX / "lib/ossl-modules")}
+    env = {**os.environ, "LD_LIBRARY_PATH": str(SDK_PREFIX / "lib"), "OPENSSL_MODULES": str(SDK_PREFIX / "lib/ossl-modules")}
     probe = json.loads(subprocess.check_output([sys.executable, "-I", "-c",
+        "import sys; sys.path.insert(0,'/native-build/out/lib-dynload'); "
         "import hashlib,json,platform,sqlite3,ssl; c=ssl.create_default_context(); "
         "db=sqlite3.connect(':memory:'); print(json.dumps({'python':platform.python_version(),"
         "'openssl':ssl.OPENSSL_VERSION,'ca_roots':len(c.get_ca_certs()),'sqlite':sqlite3.sqlite_version,"
@@ -218,6 +217,8 @@ def main():
               "sqlite": sqlite_result, "cpython": python_result, "runtime": probe,
               "compiler": subprocess.check_output(["cc", "--version"], text=True).splitlines()[0],
               "operator_database_opened": False, "host_sdk_changed": False}
+    result["build_uid"] = os.geteuid()
+    result["original_SDK_modules_modified"] = False
     (OUTPUT / "provenance.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result))
 

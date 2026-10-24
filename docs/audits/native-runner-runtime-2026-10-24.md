@@ -18,8 +18,12 @@ HAI prefix, and rebuilds the exact CPython `_ssl`/`_hashlib` modules. The
 OpenSSL ABI changes to version 4; installing a new command-line executable or
 changing only a version string would not update Python's TLS binding.
 
-The builder requires its marked Debian 13 container, matching interpreter and
-absent output paths. It preserves upstream license notices and records source,
+The builder requires its marked Debian 13 container, UID 10001, matching
+interpreter and absent output paths. Root is used only for initial OS package
+setup; compilation and package construction run unprivileged. The build-stage
+interpreter remains unchanged while the isolated probe loads exported modules
+and staged libraries explicitly. SDK/runtime layers apply Debian package
+updates at build time. It preserves upstream license notices and records source,
 header, binary and local package hashes. Its fresh interpreter must report the
 selected TLS/SQLite versions, load system CA roots and execute an in-memory
 SQLite version query. There is no operator database or SDK operation. Runtime

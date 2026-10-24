@@ -15,7 +15,15 @@ components retain their own version/security acceptance requirements. This
 change is not a complete image vulnerability or all-component currency claim.
 
 The builder refuses execution outside `/native-build` in the marked Linux
-Debian 13 container. No operator SDK or user database is modified. Its SQLite
+Debian 13 container and requires build UID 10001. Only initial OS-package setup
+uses root; compilation/package construction runs as an unprivileged SDK user.
+The SDK includes Bluetooth headers required by the exact CPython socket header
+configuration; these development headers are not copied into the runtime.
+Exported CPython modules and provenance files are owned by root in the image.
+The build-stage interpreter's original modules are not changed. A fresh isolated
+probe explicitly loads only the exported modules and staged client libraries.
+SDK and runtime layers apply available Debian package updates at image build.
+No operator SDK or user database is modified. Its SQLite
 binding verification uses only an in-memory connection. Source imports retain
 upstream copyright/license notices. Published source checksums are verified;
 no PGP-signature verification is claimed.
