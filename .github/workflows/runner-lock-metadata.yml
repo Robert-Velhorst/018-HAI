@@ -33,7 +33,7 @@ jobs:
   resolve:
     name: Resolve public metadata (${{ matrix.runner }})
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.runner == 'miniswe-runner' && 45 || 15 }}
+    timeout-minutes: ${{ matrix.runner == 'miniswe-runner' && 60 || 15 }}
     strategy:
       fail-fast: false
       matrix:

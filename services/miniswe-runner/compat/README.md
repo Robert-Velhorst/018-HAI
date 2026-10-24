@@ -108,3 +108,17 @@ The retained 44-crate graph has six stable-version gaps (UUID's old MD5/digest
 chain and Getrandom's r-efi constraint), despite zero reported public-feed
 advisory IDs. The observed C compiler is Debian GCC 14.2.0-19. Compiler currency,
 full native security and the complete latest-stable goal remain unqualified.
+
+## Current C/C++ compiler SDK
+
+The first qualified native wheel reports Debian GCC 14.2.0-19. The next
+build runs in the immutable official GCC 16.2.0 Trixie SDK, with the pinned
+Rust 1.99.1 and CPython 3.15.1 prefixes mounted read-only from owned hosted
+output. Explicit CC/CXX and Cargo linker settings select the new compiler;
+actual C/C++ versions are asserted and retained. Source, cases and crate
+constraints are unchanged. Root filesystem/capabilities/non-root/noexec
+boundaries remain enforced. The generated wheel and network-disabled SDK
+imports need new-source hosted qualification; old-source success is separate.
+
+Official release and image recipe: https://gcc.gnu.org/ and
+https://github.com/docker-library/gcc/blob/master/16/Dockerfile.

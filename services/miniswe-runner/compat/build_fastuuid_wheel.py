@@ -40,18 +40,26 @@ def main():
         raise ValueError('Pinned Maturin wheel differs')
     (tools / wheel['filename']).write_bytes(raw)
     owner = 'miniswe-fastuuid-' + run_id + '-' + attempt
-    # Copy the exact public Python SDK into this job's owned output only.
-    # It is mounted read-only in the non-root build; no host SDK is installed.
-    created = subprocess.run(['docker','create','--label','io.hai.sdk-owner='+owner,
-                              spec['python_sdk']], capture_output=True, check=True, timeout=120)
-    container = created.stdout.decode().strip()
-    if not re.fullmatch(r'[0-9a-f]{64}', container):
-        raise ValueError('Unexpected SDK container identity')
-    try:
-        subprocess.run(['docker','cp',container+':/usr/local',str(folder/'python')],
-                       capture_output=True, check=True, timeout=120)
-    finally:
-        subprocess.run(['docker','rm',container],capture_output=True,check=True,timeout=30)
+    # Copy only public SDK prefixes into owned hosted output; mount every
+    # prefix read-only during compilation. No operator toolchain is installed.
+    def copy_sdk(image, mappings):
+        created = subprocess.run(['docker','create','--label','io.hai.sdk-owner='+owner,
+                                  image],capture_output=True,check=True,timeout=120)
+        container = created.stdout.decode().strip()
+        if not re.fullmatch(r'[0-9a-f]{64}',container):
+            raise ValueError('Unexpected SDK container identity')
+        try:
+            for origin,destination in mappings:
+                subprocess.run(['docker','cp',container+':'+origin,str(destination)],
+                               capture_output=True,check=True,timeout=180)
+        finally:
+            subprocess.run(['docker','rm',container],capture_output=True,check=True,timeout=30)
+
+    copy_sdk(spec['python_sdk'],[('/usr/local',folder/'python')])
+    rust = folder/'rust'
+    rust.mkdir()
+    copy_sdk(spec['rust']['image'],[('/usr/local/cargo',rust/'cargo'),
+                                  ('/usr/local/rustup',rust/'rustup')])
     cidfile = folder / 'owned-native-build.cid'
     command = ['docker','run','--rm','--cidfile',str(cidfile),'--label','io.hai.sdk-owner='+owner,
         '--read-only','--user','10001:10001','--cap-drop','ALL','--security-opt','no-new-privileges:true',
@@ -59,11 +67,13 @@ def main():
         '--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=256m,uid=10001,gid=10001,mode=0700',
         '--tmpfs','/build:rw,exec,nosuid,nodev,size=1g,uid=10001,gid=10001,mode=0700',
         '--env','HOME=/build','--env','CARGO_HOME=/build/cargo','--env','CARGO_TARGET_DIR=/build/target',
-        '--env','RUSTUP_HOME=/usr/local/rustup','--env','RUSTUP_TOOLCHAIN=1.99.1',
-        '--env','LD_LIBRARY_PATH=/python/lib',
-        '--env','PATH=/python/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+        '--env','RUSTUP_HOME=/rust/rustup','--env','RUSTUP_TOOLCHAIN=1.99.1',
+        '--env','CC=/usr/local/bin/gcc','--env','CXX=/usr/local/bin/g++',
+        '--env','CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=/usr/local/bin/gcc',
+        '--env','LD_LIBRARY_PATH=/python/lib:/usr/local/lib64:/usr/local/lib',
+        '--env','PATH=/python/bin:/rust/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
         '--env','SOURCE_DATE_EPOCH=1792790400','--env','PYTHONDONTWRITEBYTECODE=1']
-    for src,dst,readonly in [(source,'/source',True),(folder/'python','/python',True),
+    for src,dst,readonly in [(source,'/source',True),(folder/'python','/python',True),(rust,'/rust',True),
                               (tools,'/tools',True),(exports,'/exports',False)]:
         command += ['--mount',f'type=bind,src={src},dst={dst}'+(',readonly' if readonly else '')]
     # No rustup bootstrap, warning suppression, ABI forward-compatibility flag,
@@ -71,7 +81,10 @@ def main():
     script = '''set -eu
 rustc --version | tee /exports/rustc-version.txt
 cargo --version | tee /exports/cargo-version.txt
-cc --version > /exports/cc-version.txt
+"$CC" --version > /exports/cc-version.txt
+"$CXX" --version > /exports/cxx-version.txt
+test "$("$CC" -dumpfullversion)" = 16.2.0
+test "$("$CXX" -dumpfullversion)" = 16.2.0
 python -c 'import sys; assert sys.version_info[:3] == (3,15,1)'
 test "$(rustc --version | cut -d ' ' -f 2)" = 1.99.1
 python -m pip install --no-index --no-deps --target /build/maturin /tools/*.whl
@@ -83,7 +96,7 @@ cp Cargo.lock HAI_SOURCE_PORT.json /exports/
 /build/maturin/bin/maturin --version | tee /exports/maturin-version.txt
 /build/maturin/bin/maturin build --locked --release --compatibility linux --interpreter /python/bin/python3.15 --out /exports
 '''
-    command += [spec['rust']['image'],'sh','-c',script]
+    command += [spec['compiler']['sdk_image'],'sh','-c',script]
     try:
         result = subprocess.run(command,capture_output=True,check=False,timeout=720)
     except subprocess.TimeoutExpired as error:
@@ -129,6 +142,8 @@ cp Cargo.lock HAI_SOURCE_PORT.json /exports/
         'native_members':native,'RECORD_entries_verified':len(rows),
         'cargo_lock_sha256':hashlib.sha256((exports/'Cargo.lock').read_bytes()).hexdigest(),
         'rust_sdk':spec['rust']['image'],'python_sdk':spec['python_sdk'],
+        'compiler_sdk':spec['compiler']['sdk_image'],'C_and_CXX_version_asserted':'16.2.0',
+        'Rust_Cargo_linker':'/usr/local/bin/gcc','SDK_prefixes_mounted_readonly':True,
         'maturin_wheel_sha256':wheel['digests']['sha256'],
         'non_root_uid':10001,'operator_sdk_installed':False,'application_cases_run':False,
         'runtime_qualified':False,'private_source_or_credentials_mounted':False}

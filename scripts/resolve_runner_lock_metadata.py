@@ -114,7 +114,7 @@ def main():
         (output/"port-build.json").write_text(json.dumps(port_build,indent=2)+"\n",encoding="utf-8")
         native = subprocess.run([sys.executable,
             str(root/"services/miniswe-runner/compat/build_fastuuid_wheel.py"),
-            "--output",str(output)],capture_output=True,check=False,timeout=1200)
+            "--output",str(output)],capture_output=True,check=False,timeout=1800)
         (output/"fastuuid-preparation.log").write_bytes(native.stdout+native.stderr)
         if native.returncode:
             print((native.stdout+native.stderr).decode("utf-8",errors="replace")[-12000:])
