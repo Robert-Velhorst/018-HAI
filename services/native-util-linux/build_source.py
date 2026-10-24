@@ -70,12 +70,20 @@ def main():
         receipt["installed_prefix_files"] = {p.relative_to(prefix).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
         receipt["installed_prefix_symlinks"] = {p.relative_to(prefix).as_posix(): os.readlink(p) for p in prefix.rglob("*") if p.is_symlink()}
         shutil.make_archive(str(output / "source-install-prefix"), "gztar", prefix)
-        run("upstream_check", ["make", "-j2", "check"])
+        try:
+            run("upstream_check", ["make", "-j2", "check"])
+        finally:
+            # Preserve failures and automatic skips even when make exits nonzero.
+            check = (output / "upstream_check.log").read_text(errors="replace")
+            receipt["skip_markers"] = len(re.findall(r"\bSKIPPED\b|\bSKIP:", check))
+            receipt["known_failure_markers"] = len(re.findall(r"KNOWN FAILED", check))
+            receipt["failed_suite_summaries"] = re.findall(r"(\d+) tests of (\d+) FAILED", check)
+            receipt["all_upstream_cases_qualified"] = False
         check = (output / "upstream_check.log").read_text(errors="replace")
         passed = re.findall(r"All (\d+) tests PASSED", check)
         receipt["upstream_reported_test_scripts"] = int(passed[-1]) if passed else None
         receipt["skip_markers"] = len(re.findall(r"\bSKIPPED\b|\bSKIP:", check))
-        receipt["all_upstream_cases_qualified"] = bool(passed) and receipt["skip_markers"] == 0
+        receipt["all_upstream_cases_qualified"] = bool(passed) and receipt["skip_markers"] == 0 and receipt["known_failure_markers"] == 0
         if not receipt["all_upstream_cases_qualified"]:
             raise RuntimeError("Full upstream-case qualification remains incomplete; skipped/unknown cases are retained")
     finally:

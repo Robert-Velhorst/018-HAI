@@ -9,7 +9,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
        libudev-dev netbase socat systemd-dev zlib1g-dev \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 source-build \
-    && useradd --uid 10001 --gid source-build --no-create-home --shell /usr/sbin/nologin source-build
+    && useradd --uid 10001 --gid source-build --no-create-home --shell /bin/sh source-build
 USER 10001:10001
 ENV HAI_DISPOSABLE_NATIVE_SOURCE_SDK=1 HOME=/build/home TMPDIR=/build/tmp
 ENTRYPOINT ["python", "-I", "/inputs/build_source.py"]
