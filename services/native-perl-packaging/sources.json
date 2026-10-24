@@ -27,6 +27,13 @@
       "bytes": 166380,
       "sha256": "836830536c53a2a8ce6a6cb7d34d19ef8553004098bb6defec33795231ddc4dc",
       "url": "https://deb.debian.org/debian/pool/main/p/perl/perl_5.44.0-2.debian.tar.xz"
+    },
+    {
+      "name": "perl-maintainer-renewal.asc",
+      "url": "https://keyring.debian.org/pks/lookup?op=get&search=0x76A28E42C9811D91E88FBA5E2EC0FFB3B7301B1F",
+      "sha256": "726ff0167782122ab24ee183351bccd36dcb4cbfb1ad163ae658fd11b4ea45e8",
+      "bytes": 22447,
+      "format": "public-key-armor-from-HTML"
     }
   ],
   "published_patches": [
@@ -208,5 +215,6 @@
   "original_source_qualification_head": "239851e624d6ac846475769a483f9224f49e942c",
   "original_source_qualification_run": 40129903711,
   "original_source_qualification_artifact_SHA256": "599b57ec97ef1b74090111470c9a2d56cdcbf46af9e9788f9c37a8b441393264",
-  "original_supported_harness_profile_not_full_case_platform_acceptance": true
+  "original_supported_harness_profile_not_full_case_platform_acceptance": true,
+  "existing_official_primary_fingerprint": "76A28E42C9811D91E88FBA5E2EC0FFB3B7301B1F"
 }

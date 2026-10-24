@@ -52,7 +52,7 @@ def main():
     }
     report['actual_SDK_package_tool_versions'] = subprocess.check_output(
         ['dpkg-query', '-W', '-f=${binary:Package}\t${Version}\n',
-         'dpkg-dev', 'dist', 'debhelper', 'gpgv', 'debian-keyring'], text=True)
+         'dpkg-dev', 'dist', 'debhelper', 'gpg', 'gpgv', 'debian-keyring'], text=True)
     report['official_SDK_keyring_file_sha256'] = {
         p.name: digest(p.read_bytes()) for p in Path('/usr/share/keyrings').glob('debian-*.gpg')
         if p.is_file()}
@@ -82,6 +82,72 @@ def main():
     baseline = {}
     source = work/spec['archive_root']
     try:
+        # The stable SDK keyring can predate a maintainer's normal expiry renewal.
+        # Keep the original official trust anchor and use only its exact renewed
+        # public certificate in this temporary SDK home. No ownertrust is changed.
+        fingerprint = spec['existing_official_primary_fingerprint']
+        if fingerprint != '76A28E42C9811D91E88FBA5E2EC0FFB3B7301B1F':
+            raise ValueError('The existing official signer trust anchor changed')
+        home = work/'home/.gnupg'
+        home.mkdir(mode=0o700)
+        official = home/'official-baseline.gpg'
+        shutil.copyfile('/usr/share/keyrings/debian-keyring.gpg', official)
+        gpg = ['gpg', '--batch', '--no-options', '--homedir', str(home)]
+
+        def export_public(name, arguments):
+            result = subprocess.run(gpg+arguments, env=environment, cwd=work,
+                                    capture_output=True, timeout=60)
+            (output/(name+'.stderr.log')).write_bytes(result.stderr)
+            if result.returncode or not result.stdout or len(result.stdout) > 1024*1024:
+                raise RuntimeError('Public certificate export failed: '+name)
+            path = output/(name+'.gpg')
+            path.write_bytes(result.stdout)
+            return path
+
+        def primary_fingerprint(text):
+            lines = text.splitlines()
+            primary = [i for i, line in enumerate(lines) if line.startswith('pub:')]
+            if len(primary) != 1 or any(line.startswith(('sec:', 'ssb:')) for line in lines):
+                raise ValueError('Expected exactly one public primary certificate')
+            index = primary[0]
+            if index+1 >= len(lines) or not lines[index+1].startswith('fpr:'):
+                raise ValueError('Public primary fingerprint missing')
+            return lines[index+1].split(':')[9]
+
+        original_key = export_public('official-baseline-signer',
+                                     ['--no-default-keyring', '--keyring', str(official),
+                                      '--export', fingerprint])
+        original_description = run('describe-official-signer',
+                                   gpg+['--with-colons', '--show-keys', str(original_key)], work, 60)
+        renewal_description = run('describe-pinned-renewal',
+                                  gpg+['--with-colons', '--show-keys',
+                                       str(inputs/'perl-maintainer-renewal.asc')], work, 60)
+        if (primary_fingerprint(original_description) != fingerprint
+                or primary_fingerprint(renewal_description) != fingerprint):
+            raise ValueError('Renewal differs from the existing official trust anchor')
+        run('import-original-official-certificate',
+            gpg+['--import-options', 'import-minimal', '--import', str(original_key)], work, 60)
+        run('import-exact-official-renewal', gpg+['--import-options', 'import-minimal',
+                                                 '--import', str(inputs/'perl-maintainer-renewal.asc')], work, 60)
+        live = run('describe-live-renewed-signer',
+                   gpg+['--with-colons', '--list-keys', fingerprint], work, 60)
+        if primary_fingerprint(live) != fingerprint:
+            raise ValueError('Imported public certificate changed identity')
+        primary = next(line.split(':') for line in live.splitlines() if line.startswith('pub:'))
+        if primary[1] in {'e', 'r', 'd'} or (primary[6] and int(primary[6]) <= time.time()):
+            raise RuntimeError('The renewed primary key is expired, revoked or disabled')
+        renewed = export_public('verified-renewed-signer', ['--export', fingerprint])
+        shutil.copyfile(renewed, home/'trustedkeys.gpg')
+        (home/'trustedkeys.gpg').chmod(0o600)
+        report['SDK_only_exact_primary_key_renewal'] = {
+            'existing_official_primary_fingerprint': fingerprint,
+            'baseline_certificate_sha256': digest(original_key.read_bytes()),
+            'renewed_certificate_sha256': digest(renewed.read_bytes()),
+            'renewed_primary_expiry_unix': primary[6],
+            'different_primary_key_or_ownertrust_introduced': False,
+            'operator_or_server_trust_store_changed': False,
+            'normal_signature_algorithm_time_and_revocation_checks_disabled': False,
+        }
         with tarfile.open(inputs/'perl_5.44.0.orig.tar.xz', mode='r:xz') as archive:
             original = {m.name.removeprefix(spec['archive_root']+'/'): digest(archive.extractfile(m).read())
                         for m in archive.getmembers() if m.isfile()}
@@ -165,7 +231,7 @@ def main():
             unexpected_cases = [n for n in report['publisher_original_case_helper_file_sha256']
                                 if after.get(n) not in {original[n], baseline.get(n)}]
             report['unreviewed_case_helper_changes'] = unexpected_cases
-            recipe_changes = [n for n, h in report['published_recipe_file_sha256'].items()
+            recipe_changes = [n for n, h in report.get('published_recipe_file_sha256', {}).items()
                               if not (source/n).is_file() or digest((source/n).read_bytes()) != h]
             report['published_recipe_files_changed_during_build'] = recipe_changes
         else:
