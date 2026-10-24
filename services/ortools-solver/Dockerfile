@@ -50,6 +50,7 @@ FROM scratch AS wheel-export
 COPY --from=ortools-build /opt/or-tools/build/python/dist/ /
 COPY --from=ortools-build /opt/or-tools/HAI_PORT.json /ortools-source-port.json
 COPY --from=ortools-build /opt/or-tools/build/_deps/protobuf-src/HAI_PORT.json /protobuf-source-port.json
+COPY --from=ortools-build /opt/or-tools/build/_deps/pybind11_protobuf-src/HAI_PORT.json /pybind11-protobuf-source-port.json
 COPY --from=ortools-build /opt/or-tools/build-tool-provenance.json /build-tool-provenance.json
 
 FROM python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS native-build
@@ -88,6 +89,7 @@ RUN wheel="$(find /tmp -maxdepth 1 -type f -name 'ortools-*.whl' -print -quit)" 
     && rm "$wheel"
 COPY --from=ortools-build /opt/or-tools/HAI_PORT.json /usr/share/doc/hai-ortools/ortools-source-port.json
 COPY --from=ortools-build /opt/or-tools/build/_deps/protobuf-src/HAI_PORT.json /usr/share/doc/hai-ortools/protobuf-source-port.json
+COPY --from=ortools-build /opt/or-tools/build/_deps/pybind11_protobuf-src/HAI_PORT.json /usr/share/doc/hai-ortools/pybind11-protobuf-source-port.json
 COPY --from=ortools-build /opt/or-tools/build-tool-provenance.json /usr/share/doc/hai-ortools/build-tool-provenance.json
 # Install dependencies while building; the immutable runtime has no package installer.
 RUN python -m pip uninstall --yes pip

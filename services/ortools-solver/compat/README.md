@@ -64,3 +64,15 @@ and bootstrap wheel, and receives the existing strict exact-image scan without
 exclusions. An explicit Docker context allowlist excludes operator/secret files.
 Other compiler/bundled/native/OS versions and real runtime compatibility remain
 unqualified until their actual hosted evidence is inspected.
+
+## Descriptor bridge adaptation
+
+The first Protobuf 7 build exposed three DescriptorDatabase overrides whose
+parameters still used const std::string&. The pinned pybind11_protobuf bridge
+now accepts absl::string_view, matching the actual Protobuf 36.2 header, and
+copies each name to std::string at its Python call boundary. This preserves
+Python argument conversion and avoids storing a borrowed view. Six exact edits
+in one hash-bound bridge file leave all other bridge code unchanged. Its source
+receipt is exported beside the OR-Tools and Protobuf receipts. This fixes the
+observed interface mismatch; successful compilation and existing cases still
+require hosted CI proof. No application cases or scanner exceptions are added.
