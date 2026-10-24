@@ -85,3 +85,14 @@ call sites. Preserve the existing error, signed/unsigned range and cast checks.
 Two exact hash-bound source edits fix the observed missing symbols without
 restoring an obsolete compatibility macro or downgrading SWIG/Python. Compilation
 and the unchanged scheduling cases still require hosted qualification.
+
+## Routing typemap integer conversion
+
+The subsequent build reached the generated routing bindings and exposed the
+same obsolete API in routing_types.swig. One exact hash-bound replacement uses
+PyLong_AsLong in the source IndexT input typemap, preserving its conversion and
+index construction. Generated wrapper files are not edited. A complete archive
+search found this site and the two already ported python-swig.h sites; the
+modified source contains no remaining PyInt_AsLong calls. All nine modified
+source files across three components verify against their original archives.
+Native compilation, existing cases and strict scans still require hosted proof.

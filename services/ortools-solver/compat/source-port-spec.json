@@ -74,6 +74,16 @@
               "new": "long i = PyLong_AsLong(py);                      // NOLINT"
             }
           ]
+        },
+        "ortools/constraint_solver/python/routing_types.swig": {
+          "original_sha256": "547dda226cd953bba2139acea6a1cbb5c90e420833e85223ce714224ad7430ba",
+          "patched_sha256": "e99def4669cf367b424177b3c6b269461b09611036bf22e4bb939577c1d12ea2",
+          "edits": [
+            {
+              "old": "  $1 = IndexT(PyInt_AsLong($input));",
+              "new": "  $1 = IndexT(PyLong_AsLong($input));"
+            }
+          ]
         }
       }
     },
