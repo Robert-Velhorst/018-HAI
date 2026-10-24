@@ -1,9 +1,15 @@
-FROM python:3.15.1-slim-bookworm@sha256:575f8bc12ec26542e0678bc6b60e385218248019d433157ec327264a78c3a853
+FROM python:3.15.1-slim@sha256:08275f764e022331c6d3e3ca55d8cce01fa4684b02111adf0445d71806fe7941
 
 WORKDIR /app
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements-build.lock requirements.lock ./
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential libyaml-dev libyaml-0-2 \
+    && python -m pip install --no-cache-dir --only-binary :all: --require-hashes -r requirements-build.lock \
+    && python -m pip install --no-cache-dir --no-build-isolation --require-hashes -r requirements.lock \
+    && python -m pip uninstall --yes cython setuptools-scm wheel \
+    && apt-get purge -y --auto-remove build-essential libyaml-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY app.py ./
 COPY test_app.py ./

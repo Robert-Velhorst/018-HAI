@@ -25,19 +25,19 @@ jobs:
             python-version: "3.12"
             requirements-lock: services/crewai-runner/requirements.lock
           - name: deepeval-runner
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: services/deepeval-runner/requirements.lock
           - name: deepteam-runner
-            python-version: "3.12"
+            python-version: "3.13.17"
             requirements-lock: services/deepteam-runner/requirements.lock
           - name: docling-runner
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: services/docling-runner/requirements.lock
           - name: evidently-runner
             python-version: "3.12"
             requirements-lock: services/evidently-runner/requirements.lock
           - name: fastmcp-bridge
-            python-version: "3.13"
+            python-version: "3.15.1"
             requirements-lock: services/fastmcp-bridge/requirements.lock
           - name: garak-runner
             python-version: "3.12"
@@ -55,7 +55,7 @@ jobs:
             python-version: "3.12"
             requirements-lock: services/guardrails-runner/requirements.lock
           - name: lm-eval-runner
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: services/lm-eval-runner/requirements.lock
           - name: miniswe-runner
             python-version: "3.14"
@@ -82,7 +82,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -90,8 +90,15 @@ jobs:
             services/*/requirements.lock
             services/*/requirements.txt
             services/*/requirements.in
+      - name: Install hash-locked Python build metadata tools
+        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner"]'), matrix.name)
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary :all: --require-hashes -r "services/${{ matrix.name }}/requirements-build.lock"
+      - name: Install refreshed hash-locked runner dependencies
+        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner"]'), matrix.name)
+        run: python -m pip install --disable-pip-version-check --no-build-isolation --require-hashes -r "${{ matrix.requirements-lock }}"
       - name: Install hash-locked runner dependencies
-        if: matrix.requirements-lock != ''
+        if: matrix.requirements-lock != '' && !contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner"]'), matrix.name)
         run: python -m pip install --disable-pip-version-check --require-hashes -r "${{ matrix.requirements-lock }}"
       - name: Compile runner and run isolated contract tests
         working-directory: services/${{ matrix.name }}
@@ -1383,7 +1390,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Python CI and authentication contracts

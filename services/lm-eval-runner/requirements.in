@@ -1,1 +1,2 @@
 lm-eval[api]==0.4.13
+setuptools==84.2.1

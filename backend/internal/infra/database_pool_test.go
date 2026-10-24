@@ -309,7 +309,9 @@ func TestPostgresPoolIdleLifetimeIsApplied(t *testing.T) {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(3 * time.Second)
-	for pool.Stats().MaxIdleTimeClosed == 0 && time.Now().Before(deadline) {
+	// database/sql increments its counter before closing the driver outside its lock.
+	// Observe both outcomes before evaluating the existing completion assertion.
+	for (pool.Stats().MaxIdleTimeClosed == 0 || connector.closed.Load() == 0) && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if pool.Stats().MaxIdleTimeClosed == 0 || connector.closed.Load() == 0 {
