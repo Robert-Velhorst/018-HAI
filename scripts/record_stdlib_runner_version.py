@@ -30,10 +30,16 @@ def main():
                                  "GRYPE_CHECK_FOR_APP_UPDATE": "false", "SYFT_CHECK_FOR_APP_UPDATE": "false"})
     if len(result.stdout) > 65536 or len(result.stderr) > 65536:
         raise ValueError("Unexpected version response size")
-    actual = (str(json.loads(result.stdout)["version"]).lstrip("v") if json_output
-              else next(iter(re.findall(r"\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", result.stdout)), ""))
+    if json_output:
+        actual = str(json.loads(result.stdout)["version"]).removeprefix("v")
+    elif sys.argv[1] == "gitleaks-runner":
+        # The publisher image embeds `git describe --tags`, including its v prefix.
+        match = re.fullmatch(r"v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\s*", result.stdout)
+        actual = match.group(1) if match else ""
+    else:
+        actual = next(iter(re.findall(r"\b\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", result.stdout)), "")
     if actual != expected or platform.python_version() != "3.15.1":
-        raise ValueError("The installed binary/interpreter differs from the reviewed source")
+        raise ValueError(f"{sys.argv[1]}: expected binary {expected} / Python 3.15.1; got {actual!r} / {platform.python_version()}")
     bundled = Path(sysconfig.get_path("stdlib")) / "ensurepip" / "_bundled"
     if find_spec("pip") is not None or list(bundled.glob("*.whl")):
         raise ValueError("A package installer or bootstrap wheel remains")
