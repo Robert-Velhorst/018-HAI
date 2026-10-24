@@ -1147,7 +1147,7 @@ services:
     networks: [coding-runners-internal]
 
   nginx:
-    image: nginx:1.30.6-alpine@sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5
+    image: nginx:1.31.0-alpine@sha256:2f07d83bf561b506400dc183b1b2003803e39efbd22451f848adaba14d28c7c7
     container_name: gateway
     hostname: gateway
     restart: unless-stopped
@@ -1199,7 +1199,7 @@ services:
   # exposes the Agent Card and planning JSON-RPC route through
   # a loopback host port when an operator explicitly enables this profile.
   a2a-gateway:
-    image: nginx:1.30.6-alpine@sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5
+    image: nginx:1.31.0-alpine@sha256:2f07d83bf561b506400dc183b1b2003803e39efbd22451f848adaba14d28c7c7
     profiles: ["local-a2a"]
     container_name: 018-hai-a2a-gateway
     restart: unless-stopped
@@ -1245,7 +1245,7 @@ services:
   # The native Windows DSH bridge polls it through a loopback host port and it
   # forwards only the host-runtime lease lifecycle endpoints to the backend.
   host-runtime-gateway:
-    image: nginx:1.30.6-alpine@sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5
+    image: nginx:1.31.0-alpine@sha256:2f07d83bf561b506400dc183b1b2003803e39efbd22451f848adaba14d28c7c7
     profiles: ["local-host-runtime"]
     container_name: 018-hai-host-runtime-gateway
     restart: unless-stopped
