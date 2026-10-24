@@ -62,3 +62,13 @@ passing cases and zero skips, errors or failures in all four suites. A failed
 suite does not prevent the other suites from producing their evidence. No
 case expectation, warning filter, compatibility guard or advisory gate is
 relaxed. New-head hosted results remain required.
+
+The initial hosted suites pass Datasets 11, Mbstrdecoder 28 and Typepy 835
+cases. Markdown passes 78/79; its original clear-theme case fails because the
+optional upstream altrow theme is absent from the test environment. The tool
+input now includes the current altrow package. Normal dependency resolution is
+constrained to the exact qualified runtime graph and uses the reviewed local
+port wheels; incompatible requirements still fail resolution. Overlapping tool
+distributions must match both runtime versions and every Python/native source
+byte before tests run. No case or production dependency is changed to make the
+theme assertion pass. All four suites require new-source hosted qualification.

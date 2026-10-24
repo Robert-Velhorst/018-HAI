@@ -34,9 +34,17 @@ def main():
     import re
     normalize=lambda name:re.sub(r'[-_.]+','-',name.lower())
     expected=json.loads(Path('/inputs/expected-distributions.json').read_text(encoding='utf-8'))
-    tools={normalize(d.metadata['Name']):d.version for d in distributions(path=['/case-tools'])}
+    runtime={normalize(d.metadata['Name']):d for d in distributions(path=['/installed'])}
+    tool_distributions={normalize(d.metadata['Name']):d for d in distributions(path=['/case-tools'])}
+    tools={name:d.version for name,d in tool_distributions.items()}
+    overlap_source_counts={}
     for name in set(expected)&set(tools):
         if expected[name]!=tools[name]:raise ValueError('Test tool shadows the qualified runtime version: '+name)
+        source_manifest=lambda d:{str(p):hashlib.sha256(p.locate().read_bytes()).hexdigest()
+                                  for p in d.files if str(p).endswith(('.py','.so'))}
+        before,after=source_manifest(runtime[name]),source_manifest(tool_distributions[name])
+        if before!=after:raise ValueError('Test tool shadows qualified Python/native source bytes: '+name)
+        overlap_source_counts[name]=len(before)
     # Datasets' published test helpers use distutils.util. The declared current
     # Setuptools test dependency supplies its normal implementation; no module
     # stub, monkeypatch or warning suppression is introduced here.
@@ -55,7 +63,7 @@ def main():
     passed=sum(all(c.find(k) is None for k in ['failure','error','skipped']) for c in cases)
     result={'suite':args.suite,'pytest_returncode':code,'case_items_observed':len(cases),
             'passed':passed,'skipped':skipped,'failures':failures,'errors':errors,
-            'source_files_sha256_verified':len(spec['files']),
+            'source_files_sha256_verified':len(spec['files']),'identical_runtime_tool_source_file_counts':overlap_source_counts,
             'all_cases_and_helpers_unchanged':True,'network_mode':'none',
             'operator_data_or_credentials_mounted':False,
             'new_application_cases_authored':False,'real_model_or_agent_invoked':False,

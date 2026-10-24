@@ -137,8 +137,8 @@ python -c 'import sys; assert sys.version_info[:3] == (3,15,1)'
 "$CC" --version
 cp /tools/uv /sdk-tools/uv
 chmod 700 /sdk-tools/uv
-/sdk-tools/uv pip compile /inputs/requirements.sdk-cases.in --upgrade --generate-hashes --emit-index-url --no-python-downloads --python-version 3.15.1 --python-platform x86_64-unknown-linux-gnu --output-file /outputs/requirements.sdk-cases.lock
-/sdk-tools/uv pip install --no-python-downloads --require-hashes --build-constraints /inputs/requirements.sdk-cases.in --target /case-tools -r /outputs/requirements.sdk-cases.lock
+/sdk-tools/uv pip compile /inputs/requirements.sdk-cases.in --constraint /outputs/requirements.lock --find-links /inputs --upgrade --generate-hashes --emit-index-url --no-python-downloads --python-version 3.15.1 --python-platform x86_64-unknown-linux-gnu --output-file /outputs/requirements.sdk-cases.lock
+/sdk-tools/uv pip install --no-python-downloads --require-hashes --find-links /inputs --build-constraints /inputs/requirements.sdk-cases.in --target /case-tools -r /outputs/requirements.sdk-cases.lock
 ''']
     setup=run_owned(tools,'tools',600)
     (proof/'tools-resolution-installation.log').write_bytes(setup.stdout+setup.stderr)
