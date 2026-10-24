@@ -1,5 +1,27 @@
 # Main-preserved temporary audit clone cleanup
 
+## Subsequent sparse main-ancestor audit copy
+
+The previously excluded `codex-018-hai-audit-20261020` copy was later reviewed
+with explicit sparse-checkout handling. Its head is the preserved main-ancestor
+snapshot below, with zero candidate-unique commits. All 44 physically present
+tracked files were read and matched their committed blobs after ordinary
+line-ending normalization. The other 3,200 indexed paths were absent under the
+reviewed sparse selection; they were not counted as verified physical files.
+The index matched HEAD, refs and reflogs contained no additional history, fsck
+was clean, and no ignored/untracked files or shared worktrees were found.
+
+Sparse configuration and source hashes were frozen and rechecked by the native
+removal preflight, alongside exact target resolution, metadata classification,
+reparse points, maintenance registrations and process/container consumers.
+Only that explicit clone was deleted. Its absence was confirmed afterward.
+The removed target contained 84 total files and 2,625,850 logical bytes.
+Observed C-drive free space changed from 7,127,756,800 to 7,130,517,504 bytes;
+concurrent filesystem changes prevent attributing every free byte to this action.
+The original working checkout, integration checkout and transcript archives
+were untouched. This resolves the earlier sparse-copy exclusion for this exact
+target only, not any other checkout or the full cleanup objective.
+
 Remote preservation target: `3b5afa697ebb0e72b01d59e3a04648a04317cd45`.
 Preserved snapshot: `73999cf165a829a62f3d14c8ca7d8ead07afc491`.
 
