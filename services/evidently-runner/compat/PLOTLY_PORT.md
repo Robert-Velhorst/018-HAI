@@ -44,3 +44,13 @@ Primary sources:
 - https://pypi.org/pypi/plotly/7.1.0/json
 - https://plotly.com/python/v6-migration/
 - https://plotly.com/python/v7-migration/
+
+## Public source-digest scanner provenance
+
+The full upstream module manifest includes filenames containing `auth`, `token`
+and `api`. Gitleaks classified five adjacent SHA-256 values as generic API keys.
+Each value was independently recomputed from the hash-verified public Evidently
+wheel. They are source-integrity digests and authenticate no service. Five exact
+historical commit/path/rule/line fingerprints in `.gitleaksignore` record only
+these reviewed false positives. No file path, detector, image advisory, future
+value or other finding is excluded; the redacted scanner remains unchanged.
