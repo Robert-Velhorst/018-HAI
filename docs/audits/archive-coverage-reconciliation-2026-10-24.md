@@ -71,6 +71,14 @@ projection function/type and fixed catalog-maintenance failure messages. The
 extra URL-redaction repair remains published in PR #319, not integrated on main.
 No fresh unit-test pass or whole-file completion is implied by this static pass.
 
+The remaining ten production identities have static dispositions in
+`archive-owner-and-maintenance-helper-dispositions-2026-10-24.md`, including
+guarded extraction deletion, private need overrides, final-authorized model
+pulls, enriched telemetry and obsolete private utilities/import markers. All
+23 absent production identities across twenty archived files now have explicit
+decisions. This does not clear other changed declarations in those files or
+prove database durability, live provider acceptance or complete history review.
+
 All nine historical `Test...` identities absent from their original files in
 this cohort have individual dispositions in
 `archive-test-successors-reconciliation-2026-10-24.md`. They comprise renamed,
