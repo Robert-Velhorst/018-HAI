@@ -112,6 +112,18 @@ def main():
         if port_build["sha256"] != "4522bd0c2914a03df1d02ae29c56087d65d3b43bfbc941cef2bfd98587e23c36":
             raise ValueError("LiteLLM candidate differs from the reviewed static build")
         (output/"port-build.json").write_text(json.dumps(port_build,indent=2)+"\n",encoding="utf-8")
+        parents = subprocess.run([sys.executable,
+            str(root/"services/miniswe-runner/compat/build_python_parent_ports.py"),
+            "--output-directory",str(output/"inputs")],capture_output=True,check=False,timeout=180)
+        (output/"python-parent-port-build.log").write_bytes(parents.stdout+parents.stderr)
+        if parents.returncode:
+            raise RuntimeError("Source-bound Python parent port construction failed")
+        parent_builds=json.loads(parents.stdout)
+        expected_parents={"datasets":"c38f4c04391c1696121d7a9e777c6f598ff6766b7aaad70c68e98c1d7ab6511e",
+                          "botocore":"cbffba919de6995f7908519ad2924aac4f9dc8f73858eefbffe1e7e99686d00e"}
+        if len(parent_builds)!=2 or {p["name"]:p["sha256"] for p in parent_builds}!=expected_parents:
+            raise ValueError("Python parent ports differ from reviewed static builds")
+        (output/"python-parent-port-build.json").write_text(json.dumps(parent_builds,indent=2)+"\n",encoding="utf-8")
         native = subprocess.run([sys.executable,
             str(root/"services/miniswe-runner/compat/build_fastuuid_wheel.py"),
             "--output",str(output)],capture_output=True,check=False,timeout=1800)

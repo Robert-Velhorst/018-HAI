@@ -69,6 +69,8 @@ jobs:
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/qualification/*.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/public-sdk-qualification.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-build.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/python-parent-port-build.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/python-parent-port-build.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-build.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-preparation.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-build/exports/Cargo.lock

@@ -62,7 +62,8 @@ def main():
     import_returncode = None
     if result.returncode == 0:
         check = common + ["--network","none","--env","HAI_DISPOSABLE_PUBLIC_SDK=1",
-                  "--env","LITELLM_LOCAL_MODEL_COST_MAP=True","--env","MSWEA_SILENT_STARTUP=1"]
+                  "--env","LITELLM_LOCAL_MODEL_COST_MAP=True","--env","MSWEA_SILENT_STARTUP=1",
+                  "--env","HF_HUB_OFFLINE=1","--env","HF_HUB_DISABLE_TELEMETRY=1"]
         for src,dst,readonly in [(inputs,"/inputs",True),(site,"/installed",True),(proof,"/qualification",False)]:
             check += ["--mount",f"type=bind,src={src},dst={dst}" + (",readonly" if readonly else "")]
         check += [args.sdk,"python","-I","/inputs/verify_sdk_import.py","--site-packages","/installed",

@@ -144,3 +144,35 @@ UEFI cross-compilation and execution are still unqualified. No backend is
 removed or replaced with an unsupported fallback, and no compiler/version
 guard is bypassed. Existing upstream vector/functional cases are preserved;
 their execution and full image/application acceptance remain required.
+
+## Remaining Python parent contracts
+
+Datasets 5.1.0+hai.fsspec.1 selects Fsspec 2026.9.0; Botocore
+1.43.118+hai.dateutil3.1 selects python-dateutil 3.0.0. Both explicitly restrict
+the prepared profile to Python 3.15. These are source-bound distribution
+metadata ports: all 154 Datasets and 76 Botocore Python files, resources,
+permissions, licenses and entrypoints remain unchanged. Their module version
+constants therefore remain the original base release; installed distribution
+identity and retained provenance identify each modified port honestly.
+
+Static review identifies all 42 current dependency module/export sites, including
+Dateutil's timezone reexports and the Windows-only tzwinlocal branch. This
+supports preparing the candidate; it does not prove parser/filesystem/data or
+provider behavior. Deterministic wheel construction verifies every original and
+derived RECORD entry and preserves all source/resource bytes. The public SDK
+checks actual installed parent source manifests, imports real Datasets/Botocore
+modules and current filesystem/timestamp interfaces with network disabled, and
+sets the Hub offline/telemetry opt-outs. No dataset, credential provider, model
+or agent is constructed, and no application case is added. New-source hosted
+resolution/import, existing functional cases and full image/privacy/data/provider
+acceptance remain required before canonical integration.
+
+## UEFI upstream limitation
+
+Getrandom's existing efi_rng backend explicitly uses feature(uefi_std), and
+Rust 1.99.1 still marks its UEFI environment API unstable. The published backend
+therefore requires Nightly, as stated by its README. Its full UEFI qualification
+cannot be asserted on the required stable compiler. The source evidence and
+the current target component hash are retained separately; no component was
+installed locally and no Nightly/bootstrap/feature-guard bypass is added. The
+qualified Linux profile does not establish UEFI cross-compilation or execution.

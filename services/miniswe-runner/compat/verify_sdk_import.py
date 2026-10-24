@@ -24,7 +24,9 @@ def main():
     sys.path.insert(0, str(args.site_packages))
     expected = {"mini-swe-agent": "2.4.6", "litellm": "1.106.3+hai.py315.2",
                 "filelock": "4.2.4", "openai": "3.37.0", "huggingface-hub": "2.3.0",
-                "importlib-metadata": "10.1.0", "fastuuid": "0.14.0+hai.py315.2"}
+                "importlib-metadata": "10.1.0", "fastuuid": "0.14.0+hai.py315.2",
+                "datasets":"5.1.0+hai.fsspec.1","botocore":"1.43.118+hai.dateutil3.1",
+                "fsspec":"2026.9.0","python-dateutil":"3.0.0"}
     observed = {name: version(name) for name in expected}
     if observed != expected:
         raise ValueError("Installed SDK identities differ from the reviewed candidate")
@@ -50,6 +52,17 @@ def main():
         path = next(p for p in fastuuid_distribution.files if str(p) == native["path"])
         if hashlib.sha256(path.locate().read_bytes()).hexdigest() != native["sha256"]:
             raise ValueError("Installed FastUUID extension differs from the source-bound build")
+    parent_sources={}
+    for name in ["datasets","botocore"]:
+        parent=distribution(name)
+        receipt=next(p for p in parent.files if str(p).endswith(".dist-info/HAI_PARENT_PORT.json"))
+        parent_spec=json.loads(receipt.locate().read_text(encoding="utf-8"))
+        files={str(p):hashlib.sha256(p.locate().read_bytes()).hexdigest()
+               for p in parent.files if str(p).endswith(".py")}
+        digest=hashlib.sha256(json.dumps(files,sort_keys=True,separators=(",",":")).encode()).hexdigest()
+        if len(files)!=parent_spec["unchanged_python_file_count"] or digest!=parent_spec["unchanged_python_manifest_sha256"]:
+            raise ValueError("Installed Python parent sources differ")
+        parent_sources[name]=len(files)
     # These imports execute only in the public, credential-free hosted SDK.
     # No model, provider, agent instance or application case is invoked.
     import filelock
@@ -57,6 +70,12 @@ def main():
     import litellm
     import litellm.rust_bridge._native
     import openai
+    import datasets
+    import botocore.auth
+    import botocore.credentials
+    import botocore.utils
+    import dateutil.parser
+    from fsspec.core import url_to_fs
     from minisweagent.agents.default import DefaultAgent
     from minisweagent.models.litellm_model import LitellmModel
 
@@ -67,12 +86,17 @@ def main():
         raise ValueError("Expected real SDK/agent/model interfaces were not imported")
     if not isinstance(fastuuid.UUID, type):
         raise ValueError("The real FastUUID extension did not provide its UUID class")
+    if (not isinstance(datasets.Dataset,type) or not callable(url_to_fs)
+            or not {"timestr","parserinfo"}.issubset(inspect.signature(dateutil.parser.parse).parameters)):
+        raise ValueError("Real parent/filesystem/timestamp interfaces differ")
     result = {"python": platform.python_version(), "standard_GIL_build": True,
               "distributions": observed, "vendor_sdk_imports_pass": True,
               "native_bridge_loaded": True, "native_bridge_sha256_verified": True,
               "fastuuid_native_extension_loaded_and_hash_verified": True,
               "upstream_python_files_unchanged": len(sources)-len(spec["source_patches"]),
               "python_source_patch_files": len(spec["source_patches"]),
+              "parent_python_source_files_unchanged":parent_sources,
+              "datasets_botocore_fsspec_dateutil_real_imports_pass":True,
               "filelock_setup_signature_present": True,
               "application_cases_run": False, "model_or_agent_instantiated": False,
               "private_application_source_or_credentials_mounted": False,

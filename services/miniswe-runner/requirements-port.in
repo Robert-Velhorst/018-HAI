@@ -1,3 +1,5 @@
 mini-swe-agent==2.4.6
 litellm==1.106.3+hai.py315.2
 fastuuid==0.14.0+hai.py315.2
+datasets==5.1.0+hai.fsspec.1
+botocore==1.43.118+hai.dateutil3.1
