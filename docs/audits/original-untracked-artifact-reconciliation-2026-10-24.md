@@ -33,6 +33,19 @@ All 32 selected package Go files and the two module inputs matched the executed 
 
 The run used existing Go 1.27.3, offline modules, serial package execution and two CPU threads. Its owned build cache was cleared through native Go cleanup afterward. This removes verification overhead, not pre-existing user data. No containers, agents, app stack, real database or external provider were started.
 
+## IDP untracked test source disposition
+
+All 10 untracked IDP test-file bodies were compared in full against main and the prepared source. Their 56 original root test names remain present. Whole-file equality against main was established after exactly enumerated successor edits, not inferred from name matching:
+
+- 84 authentication calls receive an explicit context argument.
+- Four files add the context import; the reset-mail fixture accepts the context-aware sender interface.
+- The isolated PostgreSQL fixture uses the dedicated search-path query parameter.
+- One concurrent refresh goroutine is reformatted without changing statement order.
+
+Nine prepared files equal main after line-ending normalization. The password-reset integration file additionally retains two previously prepared fixture fixes: reload the persisted user snapshot to respect PostgreSQL timestamp precision, and use a fresh Gorm destination when checking a duplicate account. Explicit transformations verify the entire prepared file rather than waiving its differences.
+
+For every file, deliberately changing an assertion causes the full-file comparison to reject the mutation. No production or test code was replaced by this source review. These are static successor checks, not passing Redis/PostgreSQL test execution or a guarantee about all transitive authentication behavior. The other untracked source groups and the complete working copy are not cleared for deletion.
+
 ## Remaining work and retention
 
 The other historical failure roots have not been requalified by this three-root run. Untracked source differences, private runtime state, recovery artifacts, other checkouts and conversation archives still require their own integration and preservation decisions. All original files remain intact. This report is aggregate evidence only, not a substitute for the private raw records, main integration, publication authorization or deletion proof.
