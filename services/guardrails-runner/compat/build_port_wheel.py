@@ -31,9 +31,15 @@ def sha256(data):
 
 
 def guard_methods(data):
-    cls = next(n for n in ast.parse(data).body if isinstance(n, ast.ClassDef) and n.name == 'Guard')
-    return {n.name: sha256(ast.dump(n, include_attributes=False).encode())
-            for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    source = data.decode('utf-8')
+    cls = next(n for n in ast.parse(source).body if isinstance(n, ast.ClassDef) and n.name == 'Guard')
+    lines = source.splitlines(keepends=True)
+    result = {}
+    for node in cls.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            first = min([node.lineno] + [n.lineno for n in node.decorator_list])
+            result[node.name] = sha256(''.join(lines[first-1:node.end_lineno]).encode())
+    return result
 
 
 def main():
@@ -77,8 +83,8 @@ def main():
     for path, digest in spec['unchanged_validation_modules'].items():
         if sha256(files[path]) != digest:
             raise ValueError('Validation engine source changed: ' + path)
-    if guard_methods(files['guardrails/guard.py']) != spec['unchanged_Guard_method_AST_hashes']:
-        raise ValueError('A Guard method differs from the reviewed upstream engine')
+    if guard_methods(files['guardrails/guard.py']) != spec['unchanged_Guard_method_source_hashes']:
+        raise ValueError('A Guard method source differs from the reviewed upstream engine')
     # Preserve upstream UTF-8 bytes and avoid platform/email/zlib-dependent
     # rewrites. The derived archive uses fixed metadata and stored members.
     original_metadata = files[old_info + '/METADATA'].replace(b'\r\n', b'\n')
@@ -139,7 +145,7 @@ def main():
     print(json.dumps({'filename': output.name, 'sha256': sha256(result.getvalue()),
                       'upstream_sha256': spec['upstream_wheel_sha256'],
                       'patched_modules': len(spec['patches']),
-                      'unchanged_Guard_methods': len(spec['unchanged_Guard_method_AST_hashes']),
+                      'unchanged_Guard_methods': len(spec['unchanged_Guard_method_source_hashes']),
                       'vendor_code_executed': False, 'runtime_qualified': False}))
 
 

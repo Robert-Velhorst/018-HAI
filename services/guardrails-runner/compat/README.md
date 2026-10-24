@@ -3,7 +3,7 @@
 This profile keeps upstream Guardrails AI 0.11.0's validation engine on Python
 3.15.1. It does not replace Guardrails with a generic Pydantic-only validator.
 The original Runner, Pydantic schema and schema-validator modules remain
-byte-identical; all 34 Guard method ASTs are checked against upstream.
+byte-identical; all 34 Guard method source hashes are checked against upstream.
 
 Five source-bound patches defer package/telemetry optional exports, make a
 LangChain type import conditional, initialize offline settings without reading

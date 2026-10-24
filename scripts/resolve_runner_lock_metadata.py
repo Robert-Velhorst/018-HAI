@@ -45,9 +45,13 @@ def main():
     if args.runner == "guardrails-runner":
         build = subprocess.run([sys.executable, str(root / "services/guardrails-runner/compat/build_port_wheel.py"),
                                 "--output-directory", str(output / "inputs")],
-                               check=True, capture_output=True, text=True, timeout=120)
+                               check=False, capture_output=True, text=True, timeout=120)
+        (output / "port-build.log").write_text(build.stdout + build.stderr, encoding="utf-8")
+        if build.returncode:
+            print((build.stdout + build.stderr)[-12000:])
+            raise RuntimeError("Static Guardrails wheel preparation failed before dependency resolution")
         port_build = json.loads(build.stdout)
-        if port_build["sha256"] != "9c8d73203fa54f7d894420ff1c07ef1d3140a3162b88c7cac69c64ac56be0f25":
+        if port_build["sha256"] != "4cfe4d4d7cd4ab044bda2b47cafafe8f7a7c1a9007351ba75994ebed89176353":
             raise RuntimeError("Hosted derived Guardrails wheel differs from the reviewed static artifact")
     (output / "port-build.json").write_text(json.dumps(port_build, indent=2) + "\n", encoding="utf-8")
     (output / "inputs/requirements.in").write_bytes(source)

@@ -46,6 +46,7 @@ jobs:
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/outputs/requirements.lock
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/guardrails_ai-*.whl
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/receipt.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/resolution.log
           if-no-files-found: error
