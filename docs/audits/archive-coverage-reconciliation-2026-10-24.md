@@ -56,6 +56,13 @@ declaration identities, 36 with identities absent from the same file, and three
 historically unparsable snapshots. These are AST prioritization categories, not
 whole-file semantic completion or permission to restore malformed old code.
 
+The 39 declaration-preserved additions now have full-content canonical checks
+in `archive-canonical-go-preservation-2026-10-24.md`: fourteen complete formatted
+files are equal including comments, twenty-three retain all old nonblank lines
+in order with additions on main, and two have only that addition pattern plus
+testing-import block expansion. These are distinct evidence levels, not raw-byte
+equality for all 39 or runtime acceptance. No source deletion follows from them.
+
 Five absent production-helper identities now have assertion-level successor
 reviews in `archive-helper-successors-reconciliation-2026-10-24.md`: cookie
 persistence, criterion-specific evidence, MCP endpoint validation, A2A endpoint
