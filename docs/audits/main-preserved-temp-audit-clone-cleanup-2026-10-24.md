@@ -1,5 +1,29 @@
 # Main-preserved temporary audit clone cleanup
 
+## C-drive dependency audit working files: metadata retained
+
+The standalone dependency audit snapshot
+`d85cb1a657763027b21b0e59dc41aff8864b260e` is also an ancestor of reviewed
+main, with zero candidate-unique commits confirmed by GitHub. Its 3,231
+physical regular working files were checked against committed blobs: 110
+exact and 3,121 ordinary line-ending conversions. The complete index matched
+that snapshot; physical enumeration found no extra source files, ignored or
+untracked data, reparse entries, or hidden/skipped index flags.
+
+After fresh consumer, mount, source-hash and remote-preservation checks, only
+those working files were removed, totaling 38,159,649 logical bytes. A separate
+read-only check confirmed all 3,231 intended absences, no remaining working
+files and byte-identical retention of all 31 Git metadata files. Its other
+historical refs are retained, not claimed integrated by this snapshot check.
+
+Another 320 empty working directories were removed with the same nonrecursive
+empty-only boundary. The root now contains only `.git`. Free space observed
+before the file batch was 6,980,366,336 bytes and after the directory batch was
+7,026,458,624 bytes. These observations include the interval between batches
+and are not attributed exclusively to this operation. The tracked deletions
+are cleanup only and must never be staged or committed. The entire repository,
+its history and any other checkout have not been deleted by this step.
+
 ## D-drive audit working files: metadata retained
 
 The old D-drive audit snapshot `c9f74059b8fb57848b57ddd07519ff783b27fa2e`
