@@ -33,7 +33,7 @@ jobs:
   resolve:
     name: Resolve public metadata (${{ matrix.runner }})
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.runner == 'miniswe-runner' && 60 || 15 }}
+    timeout-minutes: ${{ matrix.runner == 'miniswe-runner' && 100 || 15 }}
     strategy:
       fail-fast: false
       matrix:
@@ -57,6 +57,12 @@ jobs:
           name: public-runner-metadata-${{ matrix.runner }}
           path: |
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/outputs/requirements.lock
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/outputs/requirements.sdk-cases.lock
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/upstream-case-specs.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/run_upstream_cases.py
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/requirements.sdk-cases.in
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/upstream-case-results/*
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/upstream-case-qualification.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/receipt.json

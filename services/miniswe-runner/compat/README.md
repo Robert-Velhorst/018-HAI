@@ -176,3 +176,22 @@ cannot be asserted on the required stable compiler. The source evidence and
 the current target component hash are retained separately; no component was
 installed locally and no Nightly/bootstrap/feature-guard bypass is added. The
 qualified Linux profile does not establish UEFI cross-compilation or execution.
+
+## Unchanged upstream behavior cases
+
+The hosted candidate job now runs hash-pinned, unchanged upstream FastUUID UUID
+cases, Datasets filesystem/file-lock cases and Botocore timestamp cases after
+real SDK imports qualify. Source commits, helper files and licenses are pinned
+in upstream-case-specs.json. These are public vendor cases, not newly authored
+application cases. The original Hypothesis CI profile is preserved. Each suite
+runs as UID 10001 with network disabled, read-only installed packages and no
+operator data or credentials. Qualification requires passing cases with zero
+skips, errors or failures; JUnit, logs and source manifests are retained.
+
+Test tools have a separate hash lock and never enter the runtime graph. LZ4 and
+Zstandard lack suitable published CPython 3.15 Linux wheels, so the pinned GCC
+16.2.0 disposable SDK builds their public sources against the read-only Python
+3.15.1 prefix. Setuptools supplies its normal distutils implementation for the
+unchanged Datasets helper. No source/case stub or compatibility guard bypass
+is introduced. A passing import check alone does not qualify these cases;
+new-head hosted results and complete runtime/image integration remain required.

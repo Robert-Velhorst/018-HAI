@@ -185,6 +185,16 @@ def main():
             (output/"receipt.json").write_text(json.dumps(receipt,indent=2)+"\n",encoding="utf-8")
             print((qualified.stdout+qualified.stderr).decode("utf-8",errors="replace")[-14000:])
             raise SystemExit(qualified.returncode)
+        cases = subprocess.run([sys.executable,
+            str(root/"services/miniswe-runner/compat/qualify_upstream_cases.py"),
+            "--output",str(output),"--sdk",sdk],capture_output=True,check=False,timeout=2600)
+        (output/"upstream-case-qualification.log").write_bytes(cases.stdout+cases.stderr)
+        receipt["unchanged_upstream_case_qualification_returncode"]=cases.returncode
+        receipt["unchanged_upstream_cases_qualified"]=cases.returncode==0
+        if cases.returncode:
+            (output/"receipt.json").write_text(json.dumps(receipt,indent=2)+"\n",encoding="utf-8")
+            print((cases.stdout+cases.stderr).decode("utf-8",errors="replace")[-16000:])
+            raise SystemExit(cases.returncode)
     (output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(receipt))
     if process.returncode:
