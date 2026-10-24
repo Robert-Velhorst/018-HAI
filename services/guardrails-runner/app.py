@@ -8,7 +8,13 @@ import re
 from typing import Literal
 
 from guardrails import Guard
+from guardrails.logger import logger as GUARDRAILS_LOGGER
 from pydantic import BaseModel, ConfigDict, Field
+
+# SDK scope handlers retain LogRecord objects; this offline boundary emits no
+# proposal-bearing SDK diagnostics or global scoped records.
+GUARDRAILS_LOGGER.disabled = True
+GUARDRAILS_LOGGER.propagate = False
 
 
 MAX_REQUEST_BYTES = 16 * 1024

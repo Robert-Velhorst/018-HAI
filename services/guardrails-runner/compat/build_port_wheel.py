@@ -30,9 +30,9 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def guard_methods(data):
+def guard_methods(data, class_name="Guard"):
     source = data.decode('utf-8')
-    cls = next(n for n in ast.parse(source).body if isinstance(n, ast.ClassDef) and n.name == 'Guard')
+    cls = next(n for n in ast.parse(source).body if isinstance(n, ast.ClassDef) and n.name == class_name)
     lines = source.splitlines(keepends=True)
     result = {}
     for node in cls.body:
@@ -85,6 +85,8 @@ def main():
             raise ValueError('Validation engine source changed: ' + path)
     if guard_methods(files['guardrails/guard.py']) != spec['unchanged_Guard_method_source_hashes']:
         raise ValueError('A Guard method source differs from the reviewed upstream engine')
+    if guard_methods(files['guardrails/validator_base.py'], 'Validator') != spec['unchanged_Validator_method_source_hashes']:
+        raise ValueError('A Validator method source differs from the reviewed upstream engine')
     # Preserve upstream UTF-8 bytes and avoid platform/email/zlib-dependent
     # rewrites. The derived archive uses fixed metadata and stored members.
     original_metadata = files[old_info + '/METADATA'].replace(b'\r\n', b'\n')

@@ -51,7 +51,7 @@ def main():
             print((build.stdout + build.stderr)[-12000:])
             raise RuntimeError("Static Guardrails wheel preparation failed before dependency resolution")
         port_build = json.loads(build.stdout)
-        if port_build["sha256"] != "4cfe4d4d7cd4ab044bda2b47cafafe8f7a7c1a9007351ba75994ebed89176353":
+        if port_build["sha256"] != "aa84a2bc18e24d027c897f610ae9e2e62fcd6c6a63bef131508f6c4ce853231e":
             raise RuntimeError("Hosted derived Guardrails wheel differs from the reviewed static artifact")
     (output / "port-build.json").write_text(json.dumps(port_build, indent=2) + "\n", encoding="utf-8")
     (output / "inputs/requirements.in").write_bytes(source)

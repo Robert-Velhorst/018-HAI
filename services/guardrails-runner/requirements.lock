@@ -225,7 +225,7 @@ fqdn==1.6.0 \
     --hash=sha256:e39bf62e2a9481aa2cb780554fdfd944dd8ee5f230eb831684d539cbafed8de2
     # via jsonschema
 guardrails-ai==0.11.0+hai.offline.1 \
-    --hash=sha256:4cfe4d4d7cd4ab044bda2b47cafafe8f7a7c1a9007351ba75994ebed89176353
+    --hash=sha256:aa84a2bc18e24d027c897f610ae9e2e62fcd6c6a63bef131508f6c4ce853231e
     # via -r requirements.in
 guardrails-ai-types==0.5.0 \
     --hash=sha256:cc7db51bbe5b5ee0bdb4c50be98522940774f16f3b979c53bf849f004e2c8574 \

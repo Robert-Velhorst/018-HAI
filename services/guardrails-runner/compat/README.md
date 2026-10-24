@@ -5,8 +5,8 @@ This profile keeps upstream Guardrails AI 0.11.0's validation engine on Python
 The original Runner, Pydantic schema and schema-validator modules remain
 byte-identical; all 34 Guard method source hashes are checked against upstream.
 
-Five source-bound patches defer package/telemetry optional exports, make a
-LangChain type import conditional, initialize offline settings without reading
+Seven source-bound patches defer package/telemetry optional exports, make both
+LangChain type imports conditional, initialize offline settings without reading
 operator configuration, and avoid creating telemetry SDK/exporter objects when
 metrics are disabled. The wrapper uses a request-local Guard with zero reasks;
 SDK call inputs are not kept in a global cross-request history. Fixed schema,
@@ -39,3 +39,14 @@ as UID 10001 with network disabled before its health check. Existing
 application cases remain unchanged; no new cases or local application suites
 are authored/run. Static ZIP/AST/RECORD checks are not runtime compatibility or
 network-isolation proof. No main merge or deployment is authorized by this work.
+
+The Validator base also had a type-only LangChain import; its lazy annotation
+port preserves all Validator method source bytes. LangChain message input
+types remain confined to the unqualified optional LangChain integration.
+
+The classes package defers its optional LangChain message-type export. The
+fixed-schema core does not need that optional type or a replacement stub.
+
+The wrapper also disables the SDK logger and propagation before handling any
+request: its original ScopeHandler keeps global LogRecord lists. Sanitized
+application HTTP errors remain separate from proposal-bearing SDK diagnostics.
