@@ -1,6 +1,6 @@
 """Build a source-bound ACL package candidate only in the disposable hosted SDK."""
 from pathlib import Path
-import hashlib,json,os,platform,re,shutil,subprocess,sys,tarfile,time
+import collections,hashlib,json,os,platform,re,shutil,subprocess,sys,tarfile,time
 
 def main():
     if (sys.platform!='linux' or os.getuid()!=10001 or os.environ.get('HAI_DISPOSABLE_ACL_SOURCE_SDK')!='1' or os.environ.get('HAI_HOSTED_SOURCE_QUALIFICATION')!='github-hosted'):
@@ -32,7 +32,10 @@ def main():
         receipt['build_returncode']=result.returncode;receipt['build_seconds']=round(time.monotonic()-start,2)
         log=(output/'package-build.log').read_text(errors='replace')
         receipt['case_status_lines']=[line for line in log.splitlines() if re.match(r'^(PASS|FAIL|SKIP|XFAIL|XPASS|ERROR):',line)]
-        receipt['case_status_counts']={name:sum(line.startswith(name+':') for line in receipt['case_status_lines']) for name in ['PASS','FAIL','SKIP','XFAIL','XPASS','ERROR']}
+        receipt['case_status_counts']={}
+        for name in ['TOTAL','PASS','FAIL','SKIP','XFAIL','XPASS','ERROR']:
+            values=re.findall(r'(?m)^#\s+'+name+r':\s+(\d+)\s*$',log)
+            receipt['case_status_counts'][name]=int(values[-1]) if values else None
         if result.returncode:raise RuntimeError('Source package build failed; inspect the retained full log')
         packages=[]
         for package in sorted(work.glob('*.deb')):
@@ -52,6 +55,13 @@ def main():
         receipt['all_upstream_cases_qualified']=bool(counts['PASS']) and all(counts[n]==0 for n in ['FAIL','SKIP','XFAIL','XPASS','ERROR'])
         if not receipt['all_upstream_cases_qualified']:raise RuntimeError('Candidate packages retained; skipped, expected-failing or unknown upstream cases remain unqualified')
     finally:
+        states=[]
+        for entry in Path('/proc').iterdir():
+            if not entry.name.isdigit():continue
+            try:states.append((entry/'stat').read_text().rsplit(')',1)[1].split()[0])
+            except (FileNotFoundError,ProcessLookupError,PermissionError):continue
+        receipt['process_states_at_exit']=dict(collections.Counter(states))
+        receipt['cgroup_process_counts_at_exit']={name:(Path('/sys/fs/cgroup')/name).read_text().strip() for name in ['pids.current','pids.peak','pids.max'] if (Path('/sys/fs/cgroup')/name).is_file()}
         changed_cases=[n for n,h in cases.items() if not (source/n).is_file() or sha((source/n).read_bytes())!=h]
         changed_source=[n for n,h in originals.items() if not (source/n).is_file() or sha((source/n).read_bytes())!=h]
         receipt['original_test_files_changed']=changed_cases;receipt['original_source_files_changed']=changed_source
