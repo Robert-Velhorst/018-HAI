@@ -33,7 +33,7 @@ jobs:
   resolve:
     name: Resolve public metadata (${{ matrix.runner }})
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.runner == 'miniswe-runner' && 100 || matrix.runner == 'lm-eval-runner' && 30 || 15 }}
+    timeout-minutes: ${{ (matrix.runner == 'miniswe-runner' || matrix.runner == 'lm-eval-runner') && 100 || 15 }}
     strategy:
       fail-fast: false
       matrix:
@@ -62,6 +62,7 @@ jobs:
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/expected-distributions.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/port-spec.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/python-parent-port-specs.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/case-sdk-spec.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/run_upstream_cases.py
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/requirements.sdk-cases.in
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/upstream-case-results/*

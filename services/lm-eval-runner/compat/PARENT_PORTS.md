@@ -35,3 +35,30 @@ or evaluator is instantiated. Public-only writable outputs and timeout cleanup
 remain bound to the job's own container IDs/labels; operator SDK execution is
 refused. New-source SDK results and unchanged vendor functional cases remain
 required before runtime integration or any claim of behavioral acceptance.
+
+## Unchanged upstream behavior suites
+
+After real imports qualify, the hosted job runs four suites against the same
+read-only installed candidate: full packaged Mbstrdecoder and Typepy tests,
+the entire Pytablewriter Markdown test file with its unchanged helpers, and
+the Datasets filesystem/file-lock files. The 46 case/helper/license files are
+bound to complete public sdist hashes or the exact Datasets commit and file
+hashes. Original test bodies and assertions remain unchanged. This is the
+stated selected vendor scope, not all optional Pytablewriter features or full
+model evaluation/provider acceptance.
+
+Test tools use a separate generated hash lock. Tablib is included for its
+existing Markdown conversion case; LZ4/Zstandard cover all compression cases
+without skipping optional codecs. Their public source builds use the pinned
+GCC 16.2.0 SDK and a read-only copy of the pinned Python 3.15.1 SDK prefix.
+No operator compiler or credentials are mounted. Only the dedicated compiler
+workspace is executable; the case containers have read-only roots, no network,
+dropped capabilities, UID 10001 and bounded CPU/memory/processes. Tool packages
+may not shadow a qualified runtime package with a different version.
+
+The harness retains JUnit, logs, exact source manifests and tool-resolution
+evidence for every suite, including failures. Qualification requires observed
+passing cases and zero skips, errors or failures in all four suites. A failed
+suite does not prevent the other suites from producing their evidence. No
+case expectation, warning filter, compatibility guard or advisory gate is
+relaxed. New-head hosted results remain required.
