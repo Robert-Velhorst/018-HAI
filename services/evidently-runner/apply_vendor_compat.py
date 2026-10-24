@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--apply-to-sdk", required=True, action="store_true")
     parser.parse_args()
     installed = distribution("evidently")
-    if installed.version != "0.7.23":
+    if installed.version != "0.7.23+hai.plotly.1":
         raise RuntimeError("Review the compatibility patch for the new Evidently release")
     path = Path(installed.locate_file(MODULE))
     source = path.read_bytes()

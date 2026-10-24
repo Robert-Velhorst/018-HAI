@@ -396,9 +396,8 @@ dynaconf==3.3.5+hai.evidently.1 \
     # via
     #   -r requirements.in
     #   evidently
-evidently==0.7.23 \
-    --hash=sha256:90ed736a85581c46410647dd3c1c957531c77231bb415e1021512238b12d5870 \
-    --hash=sha256:dbba5537a644f3401b8a393008cd126e304bcf939a070a7c4399bcc5b97061f6
+evidently==0.7.23+hai.plotly.1 \
+    --hash=sha256:e604b98d65f00e043ffdf1a2c33a059050f131848f79c04b17d0a2d38bdbc72c
     # via -r requirements.in
 faker==40.43.0 \
     --hash=sha256:02fae4327c03a4a6315e1b428a3878f435bfc276c93435ea349b95c0c9372361 \
@@ -837,6 +836,7 @@ narwhals==2.27.1 \
     --hash=sha256:d057df13f5852b8e157596e82eb5e955fad267425df5e420e0ee9863da483b31
     # via
     #   formulaic
+    #   plotly
     #   scikit-learn
 nltk==3.10.4 \
     --hash=sha256:44679f4e9220abfd496d2c8cdb22f8425ccbe557604f9aa5cacb1c44003dabc1 \
@@ -997,10 +997,12 @@ patsy==1.0.3 \
     --hash=sha256:79ebf4c93ff4d296e58a9d5be2b2ee31bd49d737cf11d70ffbd8a44b2de42e65 \
     --hash=sha256:d3dbebe8fd5f46e29912d030b63c6268647b59bf788a99e2af28a30234cf357c
     # via statsmodels
-plotly==5.24.1 \
-    --hash=sha256:dbc8ac8339d248a4bcc36e08a5659bacfe1b079390b8953533f4eb22169b4bae \
-    --hash=sha256:f67073a1e637eb0dc3e46324d9d51e2fe76e9727c892dde64ddf1e1b51f29089
-    # via evidently
+plotly==7.1.0 \
+    --hash=sha256:dbb7fa18afce40d0a8e80d1bf162eceb3faa0ce5a77fe741ad09a74cf78f53f3 \
+    --hash=sha256:f860166a4a3d78c69cb1f4a15f28a5c8283eade98a282a698f3bb853a449ace5
+    # via
+    #   -r requirements.in
+    #   evidently
 polyfactory==3.5.0 \
     --hash=sha256:2051105650e82ea7046afbab9ad4a7bf579fb6fd80ef65a51a7feaef3396d278 \
     --hash=sha256:78a1e4cf8f317be7da7c111d661f39db35080ec9c12b8df7c01dfbbc1c17250f
@@ -1663,10 +1665,6 @@ statsmodels==0.15.0 \
     --hash=sha256:edd803f4606061af8c7a83e2326ea294cbfa802a908dfbda4a88347301fb6820 \
     --hash=sha256:edee066ac9b171d95c3de925225331a21de1deb5b6452f252bc853e44566e72b
     # via evidently
-tenacity==9.2.1 \
-    --hash=sha256:9e56f17539296baab7beabb08b92f6ee3d7be92d8be72d763360677c2ad6580e \
-    --hash=sha256:a606b5c808d0cded4a359d5b9932d867ff2a6a6b64d37350260fd01bbdf83839
-    # via plotly
 threadpoolctl==3.7.0 \
     --hash=sha256:61348cfb77d53b9242e0017029244b559b810c142ced65b4e21eeca1843959a7 \
     --hash=sha256:cd8b60b5641b45c67bbf73c64c843235fc2d8a480c87389f52f5dbee893b86be

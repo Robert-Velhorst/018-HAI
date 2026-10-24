@@ -28,6 +28,8 @@ ENV HOME=/tmp DO_NOT_TRACK=1
 COPY compat ./compat
 RUN python compat/build_port_wheel.py --output-directory /app/wheels \
     && echo "2db131ed9ddfc1dc15a25635c8a6e58d51e608fe7459c504f091c5bd2168bd52  /app/wheels/dynaconf-3.3.5+hai.evidently.1-py3-none-any.whl" | sha256sum --check
+RUN python compat/build_evidently_wheel.py --output-directory /app/wheels \
+    && echo "e604b98d65f00e043ffdf1a2c33a059050f131848f79c04b17d0a2d38bdbc72c  /app/wheels/evidently-0.7.23+hai.plotly.1-py3-none-any.whl" | sha256sum --check
 COPY requirements-build.lock requirements.lock ./
 # PyYAML 6.0.3 has no CPython 3.15 wheel. Build its verified source with pinned tools.
 RUN apt-get update \
