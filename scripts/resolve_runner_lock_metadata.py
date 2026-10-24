@@ -38,6 +38,7 @@ def main():
     source = (root / "services" / args.runner / input_filename).read_bytes()
     (output / "inputs/requirements.in").write_bytes(source)
     port_build = None
+    evidently_port_build = None
     if args.runner == "evidently-runner":
         build = subprocess.run([sys.executable,
             str(root/"services/evidently-runner/compat/build_port_wheel.py"),
@@ -50,6 +51,17 @@ def main():
         if port_build["sha256"] != "2db131ed9ddfc1dc15a25635c8a6e58d51e608fe7459c504f091c5bd2168bd52":
             raise ValueError("Dynaconf port wheel differs from the reviewed static build")
         (output/"port-build.json").write_text(json.dumps(port_build, indent=2)+"\n", encoding="utf-8")
+        build = subprocess.run([sys.executable,
+            str(root/"services/evidently-runner/compat/build_evidently_wheel.py"),
+            "--output-directory", str(output/"inputs")], capture_output=True, check=False, timeout=120)
+        (output/"evidently-port-build.log").write_bytes(build.stdout + build.stderr)
+        if build.returncode:
+            print((build.stdout + build.stderr).decode("utf-8", errors="replace")[-12000:])
+            raise SystemExit(build.returncode)
+        evidently_port_build = json.loads(build.stdout)
+        if evidently_port_build["sha256"] != "e604b98d65f00e043ffdf1a2c33a059050f131848f79c04b17d0a2d38bdbc72c":
+            raise ValueError("Evidently port wheel differs from the reviewed static build")
+        (output/"evidently-port-build.json").write_text(json.dumps(evidently_port_build, indent=2)+"\n", encoding="utf-8")
     metadata_raw = urllib.request.urlopen("https://pypi.org/pypi/uv/0.13.5/json", timeout=40).read()
     metadata = json.loads(metadata_raw)
     wheels = [f for f in metadata["urls"] if f["packagetype"] == "bdist_wheel" and "manylinux_2_17_x86_64" in f["filename"]]
@@ -82,7 +94,8 @@ def main():
     (output / "resolution.log").write_bytes(log)
     lock = output / "outputs/requirements.lock"
     receipt = {"runner": args.runner, "python": version, "sdk": sdk,
-               "returncode": process.returncode, "input_filename": input_filename, "local_port_wheel": port_build, "input_sha256": hashlib.sha256(source).hexdigest(),
+               "returncode": process.returncode, "input_filename": input_filename, "local_port_wheel": port_build,
+               "local_evidently_wheel": evidently_port_build, "input_sha256": hashlib.sha256(source).hexdigest(),
                "uv_wheel_sha256": hashlib.sha256(raw).hexdigest(),
                "uv_binary_sha256": hashlib.sha256(executable).hexdigest(),
                "log_sha256": hashlib.sha256(log).hexdigest(),

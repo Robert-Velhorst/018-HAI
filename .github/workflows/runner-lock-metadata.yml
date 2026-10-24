@@ -46,4 +46,6 @@ jobs:
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/*.whl
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/evidently-port-build.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/evidently-port-build.log
           if-no-files-found: error
