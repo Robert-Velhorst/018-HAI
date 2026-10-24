@@ -112,6 +112,13 @@ def main():
         if port_build["sha256"] != "adcd73ed48214f460fa33ef679dff287d6a2b8175a2d33bdc90f0725983d7e8b":
             raise ValueError("LiteLLM candidate differs from the reviewed static build")
         (output/"port-build.json").write_text(json.dumps(port_build,indent=2)+"\n",encoding="utf-8")
+        native = subprocess.run([sys.executable,
+            str(root/"services/miniswe-runner/compat/build_fastuuid_wheel.py"),
+            "--output",str(output)],capture_output=True,check=False,timeout=1200)
+        (output/"fastuuid-preparation.log").write_bytes(native.stdout+native.stderr)
+        if native.returncode:
+            print((native.stdout+native.stderr).decode("utf-8",errors="replace")[-12000:])
+            raise RuntimeError("Source-bound FastUUID native candidate construction failed")
     metadata_raw = urllib.request.urlopen("https://pypi.org/pypi/uv/0.13.5/json", timeout=40).read()
     metadata = json.loads(metadata_raw)
     wheels = [f for f in metadata["urls"] if f["packagetype"] == "bdist_wheel" and "manylinux_2_17_x86_64" in f["filename"]]

@@ -49,3 +49,39 @@ execution-boundary review, current native clients, full image scan, real model
 session, privacy and deployment acceptance remain separate requirements. No new
 application cases or local SDK/vendor/native/application/scanner execution is
 authorized by these preparation helpers.
+
+## FastUUID source build
+
+The first candidate resolved but SDK installation failed: FastUUID 0.14.0 has
+no Python 3.15 wheel and its backend tried to bootstrap Rust under noexec /tmp.
+The candidate now prepares an explicitly modified 0.14.0+hai.py315.1 source
+build with PyO3 0.30.1, Rand 0.10.3, UUID 1.29.0 and Maturin 1.15.0. The Rust
+1.99.1 and Python 3.15.1 public SDK images are bound to immutable digests.
+
+The source port changes six downcasts to current fallible casts, opts into the
+existing Clone extraction behavior, preserves the standard-GIL module contract
+and uses UUID's current ContextV1 name. UUID algorithms, bounds and existing
+upstream cases are preserved. Four modified files have original/result hashes;
+all other source files and modes remain unchanged. The obsolete upstream
+UUID unstable cfg is removed: its current crate gates only the unselected
+zerocopy feature behind it, and this profile selects public stable UUID APIs. The upstream Cargo lock is
+retained separately; current Cargo generates the candidate lock in hosted CI.
+That full crate graph still needs currency/advisory review before integration.
+
+Compilation runs as UID 10001 in a read-only, capability-free public container.
+Only its bounded dedicated compiler workspace is executable; /tmp stays noexec.
+The pinned Python SDK is copied into owned job output and mounted read-only,
+without installing an operator SDK. Native output retains a truthful
+cp315-cp315-linux_x86_64 tag for this Debian 13 profile. There is no rustup
+bootstrap, warning suppression or ABI-forward-compatibility environment flag.
+An owned container identity and label bound timeout cleanup to this build only.
+
+The workflow retains the wheel, all RECORD checks, source manifest, generated
+Cargo lock and compiler versions. A separate network-disabled SDK phase checks
+the actual installed extension hash and imports the real UUID class. A wheel
+build/import proves neither complete UUID semantics nor model/privacy/security
+acceptance. Canonical application inputs, cases, image and locks remain unchanged.
+
+Primary migration guidance: https://pyo3.rs/main/migration
+Current crate records: https://crates.io/crates/pyo3/0.30.1,
+https://crates.io/crates/rand/0.10.3, https://crates.io/crates/uuid/1.29.0.

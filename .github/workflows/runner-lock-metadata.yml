@@ -33,7 +33,7 @@ jobs:
   resolve:
     name: Resolve public metadata (${{ matrix.runner }})
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.runner == 'miniswe-runner' && 25 || 15 }}
+    timeout-minutes: ${{ matrix.runner == 'miniswe-runner' && 45 || 15 }}
     strategy:
       fail-fast: false
       matrix:
@@ -68,4 +68,10 @@ jobs:
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/qualification/*.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/qualification/*.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/public-sdk-qualification.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-build.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-build.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-preparation.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-build/exports/Cargo.lock
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-build/exports/HAI_SOURCE_PORT.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-build/exports/*-version.txt
           if-no-files-found: error

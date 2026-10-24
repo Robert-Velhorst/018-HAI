@@ -24,7 +24,7 @@ def main():
     sys.path.insert(0, str(args.site_packages))
     expected = {"mini-swe-agent": "2.4.6", "litellm": "1.106.3+hai.py315.1",
                 "filelock": "4.2.4", "openai": "3.37.0", "huggingface-hub": "2.3.0",
-                "importlib-metadata": "10.1.0"}
+                "importlib-metadata": "10.1.0", "fastuuid": "0.14.0+hai.py315.1"}
     observed = {name: version(name) for name in expected}
     if observed != expected:
         raise ValueError("Installed SDK identities differ from the reviewed candidate")
@@ -42,9 +42,18 @@ def main():
             raise ValueError("Installed native bridge differs from upstream")
     if os.environ.get("LITELLM_LOCAL_MODEL_COST_MAP", "").lower() != "true":
         raise RuntimeError("Only the bundled public model-cost map is permitted")
+    fastuuid_proof = json.loads(Path("/inputs/fastuuid-build.json").read_text())
+    if fastuuid_proof["local_version"] != observed["fastuuid"] or len(fastuuid_proof["native_members"]) != 1:
+        raise ValueError("FastUUID build identity differs")
+    fastuuid_distribution = distribution("fastuuid")
+    for native in fastuuid_proof["native_members"]:
+        path = next(p for p in fastuuid_distribution.files if str(p) == native["path"])
+        if hashlib.sha256(path.locate().read_bytes()).hexdigest() != native["sha256"]:
+            raise ValueError("Installed FastUUID extension differs from the source-bound build")
     # These imports execute only in the public, credential-free hosted SDK.
     # No model, provider, agent instance or application case is invoked.
     import filelock
+    import fastuuid
     import litellm
     import litellm.rust_bridge._native
     import openai
@@ -56,9 +65,12 @@ def main():
         raise ValueError("Filelock setup API differs")
     if not callable(litellm.completion) or not callable(openai.OpenAI) or not isinstance(DefaultAgent, type) or not isinstance(LitellmModel, type):
         raise ValueError("Expected real SDK/agent/model interfaces were not imported")
+    if not isinstance(fastuuid.UUID, type):
+        raise ValueError("The real FastUUID extension did not provide its UUID class")
     result = {"python": platform.python_version(), "standard_GIL_build": True,
               "distributions": observed, "vendor_sdk_imports_pass": True,
               "native_bridge_loaded": True, "native_bridge_sha256_verified": True,
+              "fastuuid_native_extension_loaded_and_hash_verified": True,
               "upstream_python_files_unchanged": len(sources), "filelock_setup_signature_present": True,
               "application_cases_run": False, "model_or_agent_instantiated": False,
               "private_application_source_or_credentials_mounted": False,

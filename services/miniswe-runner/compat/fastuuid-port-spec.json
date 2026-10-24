@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "upstream_version": "0.14.0",
+  "local_version": "0.14.0+hai.py315.1",
+  "source_url": "https://files.pythonhosted.org/packages/c3/7d/d9daedf0f2ebcacd20d599928f8913e9d2aea1d56d2d355a93bfa2b611d7/fastuuid-0.14.0.tar.gz",
+  "source_sha256": "178947fc2f995b38497a74172adee64fdeb8b7ec18f2a5934d037641ba265d26",
+  "source_bytes": 18232,
+  "patches": {
+    "Cargo.toml": {
+      "original_sha256": "8687826bcd8f2e88db30f6e476cde238c79102d89c6efcb0fecd4086b0685e3f",
+      "patched_sha256": "722a1348f02f19909e85399f7ccca5f185501a8c26aedcc43da6901b97ea4a4b",
+      "edits": [
+        {
+          "old": "version = \"0.14.0\"",
+          "new": "version = \"0.14.0+hai.py315.1\""
+        },
+        {
+          "old": "rand = \"0.8\"",
+          "new": "rand = \"=0.10.3\""
+        },
+        {
+          "old": "version = \"0.26\"",
+          "new": "version = \"=0.30.1\""
+        },
+        {
+          "old": "version = \"1\"",
+          "new": "version = \"=1.29.0\""
+        }
+      ]
+    },
+    "src/lib.rs": {
+      "original_sha256": "22ad0882a900374ed8506f150a76482f0efb41d22a719ee250dddac80f963269",
+      "patched_sha256": "4434bb88263d68d8c4fe2ba97b53719d54c41f741dace338755fdc9dd40a0cdb",
+      "edits": [
+        {
+          "old": "#[pymodule]\nmod fastuuid {",
+          "new": "#[pymodule(gil_used = true)]\nmod fastuuid {"
+        },
+        {
+          "old": "#[pyclass(subclass, freelist = 1000)]",
+          "new": "#[pyclass(subclass, freelist = 1000, from_py_object)]"
+        },
+        {
+          "old": "use uuid::{Builder, Context, Timestamp, Uuid, Variant, Version};",
+          "new": "use uuid::{Builder, ContextV1, Timestamp, Uuid, Variant, Version};"
+        },
+        {
+          "old": "let ts = Timestamp::now(Context::new(clock_seq));",
+          "new": "let ts = Timestamp::now(ContextV1::new(clock_seq));"
+        },
+        {
+          "old": "let time_low = match f.get_item(0)?.downcast::<PyInt>()?.extract::<u32>() {",
+          "new": "let time_low = match f.get_item(0)?.cast::<PyInt>()?.extract::<u32>() {"
+        },
+        {
+          "old": "let time_mid = match f.get_item(1)?.downcast::<PyInt>()?.extract::<u16>() {",
+          "new": "let time_mid = match f.get_item(1)?.cast::<PyInt>()?.extract::<u16>() {"
+        },
+        {
+          "old": "match f.get_item(2)?.downcast::<PyInt>()?.extract::<u16>() {",
+          "new": "match f.get_item(2)?.cast::<PyInt>()?.extract::<u16>() {"
+        },
+        {
+          "old": "match f.get_item(3)?.downcast::<PyInt>()?.extract::<u8>() {",
+          "new": "match f.get_item(3)?.cast::<PyInt>()?.extract::<u8>() {"
+        },
+        {
+          "old": "match f.get_item(4)?.downcast::<PyInt>()?.extract::<u8>() {",
+          "new": "match f.get_item(4)?.cast::<PyInt>()?.extract::<u8>() {"
+        },
+        {
+          "old": "let node = f.get_item(5)?.downcast::<PyInt>()?.extract::<u128>()?;",
+          "new": "let node = f.get_item(5)?.cast::<PyInt>()?.extract::<u128>()?;"
+        }
+      ]
+    },
+    "pyproject.toml": {
+      "original_sha256": "2bb530448d2ecff3530a61f13c67740fc48102a1c5381509a52918b32ce08967",
+      "patched_sha256": "25258f587077cd66945793dd1e57932b432b29779608d095f2dbb6da21a7a082",
+      "edits": [
+        {
+          "old": "requires = [\"maturin>=1.0,<2.0\"]",
+          "new": "requires = [\"maturin==1.15.0\"]"
+        },
+        {
+          "old": "requires-python = \">=3.8\"",
+          "new": "requires-python = \">=3.15,<3.16\""
+        },
+        {
+          "old": "  \"Programming Language :: Python :: 3.8\",\n  \"Programming Language :: Python :: 3.9\",\n  \"Programming Language :: Python :: 3.10\",\n  \"Programming Language :: Python :: 3.11\",\n  \"Programming Language :: Python :: 3.12\",\n  \"Programming Language :: Python :: 3.13\",\n  \"Programming Language :: Python :: 3.14\",",
+          "new": "  \"Programming Language :: Python :: 3.15\","
+        }
+      ]
+    },
+    ".cargo/config.toml": {
+      "original_sha256": "92e6eb2c8c94adc5388fcc8dd595ee62516d86441eab6a46e4389f520be950d8",
+      "patched_sha256": "5121a577083a3f13473310ca8a438608df97471924df4b3ad09245240c10480f",
+      "edits": [
+        {
+          "old": "[target.'cfg(all())']\nrustflags = [\"--cfg\", \"uuid_unstable\"]\n",
+          "new": "# HAI current-stable UUID profile; no unstable feature configuration.\n"
+        }
+      ]
+    }
+  },
+  "rust": {
+    "tag": "rust:1.99.1-trixie",
+    "index_digest": "sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc",
+    "linux_amd64_digest": "sha256:c3d8fc865b8bee83c7894fb833c2c78c8cac5e865d45afc9d05ed026a6301c14",
+    "image": "rust:1.99.1-trixie@sha256:c3d8fc865b8bee83c7894fb833c2c78c8cac5e865d45afc9d05ed026a6301c14"
+  },
+  "maturin": {
+    "comment_text": null,
+    "core-metadata": {
+      "sha256": "7dace5eb197f1598b0b641a577c17f1fd6058c4b41ba17a4b0a1da08c6764aa7"
+    },
+    "digests": {
+      "blake2b_256": "fe91b495e19e2f5c503b540452b2039115e7b2363867e8c5ad4179eb752fa92c",
+      "md5": "24fe6e492efcb36740404cedcc6751ff",
+      "sha256": "653020a63525bb224e5ab0adf02e17a2e08bc86dbea7fc1399c9a56d7529b99e"
+    },
+    "downloads": -1,
+    "filename": "maturin-1.15.0-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl",
+    "has_sig": false,
+    "md5_digest": "24fe6e492efcb36740404cedcc6751ff",
+    "packagetype": "bdist_wheel",
+    "python_version": "py3",
+    "requires_python": ">=3.7",
+    "size": 10541186,
+    "upload_time": "2026-08-24T12:11:02",
+    "upload_time_iso_8601": "2026-08-24T12:11:02.857345Z",
+    "url": "https://files.pythonhosted.org/packages/fe/91/b495e19e2f5c503b540452b2039115e7b2363867e8c5ad4179eb752fa92c/maturin-1.15.0-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl",
+    "yanked": false,
+    "yanked_reason": null
+  },
+  "crate_versions": {
+    "pyo3": "0.30.1",
+    "rand": "0.10.3",
+    "uuid": "1.29.0"
+  },
+  "python_sdk": "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51",
+  "supported_profile": "Standard GIL CPython 3.15, Linux x86_64; preserve UUID algorithms and existing upstream cases. Current PyO3 API port; no forward compatibility flags, warning suppression or SDK fallback. Cargo lock generated in hosted disposable source build and retained for review before canonical integration."
+}
