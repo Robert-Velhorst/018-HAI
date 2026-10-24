@@ -1,5 +1,37 @@
 # Main-preserved temporary audit clone cleanup
 
+## Runtime-pin review copy
+
+The independent `018-hai-latest-stable-audit` clone was removed only after its
+single historical proposal commit `de415ca4c489254ba068dfb46563d7d56631efa0`
+was preserved and reverified under annotated GitHub tag
+`archive/local-preservation-20261024/hai-runtime-pin-review`. Its parent
+`2fac81caee9f5005d95e72a0f4e9b5b4ca6cc3c8` is an ancestor of reviewed main.
+The intended runtime pin and targeted test are already retained on main;
+later Go builder pins and unrelated subsequent test improvements were not
+reverted. This is not an assertion that every historical file equals the
+latest main tree or that the archived commit itself was merged to main.
+
+The one-commit range passed the pinned Gitleaks scan. The archived workflow
+allows push events only for main, not the archive tag. No deployment or
+application stack was started by this operation.
+
+All 3,231 checked-out tracked files were read against the archived Git blobs:
+110 are exact and 3,121 differ only by normal line endings. No indexed file
+was missing. Refs and reflogs contained only the archived head and its preserved
+parent. Git fsck was clean, and no untracked/ignored files, extra worktrees,
+custom hooks or unpublished commit-message draft were found. Physical source
+and metadata hashes were rechecked immediately before native PowerShell
+removal, along with exact path resolution, reparse points, maintenance entries,
+process command lines and running-container mounts.
+
+The explicit clone contained 3,277 files including Git metadata and 47,845,902
+logical bytes. Its absence and the unchanged remote main/archive tag were
+confirmed after deletion. Observed C-drive free space changed from
+6,909,181,952 to 6,964,404,224 bytes; this is not attribution of all concurrent
+free-space changes to the removal. Original source, integration checkout,
+databases, recovery artifacts and conversation archives remain intact.
+
 ## Subsequent sparse main-ancestor audit copy
 
 The previously excluded `codex-018-hai-audit-20261020` copy was later reviewed
