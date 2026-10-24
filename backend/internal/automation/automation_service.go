@@ -913,6 +913,7 @@ func (s *service) issueApprovalProofWithRepository(ctx context.Context, repo Rep
 		Scope:            scope,
 		ApprovalSourceID: launchRequest.ApprovalSourceID,
 		TTL:              proofTTL,
+		NotAfter:         record.ApprovedAt.UTC().Add(maximumApprovalDecisionAge),
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err

@@ -75,6 +75,7 @@ type ApprovalProofIssueRequest struct {
 	Scope            ApprovalScope
 	ApprovalSourceID string
 	TTL              time.Duration
+	NotAfter         time.Time
 }
 
 // ApprovalDecisionRecord is the repository-backed authorization fact checked
@@ -370,6 +371,15 @@ func (s *approvalProofService) IssueContext(ctx context.Context, request Approva
 	}
 	now := normalizeApprovalProofTimestamp(s.now())
 	expiresAt := normalizeApprovalProofTimestamp(now.Add(ttl))
+	if !request.NotAfter.IsZero() {
+		deadline := normalizeApprovalProofTimestamp(request.NotAfter)
+		if !deadline.After(now) {
+			return nil, fmt.Errorf("approval proof deadline has expired")
+		}
+		if expiresAt.After(deadline) {
+			expiresAt = deadline
+		}
+	}
 	if !expiresAt.After(now) {
 		return nil, fmt.Errorf("approval proof TTL must be at least %s at database precision", approvalProofTimestampPrecision)
 	}
