@@ -151,6 +151,27 @@ console.log(JSON.stringify({ error, calls, output, files, env, evidence, owner, 
 
 
 class CIWorkflowContractTest(unittest.TestCase):
+    def test_postgres_role_fixture_uses_digest_pinned_image(self):
+        fixture = (ROOT / "scripts" / "test-runtime-db-role-provisioning.ps1").read_text(encoding="utf-8")
+        image = re.search(r"postgres:18\.6-alpine@sha256:[a-f0-9]{64}", WORKFLOW)
+        self.assertIsNotNone(image, "CI must declare the reviewed PostgreSQL image")
+        self.assertTrue('"' + image.group(0) + '"' in fixture, "Role fixture must use the CI-pinned image")
+
+    def test_postgres_role_fixture_uses_container_pgdata(self):
+        fixture = (ROOT / "scripts" / "test-runtime-db-role-provisioning.ps1").read_text(encoding="utf-8")
+        command = next(line for line in fixture.splitlines() if "$authOutput =" in line)
+        self.assertIn("sh -c 'set -eu;", command)
+        self.assertIn('${PGDATA:?PGDATA must be set}', command)
+        self.assertIn('"$PGDATA/pg_hba.conf"', command)
+        self.assertIn('pg_ctl reload -D "$PGDATA"', command)
+        self.assertNotIn("/var/lib/postgresql/data", command)
+
+    def test_postgres_role_fixture_has_current_version_diagnostics(self):
+        fixture = (ROOT / "scripts" / "test-runtime-db-role-provisioning.ps1").read_text(encoding="utf-8")
+        self.assertFalse("PostgreSQL 17" in fixture, "Stale PostgreSQL version in role fixture diagnostics")
+        self.assertTrue("PostgreSQL 18.6 test instance" in fixture)
+        self.assertTrue("PostgreSQL 18.6 instance did not become ready" in fixture)
+
     def test_trello_live_contract_is_compiled_without_live_credentials(self) -> None:
         backend = job_block("backend")
         self.assertIn(
