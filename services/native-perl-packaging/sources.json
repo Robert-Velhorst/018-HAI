@@ -1,0 +1,220 @@
+{
+  "source_package": "perl",
+  "version": "5.44.0-2",
+  "upstream_version": "5.44.0",
+  "archive_root": "perl-5.44.0",
+  "inputs": [
+    {
+      "name": "perl_5.44.0-2.dsc",
+      "url": "https://deb.debian.org/debian/pool/main/p/perl/perl_5.44.0-2.dsc",
+      "sha256": "be61e87c1296dd8abdd9be3a8f3bb42929d078310ae4fba0a672c88b4eb41dba",
+      "bytes": 2372
+    },
+    {
+      "name": "perl_5.44.0.orig-regen-configure.tar.xz",
+      "bytes": 422344,
+      "sha256": "82e0dcddac1dd15c4078c969628533f587a31f4e229824763cbd84ab4db628e1",
+      "url": "https://deb.debian.org/debian/pool/main/p/perl/perl_5.44.0.orig-regen-configure.tar.xz"
+    },
+    {
+      "name": "perl_5.44.0.orig.tar.xz",
+      "bytes": 14919940,
+      "sha256": "505cf43912e9480495c344c70260452e32aa2a73c546a026b3f100053b23ce91",
+      "url": "https://deb.debian.org/debian/pool/main/p/perl/perl_5.44.0.orig.tar.xz"
+    },
+    {
+      "name": "perl_5.44.0-2.debian.tar.xz",
+      "bytes": 166380,
+      "sha256": "836830536c53a2a8ce6a6cb7d34d19ef8553004098bb6defec33795231ddc4dc",
+      "url": "https://deb.debian.org/debian/pool/main/p/perl/perl_5.44.0-2.debian.tar.xz"
+    },
+    {
+      "name": "perl-maintainer-renewal.asc",
+      "url": "https://keyring.debian.org/pks/lookup?op=get&search=0x76A28E42C9811D91E88FBA5E2EC0FFB3B7301B1F",
+      "sha256": "726ff0167782122ab24ee183351bccd36dcb4cbfb1ad163ae658fd11b4ea45e8",
+      "bytes": 22447,
+      "format": "public-key-armor-from-HTML"
+    }
+  ],
+  "published_patches": [
+    {
+      "file": "debian/cpan_definstalldirs.diff",
+      "sha256": "34c4181e68af118ed357bb4d6323562802074e3f99da65cd96c8461a363558a3"
+    },
+    {
+      "file": "debian/db_file_ver.diff",
+      "sha256": "27e3b22bcdb663bdcc918527ce0b7b93f6c0b083de01cde3a1d2376ad065cf7c"
+    },
+    {
+      "file": "debian/doc_info.diff",
+      "sha256": "ca563fb5064ec40cf5b7af718bc78c6426d317e7545c71829064ef71171dbce1"
+    },
+    {
+      "file": "debian/enc2xs_inc.diff",
+      "sha256": "1cf425d10b3549baec53032a1d28a359e2a7902071a0a92e71804f0dd57309af"
+    },
+    {
+      "file": "debian/errno_ver.diff",
+      "sha256": "507a078c18e867153dc13748231e865249620e778b9ce46130b13c4110038086"
+    },
+    {
+      "file": "debian/libperl_embed_doc.diff",
+      "sha256": "bca913857973309583dcb53ae23720093d7174ee6f96f0b3a431184bbdeba5f8"
+    },
+    {
+      "file": "fixes/respect_umask.diff",
+      "sha256": "596cc27a56a0247fa54f57c354203d00690c4e46639f0022cd61b698df3cd9dc"
+    },
+    {
+      "file": "debian/writable_site_dirs.diff",
+      "sha256": "6bf3b3529dd127151a498162acea7b174711f41b278a4236227d4739a9e19d54"
+    },
+    {
+      "file": "debian/extutils_set_libperl_path.diff",
+      "sha256": "b0a08bc6c07f12c190853a4178fa8105b3a1cdefa094c45df8baa3e6fb45e987"
+    },
+    {
+      "file": "debian/no_packlist_perllocal.diff",
+      "sha256": "806b2c932b65208d0be64b325080304721b2b442e32bcef0e8f579d7a7783125"
+    },
+    {
+      "file": "debian/fakeroot.diff",
+      "sha256": "f39a95bbfd5921feb08fcca7a3ecdf015c87c125e1c8b4f281d55d238e0b491e"
+    },
+    {
+      "file": "debian/instmodsh_doc.diff",
+      "sha256": "ce99ffd0435ce691d2e8baa921acb9d2fb2087b681fcc875680add36cbecaf42"
+    },
+    {
+      "file": "debian/ld_run_path.diff",
+      "sha256": "37d68ac5c6a0259c111c4c22daa532b210dec881c8e218b6a650c938c8277370"
+    },
+    {
+      "file": "debian/libnet_config_path.diff",
+      "sha256": "f3b788797be989dc99d93478a58b0515b6e846bc2ac6ba3e1409603f7fce7e54"
+    },
+    {
+      "file": "debian/perlivp.diff",
+      "sha256": "41e47553f78cc241cd4d13cd054f911c81f505d1b7c2a50c9339cc1ea6c88bc4"
+    },
+    {
+      "file": "debian/squelch-locale-warnings.diff",
+      "sha256": "8ac93a6c8d27c5fc42db2c6e0418abdcbbc2783c3c4d60c5c06429204658a7c1"
+    },
+    {
+      "file": "debian/patchlevel.diff",
+      "sha256": "a5209578cd7de6374e54e3005a42a1d783b42b386393742640f7afd8dd96e250"
+    },
+    {
+      "file": "fixes/document_makemaker_ccflags.diff",
+      "sha256": "c42f5b97af72b6dc8656499a31d5348dbdefb831656120ed1ae2ad91665fce4b"
+    },
+    {
+      "file": "debian/find_html2text.diff",
+      "sha256": "f7992c388a9309b7a8123fe2018fac25c3bced4ac722a5d34a9feda3e69bc62a"
+    },
+    {
+      "file": "debian/perl5db-x-terminal-emulator.patch",
+      "sha256": "b83528865970778e8ff43579e45154042f492ee5ed1c387ade8e64420441672d"
+    },
+    {
+      "file": "debian/cpan-missing-site-dirs.diff",
+      "sha256": "6597c10a1fca26c4261825147628b192b8846c7b7d8c4961dbb6df5eb5ea3fe6"
+    },
+    {
+      "file": "debian/makemaker-pasthru.diff",
+      "sha256": "704a9b51f25a67b479e5c0f1cef3adefe6140b0b67c37daf32ba3c38a3d7b8d3"
+    },
+    {
+      "file": "debian/makemaker-manext.diff",
+      "sha256": "d31012ffdd3bba8235c02ae115675970b96e860cea23e13c7fd196194b1cc9ac"
+    },
+    {
+      "file": "debian/kfreebsd-softupdates.diff",
+      "sha256": "83fd18f20a4b7b0f5a2e68694c11428eef78ed4724517e89e244bd1b68a4e035"
+    },
+    {
+      "file": "debian/hurd-softupdates.diff",
+      "sha256": "551e173e719e7b8853255afb88d17bd501c34eaf8df1750560b61773447a574f"
+    },
+    {
+      "file": "fixes/math_complex_doc_great_circle.diff",
+      "sha256": "8b3baaf1256741597e0484400bc3583cc55aaa5486a851a28656085f6313ade8"
+    },
+    {
+      "file": "fixes/math_complex_doc_angle_units.diff",
+      "sha256": "f3533d35dc20693620739b3b5c2c2085949a146e0eaa8c0b2f3fbba1a35e0726"
+    },
+    {
+      "file": "fixes/cpan_web_link.diff",
+      "sha256": "021c48349481f05e347b2bc249604e629681d1b778822de3bc1bcb25481d874e"
+    },
+    {
+      "file": "debian/installman-utf8.diff",
+      "sha256": "e1b02f58898e38935286be4ef63ba32c341aa11079bba0b1045a7920c966a9d2"
+    },
+    {
+      "file": "debian/perldoc-pager.diff",
+      "sha256": "623bba426e2cd8b4efb53b747df9543f3da89ce0d593debc6e583bd5aa4e5f22"
+    },
+    {
+      "file": "debian/prune_libs.diff",
+      "sha256": "9ee24bb7b69cf414e78c2d059bc137ee6cf602bf1535c9792d86a849e0c866a7"
+    },
+    {
+      "file": "debian/mod_paths.diff",
+      "sha256": "b325141f3e77252aa8ddd7f7e5dd7a17fa95fcb62e3ce94bddc09a557085edc1"
+    },
+    {
+      "file": "debian/deprecate-with-apt.diff",
+      "sha256": "0c549af5d0fab106b6e7a5907f72184cdc3f9925f517c3727db5ae9b625c159d"
+    },
+    {
+      "file": "debian/perlbug-editor.diff",
+      "sha256": "16be19e2f8aed5a1d23853814b4b765e4e70b04b88636d7236083a180db9e946"
+    },
+    {
+      "file": "debian/eu-mm-perl-base.diff",
+      "sha256": "a110ede6ff2ec9c62f63ce105f063d88c2214ad851e5c6d591df734d30072319"
+    },
+    {
+      "file": "fixes/io_socket_ip_ipv6.diff",
+      "sha256": "f7b694a362d51bc6ef18c2972f9f4706a0b6ef648955f4861ebf6735e3644143"
+    },
+    {
+      "file": "debian/usrmerge-lib64.diff",
+      "sha256": "5e273a268d1d10d6362aae5c9ada0b692902f3cf0e24aac945ad8e19fba9020e"
+    },
+    {
+      "file": "debian/usrmerge-realpath.diff",
+      "sha256": "d68d80fe9311a834990d7e3a04c937af5a93a223ef3a5e090120fca6430651ce"
+    },
+    {
+      "file": "fixes/x32-io-msg-skip.diff",
+      "sha256": "4fa956b120ef8d70be606c2823c09e427c26b3c9220b05d3ec494d2535ae3362"
+    },
+    {
+      "file": "debian/configure-regen.diff",
+      "sha256": "e3a761fa8e8ef2d1093bf55688c765151f8911c6c899861446f48944a8285ca1"
+    },
+    {
+      "file": "fixes/json-pp-options.diff",
+      "sha256": "33281c4572fc2f01ec0db249f4fc4f21272225d906a7e79f34abf62fa00a9ea4"
+    }
+  ],
+  "expected_binary_packages": [
+    "perl-base",
+    "perl-doc",
+    "perl-debug",
+    "libperl5.44",
+    "libperl-dev",
+    "perl-modules-5.44",
+    "perl"
+  ],
+  "source_case_helper_file_count": 3823,
+  "original_source_qualification_head": "239851e624d6ac846475769a483f9224f49e942c",
+  "original_source_qualification_run": 40129903711,
+  "original_source_qualification_artifact_SHA256": "599b57ec97ef1b74090111470c9a2d56cdcbf46af9e9788f9c37a8b441393264",
+  "original_supported_harness_profile_not_full_case_platform_acceptance": true,
+  "existing_official_primary_fingerprint": "76A28E42C9811D91E88FBA5E2EC0FFB3B7301B1F"
+}
