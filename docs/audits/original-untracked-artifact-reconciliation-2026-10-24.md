@@ -68,6 +68,16 @@ The old npm lock has 940 package slots and the successor has 660; 499 slot recor
 
 These four files need no old-version restoration based on dependency declarations or lock-graph structure. This disposition does not clear the original working copy or its other source, logs, recovery evidence or history for deletion.
 
+## Retained frontend behavior checks
+
+A bounded native Node run executed the deep-link focus, framework secret-boundary and release-cache suites. All 21 tests passed, with no failures, cancellations, skips or TODOs. The run used one test worker, a 256 MiB JavaScript heap limit and disabled compile caching. No packages were installed and no app stack, server, browser or container was started.
+
+All 13 explicit execution inputs matched the prepared checkpoint `e79fe6c3cbbf8e1af2b2a581ea3da35b320b8708`. Eleven also match reviewed main; the shell component and release-cache test include previously prepared differences, so this result is not an exact-main test result. These inputs and the three original untracked test files were rehashed after execution and remained unchanged.
+
+The checks exercise actual shell/service logic with DOM/event/timer and HTTP doubles, plus static Nginx/Angular/index/theme files. They cover delayed deep-link focus and cancellation, generic/RSA/OpenSSH redaction with real and escaped newlines, preserved public context, and cache/bootstrap contracts. The tests do not prove rendered layout, real browser focus, session rotation, provider access, live Nginx behavior or the complete browser-matrix handoff.
+
+The existing installed Angular core/compiler version was 22.2.2, with TypeScript 6.0.3, RxJS 7.8.2 and NG-Zorro 22.1.2. This is not a clean installation or production build using the current-main dependency lock. The remaining control-room test and owned-browser fixture changes require their own source/acceptance checks; no original copy is cleared for deletion by these 21 tests.
+
 ## Remaining work and retention
 
 The other historical failure roots have not been requalified by this three-root run. Untracked source differences, private runtime state, recovery artifacts, other checkouts and conversation archives still require their own integration and preservation decisions. All original files remain intact. This report is aggregate evidence only, not a substitute for the private raw records, main integration, publication authorization or deletion proof.
