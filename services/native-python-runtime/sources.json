@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "prefix": "/opt/hai-native",
+  "openssl": {
+    "version": "4.1.0",
+    "url": "https://github.com/openssl/openssl/releases/download/openssl-4.1.0/openssl-4.1.0.tar.gz",
+    "source": "https://openssl-library.org/source/",
+    "checksum": "50c17baf54cb008f6ce42d50deb4b28050a1aad711636cabd4b241c7e90cc2fd",
+    "digest_algorithm": "sha256"
+  },
+  "sqlite": {
+    "version": "3.54.1",
+    "url": "https://www.sqlite.org/2026/sqlite-autoconf-3540100.tar.gz",
+    "digest_algorithm": "sha3_256",
+    "source": "https://www.sqlite.org/download.html",
+    "checksum": "b6ced585c750916b1052667239a12c25a7ff34e7f06e1e6e01ecb0427657d9c4"
+  },
+  "cpython": {
+    "3.15.1": {
+      "version": "3.15.1",
+      "url": "https://www.python.org/ftp/python/3.15.1/Python-3.15.1.tar.xz",
+      "checksum": "673ae7232d84c894729882c8257d300ef2d26523911bfd3917ec8ce7f526f99b",
+      "digest_algorithm": "sha256"
+    },
+    "3.14.9": {
+      "version": "3.14.9",
+      "url": "https://www.python.org/ftp/python/3.14.9/Python-3.14.9.tar.xz",
+      "checksum": "e02d9ac21cebda6e46435369744a92c65cc7cd8669697694122cf97ffacd1e53",
+      "digest_algorithm": "sha256"
+    }
+  }
+}

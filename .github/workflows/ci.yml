@@ -113,7 +113,12 @@ jobs:
           python -m unittest discover -v -s . -p 'test*.py'
       - name: Build runner container image
         working-directory: services/${{ matrix.name }}
-        run: docker build --file Dockerfile --tag "hai-${{ matrix.name }}:ci" .
+        run: |
+          if [ -f native-runtime.profile.json ]; then
+            docker build --build-context hai-native-source=../native-python-runtime --file Dockerfile --tag "hai-${{ matrix.name }}:ci" .
+          else
+            docker build --file Dockerfile --tag "hai-${{ matrix.name }}:ci" .
+          fi
       - name: Start and health-check isolated runner container
         timeout-minutes: 2
         working-directory: services/${{ matrix.name }}

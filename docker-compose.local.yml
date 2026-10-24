@@ -1345,6 +1345,8 @@ services:
   evidently-runner:
     build:
       context: ./services/evidently-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["evaluation"]
     restart: unless-stopped
     mem_limit: 512m
@@ -1611,6 +1613,8 @@ services:
   garak-runner:
     build:
       context: ./services/garak-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["garak-evaluation"]
     restart: unless-stopped
     environment:
