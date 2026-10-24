@@ -3,6 +3,9 @@ name: Public runner dependency metadata
 on:
   pull_request:
     paths:
+      - services/lm-eval-runner/requirements.in
+      - services/lm-eval-runner/requirements-port.in
+      - services/lm-eval-runner/compat/**
       - services/agent-framework-runner/requirements.in
       - services/guardrails-runner/requirements.in
       - services/guardrails-runner/requirements-port.in
@@ -32,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [garak-runner, evidently-runner, agent-framework-runner, guardrails-runner, pydantic-ai-runner, crewai-runner, ortools-runtime, ortools-build]
+        runner: [lm-eval-runner, garak-runner, evidently-runner, agent-framework-runner, guardrails-runner, pydantic-ai-runner, crewai-runner, ortools-runtime, ortools-build]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

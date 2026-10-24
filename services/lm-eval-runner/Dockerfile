@@ -26,10 +26,15 @@ COPY --chown=0:0 --from=native-build /native-build/out/provenance.json /native-b
 
 
 COPY requirements-build.lock requirements.lock ./
+COPY compat ./compat
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential libyaml-dev libyaml-0-2 libstdc++6 libgomp1 \
     && python -m pip install --no-cache-dir --only-binary :all: --require-hashes -r requirements-build.lock \
-    && python -m pip install --no-cache-dir --no-build-isolation --require-hashes -r requirements.lock \
+    && python compat/build_port_wheel.py --output-directory /tmp/hai-lmeval-wheel \
+    && echo "0cc1a5307a648a8f858f3181e5df8c23b07f6af6681e33e8b3d102dd3e8ddf7b  /tmp/hai-lmeval-wheel/lm_eval-0.4.13+hai.optionalcache.1-py3-none-any.whl" | sha256sum --check \
+    && python -m pip install --no-cache-dir --no-build-isolation --find-links /tmp/hai-lmeval-wheel --require-hashes -r requirements.lock \
+    && python -I compat/verify_installed_profile.py \
+    && rm /tmp/hai-lmeval-wheel/*.whl \
     && python -m pip uninstall --yes cython setuptools-scm wheel \
     && apt-get purge -y --auto-remove build-essential libyaml-dev \
     && rm -rf /var/lib/apt/lists/*
