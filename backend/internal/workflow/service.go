@@ -3496,7 +3496,11 @@ func frameworkSelectionRule(selection FrameworkSelectionProvenance) string {
 
 func decodeFrameworkSelectionDecision(decision models.WorkflowDecision) (FrameworkSelectionProvenance, error) {
 	payload := strings.TrimSpace(decision.Reason)
+	legacySummary := ""
 	if payload == "" && strings.HasPrefix(strings.TrimSpace(decision.RuleApplied), "{") {
+		payload = strings.TrimSpace(decision.RuleApplied)
+	} else if strings.HasPrefix(payload, "catalog ") {
+		legacySummary = payload
 		payload = strings.TrimSpace(decision.RuleApplied)
 	}
 	if payload == "" {
@@ -3505,6 +3509,14 @@ func decodeFrameworkSelectionDecision(decision models.WorkflowDecision) (Framewo
 	var selection FrameworkSelectionProvenance
 	if err := json.Unmarshal([]byte(payload), &selection); err != nil {
 		return FrameworkSelectionProvenance{}, fmt.Errorf("decode framework selection decision: %w", err)
+	}
+	if legacySummary != "" {
+		expected := fmt.Sprintf("catalog %s digest %s; constitution v%d digest %s",
+			selection.CatalogVersion, selection.CatalogDigest,
+			selection.ConstitutionVersion, selection.ConstitutionDigest)
+		if legacySummary != expected {
+			return FrameworkSelectionProvenance{}, fmt.Errorf("legacy framework selection summary conflicts with its payload")
+		}
 	}
 	selection = normalizeFrameworkSelection(selection)
 	if strings.TrimSpace(decision.Decision) != "" &&
