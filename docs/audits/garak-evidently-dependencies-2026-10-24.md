@@ -27,6 +27,14 @@ gap, not a claim that the native images or runtime are vulnerability-free.
 
 ## Metadata and interpreter limits
 
+Application runtime images use digest-pinned slim-trixie tags on current stable
+Debian 13, rather than the metadata-only Bookworm SDK. The initial candidate's
+Bookworm runtime selection was corrected; source metadata containers remain
+separate from deployed-image choices. Image builds print the actual Python,
+OpenSSL, SQLite, distribution inventory and OS release for later reconciliation.
+An SDK/tag declaration is not claimed as an observed runtime version. Full
+native/security acceptance remains separate from this provenance output.
+
 The first wheel-only Python 3.15.1 resolutions failed: Langdetect 1.0.9 has no
 usable wheel, and PyYAML has no usable wheel for that target. No source package
 code was executed on the operator machine. A separate wheel-only Evidently
