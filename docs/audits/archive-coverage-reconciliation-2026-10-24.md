@@ -135,6 +135,12 @@ Seven focused current-main HTTP-double contracts pass, and a wrong-URL negative
 control is detected. These are not real HTTP, Angular/browser or provider tests;
 new methods and remaining changed services are not thereby cleared.
 
+Three overlapping theme/memory-client variants have further source dispositions
+in `archive-theme-and-memory-client-reconciliation-2026-10-24.md`. Twenty-five
+current-main checks pass with real RxJS and DOM/storage/HTTP test doubles; an
+in-memory removal of ID encoding is detected. Full Angular/browser, backend
+authorization and database acceptance are not established by those checks.
+
 The Promptfoo test file moved from exact to changed relative to the earlier
 main snapshot. Its archived content hash matches the earlier Git blob. All
 three original test bodies remain byte-identical; canonical main adds the
