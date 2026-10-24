@@ -14,6 +14,11 @@ import urllib.request
 import zipfile
 
 SDKS = {
+    "agent-framework-runner": ("3.15.1", "python:3.15.1-slim-bookworm@sha256:575f8bc12ec26542e0678bc6b60e385218248019d433157ec327264a78c3a853"),
+    # This interpreter is for graph metadata only. Runtime modernization of
+    # Guardrails remains unresolved because its current release excludes 3.14+.
+    "guardrails-runner": ("3.13.17", "python:3.13.17-slim-bookworm@sha256:e32be0e55814a08977501ca863271d9bd02443710db8f2afaf8372e2c4508530"),
+    "pydantic-ai-runner": ("3.15.1", "python:3.15.1-slim-bookworm@sha256:575f8bc12ec26542e0678bc6b60e385218248019d433157ec327264a78c3a853"),
     "garak-runner": ("3.15.1", "python:3.15.1-slim-bookworm@sha256:575f8bc12ec26542e0678bc6b60e385218248019d433157ec327264a78c3a853"),
     "evidently-runner": ("3.14.9", "python:3.14.9-slim-bookworm@sha256:945c2676dc2b18e0c1f16879244122c57c0ffede60006bf3df159c507a31bcae"),
 }
