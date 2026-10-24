@@ -23,6 +23,10 @@ ENV HOME=/tmp \
     DEEPEVAL_UPDATE_WARNING_OPT_OUT=YES \
     DEEPEVAL_TELEMETRY_OPT_OUT=YES
 
+# Dependency installation is complete; the immutable runtime has no installer.
+RUN python -m pip uninstall --yes pip
+RUN ["python", "-I", "-c", "import importlib.util,json,pathlib,sysconfig; bundled=pathlib.Path(sysconfig.get_path(\"stdlib\"))/\"ensurepip\"/\"_bundled\"; wheels=list(bundled.glob(\"pip-*.whl\")); [p.unlink() for p in wheels]; assert importlib.util.find_spec(\"pip\") is None; assert not list(bundled.glob(\"*.whl\")); print(json.dumps({\"package_installer\":\"absent\",\"bootstrap_wheels\":0,\"removed_bootstrap_wheels\":len(wheels)}))"]
+
 EXPOSE 8080
 
 USER 10001:10001

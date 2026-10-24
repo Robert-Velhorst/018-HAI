@@ -179,6 +179,7 @@ jobs:
           python -m compileall -q .
           python -m unittest discover -v -s . -p 'test*.py'
       - name: Build runner container image
+        id: runner_image
         working-directory: services/${{ matrix.name }}
         run: |
           if [ "${{ matrix.name }}" = miniswe-runner ]; then
@@ -215,7 +216,7 @@ jobs:
         working-directory: services/${{ matrix.name }}
         run: python ../../scripts/python_runner_container_smoke.py --runner "${{ matrix.name }}" --image "hai-${{ matrix.name }}:ci"
       - name: Scan exact runner image without advisory exclusions
-        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","docling-runner","lm-eval-runner","evidently-runner","garak-runner","trivy-runner","guardrails-runner","ortools-solver","miniswe-runner"]'), matrix.name)
+        if: ${{ !cancelled() && steps.runner_image.outcome == 'success' }}
         timeout-minutes: 15
         env:
           HAI_SCAN_DIRECTORY: ${{ runner.temp }}/hai-image-security-${{ matrix.name }}
@@ -239,7 +240,7 @@ jobs:
           python scripts/verify_runner_image_security.py "$HAI_SCAN_DIRECTORY/reports/image-security.json" "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "services/${{ matrix.name }}" > "$HAI_SCAN_DIRECTORY/reports/verified-image.json"
           test "$scan_status" -eq 0
       - name: Retain exact-image security inventory and provenance
-        if: always() && contains(fromJSON('["fastmcp-bridge","deepeval-runner","docling-runner","lm-eval-runner","evidently-runner","garak-runner","trivy-runner","guardrails-runner","ortools-solver","miniswe-runner"]'), matrix.name)
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runner-image-security-${{ matrix.name }}

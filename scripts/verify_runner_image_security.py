@@ -29,9 +29,18 @@ def main():
         require(os_info['Family'] == 'debian' and str(os_info['Name']).split('.')[0] == '13',
                 'Native runtime must retain Debian 13')
     else:
-        require(service_path.name == 'trivy-runner', 'Unexpected non-native scan target')
-        require(os_info['Family'] == 'alpine' and str(os_info['Name']).startswith('3.24'),
-                'Scanner runtime must retain Alpine 3.24')
+        alpine_wrappers = {'trivy-runner', 'gosec-runner'}
+        debian_wrappers = {'gitleaks-runner', 'grype-runner', 'syft-runner',
+                           'wasi-runner', 'whispercpp-runner', 'agent-framework-runner',
+                           'crewai-runner', 'pydantic-ai-runner', 'deepteam-runner'}
+        require(service_path.name in alpine_wrappers | debian_wrappers,
+                'Unexpected non-native scan target')
+        if service_path.name in alpine_wrappers:
+            require(os_info['Family'] == 'alpine' and str(os_info['Name']).startswith('3.24'),
+                    'Scanner runtime must retain Alpine 3.24')
+        else:
+            require(os_info['Family'] == 'debian' and str(os_info['Name']).split('.')[0] == '13',
+                    'Python/scanner runtime must retain Debian 13')
     require(scan.get('Results'), 'The scanner produced no inventory')
     installed = {}
     counts = {'os': 0, 'python': 0, 'gobinary': 0}
@@ -55,12 +64,15 @@ def main():
             installed.setdefault(normalized(package['Name']), set()).add(version)
     require(counts['os'], 'OS package coverage is incomplete')
     require(not installed.get('pip'), 'Package installer remains in the runtime image')
-    if service_path.name == 'trivy-runner':
-        # This wrapper uses only the Python standard library and the Go binary.
-        require(not counts['python'], 'Unexpected third-party Python package remains in the scanner runtime')
-        require(counts['gobinary'], 'Scanner binary module inventory is missing')
+    stdlib_wrappers = {'trivy-runner', 'gosec-runner', 'gitleaks-runner', 'grype-runner',
+                       'syft-runner', 'wasi-runner', 'whispercpp-runner'}
+    go_wrappers = {'trivy-runner', 'gosec-runner', 'gitleaks-runner', 'grype-runner', 'syft-runner'}
+    if service_path.name in stdlib_wrappers:
+        require(not counts['python'], 'Unexpected third-party Python package remains in the standard-library runtime')
     else:
         require(counts['python'], 'Application Python package coverage is incomplete')
+    if service_path.name in go_wrappers:
+        require(counts['gobinary'], 'Scanner binary module inventory is missing')
     selected = {}
     for filename in ['requirements.lock', 'requirements-engine.lock']:
         path = service_path/filename
