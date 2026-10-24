@@ -15,6 +15,7 @@ import urllib.request
 import zipfile
 
 SDKS = {
+    "lm-eval-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "crewai-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "ortools-runtime": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "ortools-build": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
@@ -47,7 +48,7 @@ def main():
     for name in ["outputs", "cache"]:
         (output / name).chmod(0o777)
     service, input_filename = INPUTS.get(args.runner, (args.runner,
-        "requirements-port.in" if args.runner in {"evidently-runner", "guardrails-runner"} else "requirements.in"))
+        "requirements-port.in" if args.runner in {"evidently-runner", "guardrails-runner", "lm-eval-runner"} else "requirements.in"))
     input_path = Path("services") / service / input_filename
     source = (root / input_path).read_bytes()
     (output / "inputs/requirements.in").write_bytes(source)
@@ -87,6 +88,17 @@ def main():
         port_build = json.loads(build.stdout)
         if port_build["sha256"] != "c16222e9b42be2b593e19e97649058e92ad5df2fa3b47cb4f912525a1ad86fa4":
             raise ValueError("Guardrails port wheel differs from the reviewed static build")
+        (output/"port-build.json").write_text(json.dumps(port_build, indent=2)+"\n", encoding="utf-8")
+    if args.runner == "lm-eval-runner":
+        build = subprocess.run([sys.executable,
+            str(root/"services/lm-eval-runner/compat/build_port_wheel.py"),
+            "--output-directory", str(output/"inputs")], capture_output=True, check=False, timeout=120)
+        (output/"port-build.log").write_bytes(build.stdout + build.stderr)
+        if build.returncode:
+            raise RuntimeError("LM Eval metadata port construction failed")
+        port_build = json.loads(build.stdout)
+        if port_build["sha256"] != "0cc1a5307a648a8f858f3181e5df8c23b07f6af6681e33e8b3d102dd3e8ddf7b":
+            raise ValueError("LM Eval metadata port differs from the reviewed static build")
         (output/"port-build.json").write_text(json.dumps(port_build, indent=2)+"\n", encoding="utf-8")
     metadata_raw = urllib.request.urlopen("https://pypi.org/pypi/uv/0.13.5/json", timeout=40).read()
     metadata = json.loads(metadata_raw)

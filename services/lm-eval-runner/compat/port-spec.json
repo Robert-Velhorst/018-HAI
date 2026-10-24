@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "upstream_version": "0.4.13",
+  "local_version": "0.4.13+hai.optionalcache.1",
+  "upstream_url": "https://files.pythonhosted.org/packages/7d/e8/e90272ef920d5a77c91bf0473e325113950f37bfeaca2fa3b98e16142961/lm_eval-0.4.13-py3-none-any.whl",
+  "upstream_wheel_sha256": "5daaa1973bf874005f64f28d3834b875f6886f0d6475878e6a6c821994a5286a",
+  "unchanged_python_file_count": 751,
+  "unchanged_python_manifest_sha256": "1382da1c56a5eb09a1c268acf8afa95152abf44e042ce28f16881f4fbfbc8e52",
+  "profile": "Preserve the complete upstream evaluation engine and CLI. Make its already-lazy SqliteDict response-cache dependency optional. HAI never selects this extra or supplies a response-cache path; its six-case synthetic local API evaluation remains unchanged. Sqlitedict has no patched release and is prohibited in this supported runtime. Installing the cache extra separately is outside this supported profile, not a security waiver.",
+  "advisory": "https://github.com/advisories/GHSA-g4r7-86gm-pgqc",
+  "upstream_requires_python": ">=3.10",
+  "new_application_cases_authored": false,
+  "operator_sdk_or_database_changed": false
+}

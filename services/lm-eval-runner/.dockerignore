@@ -1,0 +1,13 @@
+**
+!Dockerfile
+!requirements.lock
+!requirements-build.lock
+!native-runtime.profile.json
+!app.py
+!test_app.py
+!tasks/
+!tasks/**
+!compat/
+!compat/build_port_wheel.py
+!compat/verify_installed_profile.py
+!compat/port-spec.json
