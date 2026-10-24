@@ -1,5 +1,7 @@
 FROM hai-acl-source-sdk:ci
 USER 0:0
+# Original permission fixtures use Bash shopt through their fixed /bin/sh.
+RUN ln -sfn /bin/bash /bin/sh
 COPY inputs/qualify_installed_packages.py /review/qualify_installed_packages.py
 COPY outputs/qualification.json /review/build-qualification.json
 COPY outputs/*.deb /candidates/

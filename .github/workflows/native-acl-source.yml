@@ -50,13 +50,19 @@ jobs:
       - name: Run all original Linux cases against installed candidates
         timeout-minutes: 35
         run: |
+          test ! -e /sys/dev/block/91:64
+          if awk '/^Block devices:/{block=1;next} block && $1==91 {found=1} END{exit !found}' /proc/devices; then
+            echo "Refusing device fixtures: block major 91 is registered"
+            exit 1
+          fi
           mkdir -p "$HAI_SOURCE_ROOT/installed-case-reports"
           docker image inspect hai-acl-installed-sdk:ci > "$HAI_SOURCE_ROOT/installed-sdk-image-inspect.json"
           docker run --init --rm --network none --read-only --user 0:0 --cap-drop ALL \
             --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add FSETID \
-            --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges \
+            --cap-add SETUID --cap-add SETGID --cap-add MKNOD \
+            --device-cgroup-rule "b 91:64 rm" --security-opt no-new-privileges \
             --memory 6g --cpus 2 --pids-limit 256 \
-            --tmpfs /root-cases:rw,exec,nosuid,nodev,size=5g,mode=1777 \
+            --tmpfs /root-cases:rw,exec,nosuid,dev,size=5g,mode=1777 \
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
             --mount type=bind,src="$HAI_SOURCE_ROOT/inputs",dst=/inputs,readonly \
             --mount type=bind,src="$HAI_SOURCE_ROOT/outputs",dst=/public-build,readonly \

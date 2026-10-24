@@ -22,6 +22,12 @@ def main():
             or os.environ.get('HAI_HOSTED_SOURCE_QUALIFICATION')!='github-hosted'):
         raise RuntimeError('Use only the dedicated installed-package hosted SDK')
     if platform.python_version()!='3.15.1' or subprocess.check_output(['gcc','-dumpfullversion'],text=True).strip()!='16.2.0':raise ValueError('Unexpected SDK interpreter/compiler')
+    if Path('/sys/dev/block/91:64').exists():raise ValueError('Refuse a registered host block device fixture')
+    block_devices=Path('/proc/devices').read_text().split('Block devices:',1)[1]
+    if re.search(r'(?m)^\s*91\s',block_devices):raise ValueError('Refuse registered block major 91')
+    if os.readlink('/bin/sh')!='/bin/bash':raise ValueError('Original shopt case requires the SDK Bash shell')
+    caphex=re.search(r'(?m)^CapEff:\s+([0-9a-f]+)',Path('/proc/self/status').read_text())[1]
+    if int(caphex,16)!=sum(1<<n for n in [0,1,3,4,6,7,27]):raise ValueError('Unexpected installed-case SDK capability set')
     inputs,build,work,output=Path('/inputs'),Path('/public-build'),Path('/root-cases'),Path('/case-reports')
     sha=lambda raw:hashlib.sha256(raw).hexdigest()
     spec=json.loads((inputs/'sources.json').read_text())
@@ -73,7 +79,7 @@ def main():
                 if sha(path.read_bytes())!=digest:raise ValueError('Installed candidate file differs: '+str(path))
                 installed_files[str(path)]=digest
     results=[]
-    report={'installed_packages':installed,'installed_files_sha256':installed_files,'case_profile':'All 16 original Linux cases against exact installed ACL candidates','publisher_expected_failure_cases':sorted(expected_failures),'new_case_exclusions_or_application_cases':False,'runtime_or_operator_installation':False,'full_application_image_or_security_acceptance':False}
+    report={'SDK_shell':'/bin/bash','SDK_effective_capabilities':caphex,'fixture_block_major_91_confirmed_unregistered':True,'installed_packages':installed,'installed_files_sha256':installed_files,'case_profile':'All 16 original Linux cases against exact installed ACL candidates','publisher_expected_failure_cases':sorted(expected_failures),'new_case_exclusions_or_application_cases':False,'runtime_or_operator_installation':False,'full_application_image_or_security_acceptance':False}
     try:
         for name in sorted(selected):
             log=output/(name.replace('/','__')+'.log')
