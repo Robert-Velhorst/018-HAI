@@ -200,3 +200,11 @@ whole-file or strict-prefix duplicates of one another. Neither this prefix check
 the complete hashes, nor the patch triage authorizes deleting an archive. Source
 integration, private-data handling, main preservation and safe local deletion
 remain separate gates.
+
+## Prepared-history privacy preflight
+
+`prepared-history-secret-scan-reconciliation-2026-10-24.md` records a real pinned
+Gitleaks scan at two exact prepared checkpoints: zero findings for the clean
+147-commit range and the single known documentation finding in the original
+147-commit control. No scanner exceptions change. This is local preflight, not
+publication, complete privacy review, exact-head CI or archive deletion approval.
