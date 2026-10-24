@@ -52,7 +52,7 @@ jobs:
             python-version: "3.13"
             requirements-lock: ""
           - name: guardrails-runner
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: services/guardrails-runner/requirements.lock
           - name: lm-eval-runner
             python-version: "3.15.1"
@@ -98,12 +98,20 @@ jobs:
         if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner","agent-framework-runner"]'), matrix.name)
         run: python -m pip install --disable-pip-version-check --no-build-isolation --require-hashes -r "${{ matrix.requirements-lock }}"
       - name: Install hash-locked runner dependencies
-        if: matrix.requirements-lock != '' && !contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner","agent-framework-runner"]'), matrix.name)
+        if: matrix.name != 'guardrails-runner' && matrix.requirements-lock != '' && !contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner","agent-framework-runner"]'), matrix.name)
         run: python -m pip install --disable-pip-version-check --require-hashes -r "${{ matrix.requirements-lock }}"
       - name: Apply reviewed Evidently Pandas compatibility import
         if: matrix.name == 'evidently-runner'
         working-directory: services/evidently-runner
         run: python apply_vendor_compat.py --apply-to-sdk
+      - name: Build and install source-bound Guardrails offline compatibility wheel
+        if: matrix.name == 'guardrails-runner'
+        env:
+          HAI_GUARDRAILS_WHEEL_DIRECTORY: ${{ runner.temp }}/hai-guardrails-port-wheel
+        run: |
+          python services/guardrails-runner/compat/build_port_wheel.py --output-directory "$HAI_GUARDRAILS_WHEEL_DIRECTORY"
+          echo "4cfe4d4d7cd4ab044bda2b47cafafe8f7a7c1a9007351ba75994ebed89176353  $HAI_GUARDRAILS_WHEEL_DIRECTORY/guardrails_ai-0.11.0+hai.offline.1-py3-none-any.whl" | sha256sum --check
+          python -m pip install --disable-pip-version-check --only-binary :all: --find-links "$HAI_GUARDRAILS_WHEEL_DIRECTORY" --require-hashes -r services/guardrails-runner/requirements.lock
       - name: Compile runner and run isolated contract tests
         working-directory: services/${{ matrix.name }}
         env:

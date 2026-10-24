@@ -31,9 +31,11 @@ reviewed deterministic digest, and resolves its input inside the existing
 restricted unprivileged SDK. Only public input/wheel/tool/cache/output paths
 are mounted. No app source, credentials or Docker socket are mounted.
 
-Preparation remains a draft: canonical runtime input/lock/image are not yet
-switched to this port. The inherited Guardrails input/lock mismatch remains a
-strict failing gate until the verified graph and image are integrated. Existing
+The hosted metadata graph now resolves 62 selected versions, with no stable
+version gaps, prereleases or reported per-version feed advisories. Canonical
+input/locks and the Python 3.15.1 CI/image targets now select this port. Runtime
+qualification remains pending. The image runs the existing application cases
+as UID 10001 with network disabled before its health check. Existing
 application cases remain unchanged; no new cases or local application suites
 are authored/run. Static ZIP/AST/RECORD checks are not runtime compatibility or
 network-isolation proof. No main merge or deployment is authorized by this work.
