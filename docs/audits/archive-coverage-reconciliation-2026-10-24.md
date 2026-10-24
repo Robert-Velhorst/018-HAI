@@ -98,6 +98,13 @@ false whole-file integration and deletion flags. All other changed declarations
 remain separate review work. These receipts do not clear
 the 251 whole-file variants or make the retained archives deletion-eligible.
 
+The three historically unparsable Go snapshots now have individual source-intent
+dispositions in `archive-invalid-go-snapshot-dispositions-2026-10-24.md`. They
+remain classified as invalid historical bytes; no snapshot was restored or
+deleted. Visible semantic assertions are retained, and scheduler/runtime behavior
+has explicit stronger successors. Missing truncated history is not inferred.
+These three records are separate from the 54 absent-identity crosswalk.
+
 ## One changed test variant
 
 The Promptfoo test file moved from exact to changed relative to the earlier
