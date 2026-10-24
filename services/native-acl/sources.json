@@ -1,0 +1,41 @@
+{
+  "version": "2.4.0-1",
+  "upstream_version": "2.4.0",
+  "archive_root": "acl-2.4.0",
+  "inputs": [
+    {
+      "name": "acl_2.4.0-1.dsc",
+      "url": "https://deb.debian.org/debian/pool/main/a/acl/acl_2.4.0-1.dsc",
+      "sha256": "b987ebbeb3d498794bad29cd65301b77384978493d8765c94dba8bad8fa325b6",
+      "bytes": 2624
+    },
+    {
+      "name": "acl_2.4.0.orig.tar.xz",
+      "bytes": 384828,
+      "sha256": "e661131456d2708a01c614a0f400e11d7d1bfaeb6f3e74b75bb980b72f0161a3",
+      "url": "https://deb.debian.org/debian/pool/main/a/acl/acl_2.4.0.orig.tar.xz"
+    },
+    {
+      "name": "acl_2.4.0.orig.tar.xz.asc",
+      "bytes": 833,
+      "sha256": "5f4f0b9b78821764fe6b88e32aef6ec519628522c211c36706bcb78d6f3f036b",
+      "url": "https://deb.debian.org/debian/pool/main/a/acl/acl_2.4.0.orig.tar.xz.asc"
+    },
+    {
+      "name": "acl_2.4.0-1.debian.tar.xz",
+      "bytes": 47932,
+      "sha256": "65931c2fb3e821bda67f8d8d72d77e99ac61502748dcdf38b6805fe89339085e",
+      "url": "https://deb.debian.org/debian/pool/main/a/acl/acl_2.4.0-1.debian.tar.xz"
+    }
+  ],
+  "expected_current_runtime_family": [
+    "libacl1"
+  ],
+  "publisher_source": "https://download.savannah.nongnu.org/releases/acl/acl-2.4.0.tar.xz",
+  "publisher_and_Debian_original_archive_sha256_match": true,
+  "expected_source_patches": [
+    "examples/Makefile",
+    "tools/getfacl.c"
+  ],
+  "signature_verified": false
+}
