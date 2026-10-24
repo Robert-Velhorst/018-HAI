@@ -869,6 +869,7 @@ jobs:
             hai_durablejob_test \
             hai_workflow_lease_expiry_test \
             hai_workflow_followup_test \
+            hai_openclaw_maintenance_test \
             hai_ambient_monitor_test
           do
             createdb \
@@ -876,6 +877,29 @@ jobs:
               --port=5432 \
               --username=postgres \
               "${database}"
+          done
+      - name: OpenClaw maintenance pull lifecycle (PostgreSQL)
+        env:
+          HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS: "true"
+          TEST_OPENCLAW_MAINTENANCE_DSN: "host=127.0.0.1 user=postgres password=postgres dbname=hai_openclaw_maintenance_test port=5432 sslmode=disable TimeZone=UTC"
+        run: |
+          set -euo pipefail
+          maintenance_pull_log="$RUNNER_TEMP/maintenance-pull-postgres.log"
+          go test -count=1 -p 1 -parallel 1 -timeout 180s \
+            -run '^(TestPullClientReportsIndependentBackendHealthRejection|TestPullClientPostgresLifecycleAndLostAcknowledgement|TestWorkerAmbiguousHeadersCannotLeasePendingInstallPostgres|TestMaintenanceReviewRejectsMismatchedReceiptPostgres|TestFailedUpdateBlocksTasksUntilExplicitFreshReview)$' \
+            ./internal/openclawmaintenance/ -v | tee "$maintenance_pull_log"
+          if grep -qE -- '^[[:space:]]*--- SKIP:' "$maintenance_pull_log"; then
+            echo "Required maintenance PostgreSQL coverage skipped"
+            exit 1
+          fi
+          for test_name in \
+            TestPullClientReportsIndependentBackendHealthRejection \
+            TestPullClientPostgresLifecycleAndLostAcknowledgement \
+            TestWorkerAmbiguousHeadersCannotLeasePendingInstallPostgres \
+            TestMaintenanceReviewRejectsMismatchedReceiptPostgres \
+            TestFailedUpdateBlocksTasksUntilExplicitFreshReview
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$maintenance_pull_log"
           done
       - name: Ambient monitor advisory release lifecycle (PostgreSQL)
         env:
@@ -985,7 +1009,8 @@ jobs:
             grep -q -- "^[[:space:]]*--- PASS: TestPostgresMemoryDedupPreservesDistinctSources/${test_case} (" "$memory_provenance_log"
           done
           maintenance_projection_log="$RUNNER_TEMP/maintenance-overview-postgres.log"
-          TEST_OPENCLAW_MAINTENANCE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s \
+          maintenance_projection_dsn="host=127.0.0.1 user=postgres password=postgres dbname=hai_openclaw_maintenance_test port=5432 sslmode=disable TimeZone=UTC"
+          TEST_OPENCLAW_MAINTENANCE_DSN="$maintenance_projection_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s \
             -run '^(TestOverviewReadyCompanionHasNoBlockingReason|TestOverviewMissingPublisherBlocksEvenWithContainment)$' \
             ./internal/openclawmaintenance/ -v | tee "$maintenance_projection_log"
           for test_name in TestOverviewReadyCompanionHasNoBlockingReason TestOverviewMissingPublisherBlocksEvenWithContainment; do

@@ -357,12 +357,21 @@ func (h *Handler) WorkerAuth(c *gin.Context) {
 		c.AbortWithStatus(503)
 		return
 	}
-	provided, bearer := strings.CutPrefix(c.GetHeader("Authorization"), "Bearer ")
+	authorization := c.Request.Header.Values("Authorization")
+	if len(authorization) != 1 {
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+	provided, bearer := strings.CutPrefix(authorization[0], "Bearer ")
 	if !bearer || subtle.ConstantTimeCompare([]byte(provided), []byte(h.token)) != 1 {
 		c.AbortWithStatus(401)
 		return
 	}
-	capability, supported := capabilityFromHeader(c.GetHeader("X-HAI-Worker-Capability"))
+	var capability WorkerCapabilityHandshake
+	var supported bool
+	if values := c.Request.Header.Values("X-HAI-Worker-Capability"); len(values) == 1 {
+		capability, supported = capabilityFromHeader(values[0])
+	}
 	h.recordWorkerContact(capability, supported)
 	c.Next()
 }

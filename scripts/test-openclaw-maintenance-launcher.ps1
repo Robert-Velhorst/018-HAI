@@ -6,6 +6,11 @@ $root = Split-Path -Parent $PSScriptRoot
 $support = Join-Path $root 'installer/windows/Hai-OpenClawMaintenance.ps1'
 $payloadValidator = Join-Path $root 'installer/windows/Hai-WindowsExecutable.ps1'
 if (-not (Test-Path -LiteralPath $support)) { throw 'OpenClaw maintenance launcher support is missing.' }
+$originalLocalAppData = $env:LOCALAPPDATA
+$isolatedLocalAppData = Join-Path ([IO.Path]::GetTempPath()) ('hai-maintenance-test-localdata-' + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $isolatedLocalAppData -ErrorAction Stop | Out-Null
+$env:LOCALAPPDATA = $isolatedLocalAppData
+try {
 . $support
 $script:HaiOpenClawMaintenanceMutexName = 'Local\HAI.OpenClawMaintenance.Test.' + [Guid]::NewGuid().ToString('N')
 if ($script:HaiOpenClawMaintenanceLogMutexName -cne 'Global\HAI.OpenClawMaintenance.Log') {
@@ -261,6 +266,10 @@ param([string]$Support, [string]$MutexName, [string]$EnvFile, [string]$Launcher,
 $ErrorActionPreference = 'Stop'
 . $Support
 $script:HaiOpenClawMaintenanceMutexName = $MutexName
+function Get-ScheduledTask { throw 'Offline fixture blocked a real Task Scheduler lookup.' }
+function Register-ScheduledTask { throw 'Offline fixture blocked real task registration.' }
+function Unregister-ScheduledTask { throw 'Offline fixture blocked real task removal.' }
+function Start-ScheduledTask { throw 'Offline fixture blocked real task startup.' }
 $registerBlocked = $false
 try {
     Register-HaiOpenClawMaintenanceTask -EnvFile $EnvFile -LauncherPath $Launcher -WorkerPath $Worker `
@@ -715,3 +724,15 @@ if (-not $menu.Contains('Manage-HAI-OpenClawMaintenanceTask.ps1') -or
     throw 'Uninstall must remove only the verified HAI task through the normal lock, verify it stayed absent, and preserve user data.'
 }
 Write-Host 'OpenClaw Windows maintenance configuration, scheduling, quoting, failure reporting, and uninstall contracts passed.'
+} finally {
+    $env:LOCALAPPDATA = $originalLocalAppData
+    $temporaryRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    $resolvedIsolatedLocalAppData = [IO.Path]::GetFullPath($isolatedLocalAppData)
+    if (-not $resolvedIsolatedLocalAppData.StartsWith($temporaryRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        (Split-Path -Leaf $resolvedIsolatedLocalAppData) -cnotmatch '^hai-maintenance-test-localdata-[0-9a-f]{32}$') {
+        throw 'Refusing cleanup outside the generated maintenance test local-data directory.'
+    }
+    if (Test-Path -LiteralPath $resolvedIsolatedLocalAppData -PathType Container) {
+        Remove-Item -LiteralPath $resolvedIsolatedLocalAppData -Recurse -Force
+    }
+}
