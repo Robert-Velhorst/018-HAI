@@ -225,6 +225,30 @@ describe('TaskBlueprintComponent inspector selection accessibility', () => {
     expect(buttons.find((button) => button.textContent?.includes('Plan'))?.getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('preserves focus and one selected view without dispatching work while inspecting', () => {
+    const page: HTMLElement = fixture.nativeElement;
+    const selector = page.querySelector('.inspector-tabs') as HTMLElement;
+    const buttons = Array.from(selector.querySelectorAll<HTMLButtonElement>('button'));
+
+    for (const label of ['Plan', 'Evidence', 'Logs', 'Overview']) {
+      const button = buttons.find((candidate) => candidate.textContent?.trim() === label)!;
+      expect(button.type).toBe('button');
+      expect(button.disabled).toBeFalse();
+      button.focus();
+      expect(document.activeElement).toBe(button);
+      button.click();
+      fixture.detectChanges();
+
+      expect(document.activeElement).toBe(button);
+      const selected = buttons.filter((candidate) => candidate.getAttribute('aria-pressed') === 'true');
+      expect(selected).toEqual([button]);
+      expect(selector.getAttribute('role')).toBe('group');
+      expect(taskPlans.resolveReviewItem).not.toHaveBeenCalled();
+      expect(taskPlans.reconcileApprovedReviews).not.toHaveBeenCalled();
+      expect(assistant.command).not.toHaveBeenCalled();
+    }
+  });
+
   it('keeps a cold selected historical receipt visible and non-runnable in Basic after reload and refresh', () => {
     const persisted = {
       id: 'persisted-task', request: 'Inspect the persisted evidence.', projectKey: '018-HAI', pursuitId: 'saved-pursuit',

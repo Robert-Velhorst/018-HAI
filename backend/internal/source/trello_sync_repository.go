@@ -102,7 +102,8 @@ func validateTrelloPageCursorProgress(
 	if page.CursorBefore != before {
 		return errors.New("Trello page cursor-before does not match the durable checkpoint")
 	}
-	if next.PagesProcessed != current.PagesProcessed+1 || current.RecordsProcessed < 0 || next.RecordsProcessed < current.RecordsProcessed ||
+	if next.PagesProcessed <= current.PagesProcessed || next.PagesProcessed != current.PagesProcessed+1 ||
+		current.RecordsProcessed < 0 || next.RecordsProcessed < current.RecordsProcessed ||
 		next.RecordsProcessed-current.RecordsProcessed != int64(page.RecordCount) {
 		return errors.New("Trello page progress counters do not match its durable records")
 	}
@@ -176,7 +177,8 @@ func validateTrelloPageCursorProgress(
 		}
 	case trelloPhaseBackfillActions, trelloPhaseCatchUpActions, trelloPhaseIncrementalActions:
 		if current.CardCursor != "" || next.CardCursor != "" ||
-			page.RecordCount > trelloActionPageSize || len(receipts) > page.RecordCount || page.RecordCount-len(receipts) > 1 {
+			page.RecordCount > trelloActionPageSize || len(receipts) > page.RecordCount || page.RecordCount-len(receipts) > 1 ||
+			(before == "" && page.RecordCount != len(receipts)) {
 			return errors.New("Trello action page count does not match its durable receipts")
 		}
 		expectedAfter := before
@@ -719,12 +721,16 @@ func (r *GormRepository) CommitTrelloSyncPage(
 				return gorm.ErrRecordNotFound
 			}
 		}
-		jobResult := tx.Model(&models.SourceSyncJob{}).Where("id = ? AND source_id = ?", job.ID, source.ID).Select("*").Updates(job)
+		// A late worker must not resurrect a stopped job or overwrite a changed
+		// binding. Failure here rolls back this page and its checkpoint writes.
+		jobResult := tx.Model(&models.SourceSyncJob{}).
+			Where("id = ? AND source_id = ? AND COALESCE(owner_identity, '') = ? AND mode = ? AND status = ? AND completed_at IS NULL",
+				job.ID, source.ID, job.OwnerIdentity, job.Mode, "running").Select("*").Updates(job)
 		if jobResult.Error != nil {
 			return jobResult.Error
 		}
 		if jobResult.RowsAffected != 1 {
-			return gorm.ErrRecordNotFound
+			return ErrTrelloSyncCheckpointStale
 		}
 		if err := tx.Where("source_id = ?", source.ID).First(&committedState).Error; err != nil {
 			return err

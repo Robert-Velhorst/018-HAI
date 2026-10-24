@@ -2091,11 +2091,13 @@ func TestMiniSWEOllamaEndpointIsExactAndCannotAliasAnotherLocalModelServer(t *te
 
 func TestMaintenanceEndpointKeyAcceptsAMountPrefixButNotARoute(t *testing.T) {
 	for endpoint, want := range map[string]string{
-		"https://openrouter.ai/api":     "https://openrouter.ai/api",
-		"https://openrouter.ai/api/v1":  "https://openrouter.ai/api",
-		"https://openrouter.ai/api/v1/": "https://openrouter.ai/api",
-		"https://example.test/v1":       "https://example.test",
-		"https://example.test":          "https://example.test",
+		"https://openrouter.ai/api":           "https://openrouter.ai/api",
+		"https://openrouter.ai/api/v1":        "https://openrouter.ai/api",
+		"https://openrouter.ai/api/v1/":       "https://openrouter.ai/api",
+		"https://example.test/v1":             "https://example.test",
+		"https://example.test":                "https://example.test",
+		"https://example.test/api.v2/v1":      "https://example.test/api.v2",
+		"https://example.test/.well-known/v1": "https://example.test/.well-known",
 	} {
 		got, err := maintenanceEndpointKey(endpoint)
 		if err != nil || got != want {
@@ -2106,9 +2108,17 @@ func TestMaintenanceEndpointKeyAcceptsAMountPrefixButNotARoute(t *testing.T) {
 		"https://example.test/v1/other",
 		"https://example.test/a/b/c",
 		"https://example.test/api/../secret",
+		"https://example.test/.",
+		"https://example.test/..",
+		"https://example.test/api/.",
+		"https://example.test/api/..",
+		"https://example.test/./v1",
+		"https://example.test/../v1",
 	} {
-		if _, err := maintenanceEndpointKey(endpoint); err == nil {
-			t.Fatalf("route-shaped endpoint accepted: %q", endpoint)
-		}
+		t.Run(endpoint, func(t *testing.T) {
+			if _, err := maintenanceEndpointKey(endpoint); err == nil {
+				t.Fatalf("route-shaped endpoint accepted: %q", endpoint)
+			}
+		})
 	}
 }

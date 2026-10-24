@@ -23,6 +23,8 @@ $launcher = [IO.File]::ReadAllText($launcherPath)
 foreach ($required in @(
     'TRELLO_API_KEY',
     'TRELLO_READ_TOKEN',
+    'TRELLO_ACCOUNT_OWNER_IDENTITY',
+    'TRELLO_ACCOUNT_MEMBER_ID',
     'TRELLO_LIVE_BOARD',
     ':/workspace:ro',
     'finally',
@@ -53,7 +55,7 @@ foreach ($required in @(
     }
 }
 
-$missingEnv = Join-Path $env:TEMP "hai-live-trello-contract-missing-env"
+$missingEnv = Join-Path ([IO.Path]::GetTempPath()) ("hai-live-trello-contract-missing-env-" + [Guid]::NewGuid().ToString('N'))
 try {
     & $launcherPath -EnvFile $missingEnv
     throw "Live Trello launcher unexpectedly continued without its environment file."

@@ -35,6 +35,11 @@ func identityMiddleware() gin.HandlerFunc {
 			c.AbortWithStatusJSON(e.HTTPStatus(), e.Envelope())
 			return
 		}
+		if secret != "" && ambiguousIdentityCredentials(c) {
+			e := apierror.New(apierror.CodeUnauthorized, "ambiguous identity credentials")
+			c.AbortWithStatusJSON(e.HTTPStatus(), e.Envelope())
+			return
+		}
 		token := identityToken(c)
 		if secret == "" || token == "" {
 			c.Next()
@@ -104,6 +109,26 @@ func bearerToken(c *gin.Context) string {
 		return strings.TrimSpace(h[7:])
 	}
 	return ""
+}
+
+func ambiguousIdentityCredentials(c *gin.Context) bool {
+	if len(c.Request.Header.Values("Authorization")) > 1 {
+		return true
+	}
+	// An explicit bearer keeps its existing precedence over browser cookies.
+	if bearerToken(c) != "" {
+		return false
+	}
+	accessCookies := 0
+	for _, cookie := range c.Request.Cookies() {
+		if cookie.Name == "access_token" {
+			accessCookies++
+			if accessCookies > 1 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // identityToken first accepts an explicit bearer token for API clients and then

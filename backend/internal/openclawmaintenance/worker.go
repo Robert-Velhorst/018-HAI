@@ -997,11 +997,7 @@ func (w *Worker) Execute(ctx context.Context, j Job) (Report, error) {
 		return r, err
 	}
 	defer res.Body.Close()
-	var health struct {
-		OK     bool   `json:"ok"`
-		Status string `json:"status"`
-	}
-	r.HealthOK = res.StatusCode == 200 && json.NewDecoder(io.LimitReader(res.Body, 4096)).Decode(&health) == nil && health.OK && health.Status == "live"
+	r.HealthOK = companionHealthResponseOK(res)
 	if r.Installed != j.Version || !r.HealthOK {
 		r.Outcome = "needs_review"
 		return r, fmt.Errorf("post-install verification failed")

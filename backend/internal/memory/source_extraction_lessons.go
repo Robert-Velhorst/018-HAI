@@ -176,7 +176,7 @@ func PersistSourceExtractionLessonTx(tx *gorm.DB, ownerIdentity, sourceURI strin
 
 	var existing []models.ContextMemory
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("owner_identity = ? AND source_extraction_id = ? AND kind = ?", ownerIdentity, extractionID, lesson.Kind).
+		Where("owner_identity = ? AND source_extraction_id = ? AND LOWER(kind) = ?", ownerIdentity, extractionID, lesson.Kind).
 		Order("id").Limit(2).Find(&existing).Error; err != nil {
 		return nil, fmt.Errorf("find exact-provenance correction lesson: %w", err)
 	}
@@ -386,7 +386,7 @@ func validateSourceExtractionLessonEvidence(tx *gorm.DB, ownerIdentity string, e
 }
 
 func sourceExtractionLesson(ownerIdentity string, extractionID uuid.UUID, request CreateRequest) models.ContextMemory {
-	kind := strings.TrimSpace(request.Kind)
+	kind := strings.ToLower(strings.TrimSpace(request.Kind))
 	content := strings.TrimSpace(request.Content)
 	projectKey := strings.TrimSpace(request.ProjectKey)
 	return models.ContextMemory{

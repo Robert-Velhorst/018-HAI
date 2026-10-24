@@ -16,6 +16,90 @@ describe('OpenclawArtifactOperationsService', () => {
     expect((operations as any).states.size).toBe(0)
   })
 
+  for (const payload of [null, { artifactDigest: 'wrong' }, { artifactDigest: 'a'.repeat(64), contentSHA256: 'b'.repeat(64), sizeBytes: 8 * 1024 * 1024 + 1, retainedAt: '2026-09-24T00:00:00Z', verification: 'unverified' }]) {
+    it(`fails malformed retention evidence without delivering a successful result: ${JSON.stringify(payload)}`, () => {
+      const operations = TestBed.inject(OpenclawArtifactOperationsService)
+      const http = TestBed.inject(HttpTestingController)
+      const states: Array<string | undefined> = []
+      const watcher = operations.watch('event-1').subscribe(state => states.push(state?.status))
+      let successes = 0
+      let failures = 0
+      operations.retain('event-1', 'a'.repeat(64)).subscribe({ next: () => successes++, error: () => failures++ })
+      http.expectOne(`/api/v1/openclaw-artifacts/event-1/${'a'.repeat(64)}/retain`).flush(payload)
+      expect(successes).toBe(0)
+      expect(failures).toBe(1)
+      expect(states).toEqual([undefined, 'running', 'failed'])
+      expect((operations as any).inFlight.size).toBe(0)
+      watcher.unsubscribe()
+    })
+  }
+
+  it('does not deliver a successful removal when the server did not confirm 204', () => {
+    const operations = TestBed.inject(OpenclawArtifactOperationsService)
+    const http = TestBed.inject(HttpTestingController)
+    let successes = 0
+    let failures = 0
+    operations.forget('event-1', 'a'.repeat(64), 'b'.repeat(64)).subscribe({ next: () => successes++, error: () => failures++ })
+    http.expectOne(`/api/v1/openclaw-artifacts/event-1/${'a'.repeat(64)}/retained`).flush({}, { status: 200, statusText: 'OK' })
+    expect(successes).toBe(0)
+    expect(failures).toBe(1)
+  })
+
+  it('replays terminal errors without sending the mutation again', () => {
+    const operations = TestBed.inject(OpenclawArtifactOperationsService)
+    const http = TestBed.inject(HttpTestingController)
+    let failures = 0
+    const operation = operations.retain('event-1', 'a'.repeat(64))
+    operation.subscribe({ error: () => failures++ })
+    const path = `/api/v1/openclaw-artifacts/event-1/${'a'.repeat(64)}/retain`
+    http.expectOne(path).flush({}, { status: 503, statusText: 'Unavailable' })
+    operation.subscribe({ error: () => failures++ })
+    const repeated = http.match(path)
+    expect(repeated.length).toBe(0)
+    for (const request of repeated) request.flush({}, { status: 503, statusText: 'Unavailable' })
+    expect(failures).toBe(2)
+    operations.retain('event-1', 'a'.repeat(64)).subscribe({ error: () => failures++ })
+    http.expectOne(path).flush({ artifactDigest: 'a'.repeat(64), contentSHA256: 'b'.repeat(64), sizeBytes: 2, retainedAt: '2026-09-24T00:00:00Z', verification: 'unverified' })
+    expect(failures).toBe(2)
+  })
+
+  it('confirms 204 removal and replays its success without another request', () => {
+    const operations = TestBed.inject(OpenclawArtifactOperationsService)
+    const http = TestBed.inject(HttpTestingController)
+    const states: Array<string | undefined> = []
+    const watcher = operations.watch('event-1').subscribe(state => states.push(state?.status))
+    let successes = 0
+    const operation = operations.forget('event-1', 'a'.repeat(64), 'b'.repeat(64))
+    operation.subscribe(response => { expect(response.status).toBe(204); successes++ })
+    const path = `/api/v1/openclaw-artifacts/event-1/${'a'.repeat(64)}/retained`
+    const request = http.expectOne(path)
+    expect(request.request.headers.get('If-Match')).toBe(`"${'b'.repeat(64)}"`)
+    request.flush(null, { status: 204, statusText: 'No Content' })
+    operation.subscribe(() => successes++)
+    expect(successes).toBe(2)
+    expect(states).toEqual([undefined, 'running', 'succeeded'])
+    http.expectNone(path)
+    watcher.unsubscribe()
+  })
+
+  it('coalesces a request reentered synchronously from its running status', () => {
+    const operations = TestBed.inject(OpenclawArtifactOperationsService)
+    const http = TestBed.inject(HttpTestingController)
+    const digest = 'a'.repeat(64)
+    let reentered = false
+    const watcher = operations.watch('event-1').subscribe(state => {
+      if (state?.status === 'running' && !reentered) {
+        reentered = true
+        operations.retain('event-1', digest).subscribe({ error: () => {} })
+      }
+    })
+    operations.retain('event-1', digest).subscribe({ error: () => {} })
+    const requests = http.match(`/api/v1/openclaw-artifacts/event-1/${digest}/retain`)
+    expect(requests.length).toBe(1)
+    for (const request of requests) request.flush({ artifactDigest: digest, contentSHA256: 'b'.repeat(64), sizeBytes: 2, retainedAt: '2026-09-24T00:00:00Z', verification: 'unverified' })
+    watcher.unsubscribe()
+  })
+
   it('rejects invalid artifact references and content fingerprints before making a request', () => {
     const operations = TestBed.inject(OpenclawArtifactOperationsService)
     const http = TestBed.inject(HttpTestingController)
@@ -36,7 +120,7 @@ describe('OpenclawArtifactOperationsService', () => {
     const digest = 'a'.repeat(64)
     const states: Array<string | undefined> = []
     const watcher = operations.watch('event-1').subscribe(state => states.push(state?.status))
-    operations.retain('event-1', digest).subscribe()
+    operations.retain('event-1', digest).subscribe({ error: () => {} })
     http.expectOne(`/api/v1/openclaw-artifacts/event-1/${digest}/retain`).flush({
       artifactDigest: digest,
       contentSHA256: 'b'.repeat(64),

@@ -295,7 +295,12 @@ func (h *Handler) SubmitManualSync(c *gin.Context) {
 	if !h.requireMutableSource(c, sourceID) {
 		return
 	}
-	key := c.GetHeader("Idempotency-Key")
+	keys := c.Request.Header.Values("Idempotency-Key")
+	if len(keys) != 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "exactly one Idempotency-Key header is required"})
+		return
+	}
+	key := keys[0]
 	var request ManualSyncRequest
 	if c.Request.Body != nil {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2048)
@@ -862,9 +867,19 @@ func (h *Handler) UpdateExtraction(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify source extraction ownership", "intentPersisted": false, "patchSaved": false, "recoveryPending": false})
 		return
 	}
-	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	keys := c.Request.Header.Values("Idempotency-Key")
+	if len(keys) != 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "exactly one Idempotency-Key header is required", "intentPersisted": false, "patchSaved": false, "recoveryPending": false})
+		return
+	}
+	idempotencyKey := strings.TrimSpace(keys[0])
 	if !validateCorrectionIdempotencyKey(idempotencyKey) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Idempotency-Key must contain 16 to 128 printable ASCII characters", "intentPersisted": false, "patchSaved": false, "recoveryPending": false})
+		return
+	}
+	revisions := c.Request.Header.Values("If-Match")
+	if len(revisions) > 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "If-Match must contain one extraction revision", "intentPersisted": false, "patchSaved": false, "recoveryPending": false})
 		return
 	}
 	rawRevision := strings.TrimSpace(c.GetHeader("If-Match"))

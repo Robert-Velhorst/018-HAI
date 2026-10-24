@@ -8,6 +8,7 @@
 .env-idp
 
 # Local runtime state.
+/nginx-config/nginx.conf
 db_data_automation/
 db_data_idp/
 images/
