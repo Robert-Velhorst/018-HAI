@@ -1,3 +1,4 @@
 evidently==0.7.23
 pandas==3.1.0
 setuptools==84.2.1
+dynaconf==3.3.5+hai.evidently.1

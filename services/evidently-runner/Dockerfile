@@ -1,5 +1,5 @@
-# dynaconf 3.3.5 currently declares Python <3.15 on PyPI; use the newest compatible line.
-FROM python:3.14.9-slim-trixie@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8 AS native-build
+# The source-bound Dynaconf profile and current external libraries target Python 3.15.1.
+FROM python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS native-build
 
 WORKDIR /native-build
 RUN apt-get update \
@@ -13,7 +13,7 @@ USER native-builder
 ENV HOME=/tmp
 RUN HAI_DISPOSABLE_BUILD_SDK=1 python -I build_runtime.py
 
-FROM python:3.14.9-slim-trixie@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8 AS runtime
+FROM python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS runtime
 
 WORKDIR /app
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
@@ -22,10 +22,14 @@ ENV LD_LIBRARY_PATH=/opt/hai-native/lib \
     SSL_CERT_DIR=/etc/ssl/certs
 RUN --mount=type=bind,from=native-build,source=/native-build/out,target=/tmp/hai-native,readonly \
     dpkg -i /tmp/hai-native/hai-openssl4.deb /tmp/hai-native/hai-sqlite3.deb
-COPY --chown=0:0 --from=native-build /native-build/out/lib-dynload/ /usr/local/lib/python3.14/lib-dynload/
+COPY --chown=0:0 --from=native-build /native-build/out/lib-dynload/ /usr/local/lib/python3.15/lib-dynload/
 COPY --chown=0:0 --from=native-build /native-build/out/provenance.json /native-build/out/CPython-LICENSE /usr/share/doc/hai-native/
+ENV HOME=/tmp DO_NOT_TRACK=1
+COPY compat ./compat
+RUN python compat/build_port_wheel.py --output-directory /app/wheels \
+    && echo "2db131ed9ddfc1dc15a25635c8a6e58d51e608fe7459c504f091c5bd2168bd52  /app/wheels/dynaconf-3.3.5+hai.evidently.1-py3-none-any.whl" | sha256sum --check
 COPY requirements.lock ./
-RUN python -m pip install --no-cache-dir --only-binary :all: --require-hashes -r requirements.lock
+RUN python -m pip install --no-cache-dir --only-binary :all: --find-links /app/wheels --require-hashes -r requirements.lock
 COPY compat_pandas.py apply_vendor_compat.py ./
 RUN python apply_vendor_compat.py --apply-to-sdk
 # Install dependencies while building; the immutable runtime has no package installer.
@@ -34,6 +38,10 @@ RUN ["python", "-I", "-c", "import importlib.util,json,pathlib,sysconfig; bundle
 
 COPY app.py ./
 COPY test_app.py ./
+RUN groupadd --gid 10001 hai \
+    && useradd --uid 10001 --gid hai --no-create-home --shell /usr/sbin/nologin hai
+USER 10001:10001
+RUN --network=none python -m unittest discover -v -s . -p 'test_app.py'
 
 RUN python -c "import json,platform,ssl,sqlite3; from importlib.metadata import distributions; print(json.dumps({'python':platform.python_version(),'openssl':ssl.OPENSSL_VERSION,'sqlite':sqlite3.sqlite_version,'distributions':{d.metadata['Name']:d.version for d in distributions()}})); print(open('/etc/os-release',encoding='utf-8').read())"
 

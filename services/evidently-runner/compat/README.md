@@ -24,12 +24,11 @@ profile; optional provider/CLI integrations and complete Dynaconf-library
 compatibility are outside qualification. It does not replace report/validation
 logic with stubs. Existing HAI privacy bounds and application cases are retained.
 
-Preparation phase: the restricted public-only metadata job builds the reviewed
+The restricted public-only metadata job builds the reviewed
 wheel and resolves the separate requirements-port.in on exact Python 3.15.1 /
 Debian 13. No application source, credentials or Docker socket enter that SDK.
-Canonical runtime locks/images remain on the preceding verified profile until
-the generated graph and actual artifacts are verified and integrated. Then
-fresh existing SDK/image/health cases and strict whole-image scans must qualify
+The generated graph and actual artifacts have been verified and integrated.
+Fresh existing SDK/image/health cases and strict whole-image scans must qualify
 this source. Plotly parent constraints, embedded libraries, system/compiler
 versions and independent live acceptance remain separate gaps. No blanket
 current/security claim, main merge, deployment or operator database change.
@@ -37,3 +36,13 @@ current/security claim, main merge, deployment or operator database change.
 The branch also preserves the unchanged telemetry opt-out patch from #341;
 proposal history is merged without changing main. No new application cases,
 local SDK/application/native/scanner execution or operator tool install occurs.
+
+The initial public metadata run at c73f9a8 passes both jobs; exact artifact
+ZIP/wheel/lock hashes and source/tested trees verify. The 86-package candidate
+has no prereleases or per-version feed advisories, but Plotly 5.24.1 remains
+constrained below stable 7.1.0. The canonical input and both lock mirrors now
+select the real generated graph; CI and both SDK/image/native profile targets
+are Python 3.15.1 on Debian 13. Runtime existing cases run as UID 10001 with
+network disabled. The native source manifest/builder and all app/case/Pandas
+adapter bytes remain unchanged. Actual fresh image/health/scan qualification
+remains required; this candidate is not a complete latest-version claim.
