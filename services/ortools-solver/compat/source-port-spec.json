@@ -60,6 +60,20 @@
               "new": "if field.is_repeated:"
             }
           ]
+        },
+        "ortools/base/python-swig.h": {
+          "original_sha256": "85ae88c265fdb6940ec0fde3ef944d4be9c5c0c61389b1908231f3a5abaf35b0",
+          "patched_sha256": "b4b6fe96e13310685b83e51239e52a5095c039f0c3ac26bf34d8313d32db8499",
+          "edits": [
+            {
+              "old": "long i = PyInt_AsLong(py);        // NOLINT",
+              "new": "long i = PyLong_AsLong(py);        // NOLINT"
+            },
+            {
+              "old": "long i = PyInt_AsLong(py);                      // NOLINT",
+              "new": "long i = PyLong_AsLong(py);                      // NOLINT"
+            }
+          ]
         }
       }
     },
