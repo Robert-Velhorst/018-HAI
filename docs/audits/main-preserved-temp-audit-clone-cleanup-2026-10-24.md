@@ -1,5 +1,41 @@
 # Main-preserved temporary audit clone cleanup
 
+## Linked PostgreSQL audit working files: shared history retained
+
+The linked PostgreSQL audit snapshot
+`719bf4bffe5c8a09fa8cc93a05532c06247c7be6` is an ancestor of reviewed main,
+with zero candidate-unique commits confirmed by GitHub. Its index and all
+3,202 physical regular working files were reviewed against committed blobs.
+There were 111 exact files and 3,091 line-ending-equivalent files.
+
+The first read-only preflight stopped on mixed line endings in the database
+upgrade Markdown guide. Git independently reported canonical LF and mixed
+working endings for that file, with no custom content filter. Examination
+identified exactly one CRLF and 70 lone LF endings; normalizing that single
+CRLF produces the complete committed UTF-8 blob, with no text differences.
+Only this exact file at this exact linked snapshot received the explicit
+mixed-ending disposition. Other unexpected content still refuses cleanup.
+Nothing was deleted before the difference was classified.
+
+The worktree uses a `.git` pointer file, not a local Git directory. Its owning
+repository and two other worktrees were outside the source-removal boundary.
+Fresh consumer checks covered all three registered paths. The file preflight
+also rejected nondefault NTFS streams rather than silently dropping them.
+
+Only the selected worktree's 3,202 source files were removed, containing
+37,872,470 logical bytes. Independent post-checks account for all intended
+absences, no remaining source files, an identical worktree pointer and
+byte-identical retention of all 161 shared Git metadata files. Another 319
+empty source directories were removed nonrecursively. The selected root now
+contains only its original `.git` pointer; neither the registered worktree nor
+its shared history was removed as a Git object or reference.
+
+Free space observed before the file batch was 8,512,913,408 bytes and after the
+directory batch was 8,557,428,736 bytes. These observations are not exclusive
+attribution of concurrent free-space changes. The 3,202 intentional missing
+working files must not be staged or committed as product changes. No database,
+PostgreSQL service, migration, provider or other worktree was run or removed.
+
 ## C-drive shared Vercel audit working files: metadata retained
 
 The old shared audit owner also checks out main-ancestor snapshot
