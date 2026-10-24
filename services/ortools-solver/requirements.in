@@ -1,1 +1,3 @@
-ortools==9.15.6755
+# Runtime prerequisites for the source-bound OR-Tools port.
+# The complete supported install is the Docker/CI source build; no upstream wheel supports this profile.
+-r requirements.runtime.in

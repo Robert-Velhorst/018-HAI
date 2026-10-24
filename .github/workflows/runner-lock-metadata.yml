@@ -11,6 +11,9 @@ on:
       - services/crewai-runner/requirements.in
       - services/ortools-solver/requirements.runtime.in
       - services/ortools-solver/requirements.build.in
+      - services/ortools-solver/requirements.runtime-port.in
+      - services/ortools-solver/requirements.build-port.in
+      - services/ortools-solver/compat/**
       - services/garak-runner/requirements.in
       - services/evidently-runner/requirements.in
       - services/evidently-runner/requirements-port.in

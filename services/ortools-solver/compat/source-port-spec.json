@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "port_version": "9.15.6755+hai.protobuf7.1",
+  "profile": "Keep the real OR-Tools v9.15 solver while regenerating/linking Protobuf 36.2 and requiring Python Protobuf 7.36.2. Adapt original Zlib/static-runtime CMake patch intent to the hash-bound current source.",
+  "components": {
+    "ortools": {
+      "upstream_version": "9.15.6755",
+      "commit": "551ad10d94835c99e5e1e684500d3db398c0e345",
+      "patches": {
+        "cmake/dependencies/CMakeLists.txt": {
+          "original_sha256": "ce090f1bcec6cf8afe400f683459b421c6a8255251a5f929574e1d4eaa4607ff",
+          "patched_sha256": "2e2a82a8b1a144c2de59dc5454724fefd893c367cef272618ad512bd3a11af88",
+          "edits": [
+            {
+              "old": "  FetchContent_Declare(\n    Protobuf\n    GIT_REPOSITORY \"https://github.com/protocolbuffers/protobuf.git\"\n    GIT_TAG \"v33.1\"\n    GIT_SHALLOW TRUE\n    GIT_SUBMODULES \"\"\n    UPDATE_COMMAND git reset --hard\n    PATCH_COMMAND git apply --ignore-whitespace\n    \"${CMAKE_CURRENT_LIST_DIR}/../../patches/protobuf-v33.1.patch\"\n    OVERRIDE_FIND_PACKAGE # Make package visible for \"protobuf-matchers\" below\n    SYSTEM\n  )\n",
+              "new": "  FetchContent_Declare(\n    Protobuf\n    URL \"https://codeload.github.com/protocolbuffers/protobuf/tar.gz/2c74169b34066ceb8ddb6b882fcb3fb32d737a55\"\n    URL_HASH \"SHA256=ef957adfc3ec0e2794031697e6a94bbc213103cead96c26a1fccb0dbdadd3404\"\n    DOWNLOAD_EXTRACT_TIMESTAMP TRUE\n    PATCH_COMMAND \"/usr/local/bin/python\"\n      \"/tmp/requirements/compat/apply_source_port.py\"\n      --component protobuf --source <SOURCE_DIR>\n    OVERRIDE_FIND_PACKAGE\n    SYSTEM\n  )\n"
+            },
+            {
+              "old": "      #PATCH_COMMAND git apply --ignore-whitespace\n      #\"${CMAKE_CURRENT_LIST_DIR}/../../patches/pybind11_protobuf.patch\"\n",
+              "new": "      PATCH_COMMAND \"/usr/local/bin/python\"\n        \"/tmp/requirements/compat/apply_source_port.py\"\n        --component pybind11_protobuf --source <SOURCE_DIR>\n"
+            }
+          ]
+        },
+        "cmake/python.cmake": {
+          "original_sha256": "900928f5e51c70946c58c8f6351e9cfb36380ad9ad2a083b639a83fbef628e80",
+          "patched_sha256": "c0c2a83413af187a9d63a245a0fdc1b0cd21772c0629adbb6e862f7f4b64037d",
+          "edits": [
+            {
+              "old": "if(RELEASE)\n  set(PYTHON_RELEASE \"\")\nelse()\n  set(PYTHON_RELEASE \"rc1\")\nendif()\n",
+              "new": ""
+            },
+            {
+              "old": "configure_file(\n  ${PROJECT_SOURCE_DIR}/ortools/python/__init__.py.in",
+              "new": "if(RELEASE)\n  set(PYTHON_RELEASE \"+hai.protobuf7.1\")\nelse()\n  set(PYTHON_RELEASE \"rc1\")\nendif()\nconfigure_file(\n  ${PROJECT_SOURCE_DIR}/ortools/python/__init__.py.in"
+            }
+          ]
+        },
+        "ortools/python/setup.py.in": {
+          "original_sha256": "829cdc42053ed727d14389e8a98b65a95d3246812c8d861d047f78aec9b15493",
+          "patched_sha256": "a89dc1c91a25ada3b4c379f12bad54a8668364e34dcdb6c78bb61e74af9d41c3",
+          "edits": [
+            {
+              "old": "'protobuf >= 6.33.1,<6.34'",
+              "new": "'protobuf == 7.36.2'"
+            }
+          ]
+        },
+        "ortools/python/__init__.py.in": {
+          "original_sha256": "bef14986fe4967a77232919e4a29b097dd71a1874247142fbdc5b365bec65fd9",
+          "patched_sha256": "be75f70108d704f11bf0973881ff8330c8a0e2efd06dc28ef2b30ada5753a122",
+          "edits": [
+            {
+              "old": "__version__ = \"@PROJECT_VERSION@\"",
+              "new": "__version__ = \"@PROJECT_VERSION@@PYTHON_RELEASE@\""
+            }
+          ]
+        },
+        "ortools/math_opt/python/normalize.py": {
+          "original_sha256": "77beba66cb043de4d480f4dfa11cfb7bea0bc47aecd8dd56d0449fa7e24b3552",
+          "patched_sha256": "96952c6675354b1eff7ff40f2106f0ab695f3cb398f7c941e41b500849384b96",
+          "edits": [
+            {
+              "old": "if field.label == field.LABEL_REPEATED:",
+              "new": "if field.is_repeated:"
+            }
+          ]
+        },
+        "ortools/base/python-swig.h": {
+          "original_sha256": "85ae88c265fdb6940ec0fde3ef944d4be9c5c0c61389b1908231f3a5abaf35b0",
+          "patched_sha256": "1fe3c92512153ca23ff0826b097be27582bbeab350c617691d6df25147edc3b2",
+          "edits": [
+            {
+              "old": "long i = PyInt_AsLong(py);        // NOLINT",
+              "new": "long i = PyLong_AsLong(py);        // NOLINT"
+            },
+            {
+              "old": "long i = PyInt_AsLong(py);                      // NOLINT",
+              "new": "long i = PyLong_AsLong(py);                      // NOLINT"
+            },
+            {
+              "old": "/* SWIG 2's own C preprocessor macro for this is too strict.\n * It requires a (x) parameter which doesn't work for the case where the\n * function is being passed by & as a converter into a helper such as\n * vector_output_helper above. */\n#undef PyInt_FromLong\n#define PyInt_FromLong PyLong_FromLong\n",
+              "new": ""
+            }
+          ]
+        },
+        "ortools/constraint_solver/python/routing_types.swig": {
+          "original_sha256": "547dda226cd953bba2139acea6a1cbb5c90e420833e85223ce714224ad7430ba",
+          "patched_sha256": "9b0d16c2d511fb03eb73b366a20e105f164f7b7b2e74d74ab400349c923bace5",
+          "edits": [
+            {
+              "old": "  $1 = IndexT(PyInt_AsLong($input));",
+              "new": "  $1 = IndexT(PyLong_AsLong($input));"
+            },
+            {
+              "old": "  return PyInt_FromLong(i.value());",
+              "new": "  return PyLong_FromLong(i.value());"
+            },
+            {
+              "old": "  $result = PyInt_FromLong($1.value());",
+              "new": "  $result = PyLong_FromLong($1.value());"
+            },
+            {
+              "old": "PY_LIST_INPUT_OUTPUT_TYPEMAP(IndexT, PyInt_Check, PyInt_FromIndexT<IndexT>);",
+              "new": "PY_LIST_INPUT_OUTPUT_TYPEMAP(IndexT, PyLong_Check, PyInt_FromIndexT<IndexT>);"
+            },
+            {
+              "old": "PY_LIST_LIST_INPUT_TYPEMAP(IndexT, PyInt_Check);",
+              "new": "PY_LIST_LIST_INPUT_TYPEMAP(IndexT, PyLong_Check);"
+            }
+          ]
+        },
+        "ortools/util/python/vector.swig": {
+          "original_sha256": "eae33734ed9af7b495b823748329f7236e69366e23bd873af9804e6e34405898",
+          "edits": [
+            {
+              "old": "PY_LIST_INPUT_OUTPUT_TYPEMAP(int, PyInt_Check, PyInt_FromLong);",
+              "new": "PY_LIST_INPUT_OUTPUT_TYPEMAP(int, PyLong_Check, PyLong_FromLong);"
+            },
+            {
+              "old": "PY_LIST_LIST_INPUT_TYPEMAP(int, PyInt_Check);",
+              "new": "PY_LIST_LIST_INPUT_TYPEMAP(int, PyLong_Check);"
+            }
+          ],
+          "patched_sha256": "1194219c49206e2059abeb095801329c1cb9fd103d3ec570b3d7ad8173630eac"
+        }
+      }
+    },
+    "protobuf": {
+      "release_tag": "v36.2",
+      "commit": "2c74169b34066ceb8ddb6b882fcb3fb32d737a55",
+      "url": "https://codeload.github.com/protocolbuffers/protobuf/tar.gz/2c74169b34066ceb8ddb6b882fcb3fb32d737a55",
+      "sha256": "ef957adfc3ec0e2794031697e6a94bbc213103cead96c26a1fccb0dbdadd3404",
+      "bytes": 7358524,
+      "source_CMake_sha256": "2ad37654d88ad8364feb51fc1daf8a57541d33700117fc2609258f5b4e83ef26",
+      "patches": {
+        "CMakeLists.txt": {
+          "original_sha256": "2ad37654d88ad8364feb51fc1daf8a57541d33700117fc2609258f5b4e83ef26",
+          "patched_sha256": "7dc684f789c39d53506448e591274a5a0824f68fc34d702ab145cff59afd46e6",
+          "edits": [
+            {
+              "old": "  find_package(ZLIB)\n  if (ZLIB_FOUND)\n    set(HAVE_ZLIB 1)\n    # FindZLIB module define ZLIB_INCLUDE_DIRS variable\n    # Set ZLIB_INCLUDE_DIRECTORIES for compatible\n    set(ZLIB_INCLUDE_DIRECTORIES ${ZLIB_INCLUDE_DIRECTORIES} ${ZLIB_INCLUDE_DIRS})\n    # Using imported target if exists\n    if (TARGET ZLIB::ZLIB)\n      set(ZLIB_LIBRARIES ZLIB::ZLIB)\n      set(_protobuf_FIND_ZLIB \"if(NOT ZLIB_FOUND)\\n  find_package(ZLIB)\\nendif()\")\n    endif (TARGET ZLIB::ZLIB)\n  else (ZLIB_FOUND)\n    set(HAVE_ZLIB 0)\n    # Explicitly set these to empty (override NOT_FOUND) so cmake doesn't\n    # complain when we use them later.\n    set(ZLIB_INCLUDE_DIRECTORIES)\n    set(ZLIB_LIBRARIES)\n  endif (ZLIB_FOUND)\n",
+              "new": "  if (NOT TARGET ZLIB::ZLIB)\n    find_package(ZLIB REQUIRED)\n  endif()\n  set(HAVE_ZLIB 1)\n  set(ZLIB_INCLUDE_DIRECTORIES ${ZLIB_INCLUDE_DIRECTORIES} ${ZLIB_INCLUDE_DIRS})\n  set(ZLIB_LIBRARIES ZLIB::ZLIB)\n  set(_protobuf_FIND_ZLIB \"if(NOT ZLIB_FOUND AND NOT TARGET ZLIB::ZLIB)\\n  find_package(ZLIB REQUIRED)\\nendif()\")\n"
+            },
+            {
+              "old": "cmake_dependent_option(protobuf_MSVC_STATIC_RUNTIME \"Link static runtime libraries\" ON",
+              "new": "cmake_dependent_option(protobuf_MSVC_STATIC_RUNTIME \"Link static runtime libraries\" OFF"
+            },
+            {
+              "old": "include_directories(\n  ${ZLIB_INCLUDE_DIRECTORIES}\n",
+              "new": "include_directories(\n"
+            }
+          ]
+        }
+      }
+    },
+    "pybind11_protobuf": {
+      "commit": "f02a2b7653bc50eb5119d125842a3870db95d251",
+      "source_archive_sha256": "6c712ca5fc1e15df2ed1f55bd974c32a3065e658483616f3fda7607546db33ab",
+      "patches": {
+        "pybind11_protobuf/proto_cast_util.cc": {
+          "original_sha256": "ab262d2b4dd2f3a16be1a0a92f9c661725e268a9885a5387e3a47bb19ca0d29a",
+          "patched_sha256": "2ea408750d76c25b1838549ad8ff01fdb5ac9999e7aae83f45449ef4247783ff",
+          "edits": [
+            {
+              "old": "bool FindFileByName(const std::string& filename,",
+              "new": "bool FindFileByName(absl::string_view filename,"
+            },
+            {
+              "old": "pool_.attr(\"FindFileByName\")(filename)",
+              "new": "pool_.attr(\"FindFileByName\")(std::string(filename))"
+            },
+            {
+              "old": "bool FindFileContainingSymbol(const std::string& symbol_name,",
+              "new": "bool FindFileContainingSymbol(absl::string_view symbol_name,"
+            },
+            {
+              "old": "pool_.attr(\"FindFileContainingSymbol\")(symbol_name)",
+              "new": "pool_.attr(\"FindFileContainingSymbol\")(std::string(symbol_name))"
+            },
+            {
+              "old": "bool FindFileContainingExtension(const std::string& containing_type,",
+              "new": "bool FindFileContainingExtension(absl::string_view containing_type,"
+            },
+            {
+              "old": "pool_.attr(\"FindMessageTypeByName\")(containing_type)",
+              "new": "pool_.attr(\"FindMessageTypeByName\")(std::string(containing_type))"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "build_tools": {
+    "cmake": "4.4.4",
+    "swig": "4.5.1"
+  },
+  "new_application_cases_authored": false,
+  "local_vendor_native_application_execution": false,
+  "runtime_qualified": false,
+  "packaging_environment": {
+    "OR_TOOLS_PATCH": "6755"
+  },
+  "public_release_version_source": "https://pypi.org/pypi/ortools/9.15.6755/json",
+  "migration_source": "https://protobuf.dev/support/migration/"
+}

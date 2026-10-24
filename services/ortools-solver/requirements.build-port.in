@@ -1,0 +1,9 @@
+# Build-time Python modules required by the official OR-Tools v9.15 CMake package build.
+mypy
+mypy-protobuf
+protobuf==7.36.2
+setuptools
+wheel
+typing-extensions>=4.12.0
+cmake==4.4.4
+swig==4.5.1
