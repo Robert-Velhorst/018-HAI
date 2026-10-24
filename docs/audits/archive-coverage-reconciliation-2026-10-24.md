@@ -129,6 +129,12 @@ four changed and three absent by old name. Import expansions and two additive
 model variants have source-level explanations. Required-to-optional changes
 remain a consumer-validation gap, not a claim of proven API compatibility.
 
+Ten overlapping service/interface variants now have source-level transport
+dispositions in `archive-client-service-transport-reconciliation-2026-10-24.md`.
+Seven focused current-main HTTP-double contracts pass, and a wrong-URL negative
+control is detected. These are not real HTTP, Angular/browser or provider tests;
+new methods and remaining changed services are not thereby cleared.
+
 The Promptfoo test file moved from exact to changed relative to the earlier
 main snapshot. Its archived content hash matches the earlier Git blob. All
 three original test bodies remain byte-identical; canonical main adds the
