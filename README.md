@@ -11,6 +11,22 @@ Compose stack. It is not an unrestricted desktop agent: planning, execution,
 verification, and approval are separate; external effects remain blocked until a
 reviewed runtime, policy, and evidence path are configured.
 
+## Start Here
+
+- **Try HAI:** [Quick Start](#quick-start), [Windows installer](#windows-11-installer)
+  and [dashboard routes](#dashboard-entry-points).
+- **Understand the product:** [implemented capabilities](#what-is-implemented),
+  [architecture](#architecture) and [deliberate gaps](#deliberate-gaps).
+- **Develop or operate it:** [developer checks](#developer-checks),
+  [operator runbook](docs/operator-runbook.md) and [release process](docs/release-process.md).
+- **Review consolidation:** [source reconciliation](docs/audits/source-client-reconciliation-2026-10-23.md)
+  and [local Compose review](docs/audits/local-compose-source-reconciliation-2026-10-23.md).
+
+The dated checkpoints below preserve earlier evidence, not a current service-health
+report, percentage-complete estimate or release verdict. Source review, passing
+tests, publication in a PR, preservation on `main` and local deletion are separate
+steps. Real account/provider, clean-machine and operator acceptance remain required.
+
 > **Historical repository snapshot, evidence reviewed through 2026-08-04:** this repository
 > implements a governed local operating layer, including the Angular dashboard,
 > Go engines, IDP, Compose topology, pursuit/workflow routing, persistence, and
@@ -1164,7 +1180,7 @@ Constitution, run an approval-gated task, or resolve a task review item.
 | Optional local runners | Disabled-by-default Compose profiles for aggregate security scans, no-tool planning drafts, selected-folder document extraction, and disposable patch proposals. | They publish no host ports and have private networks, read-only mounts, and resource limits. Configuration or container health is not live proof; each real snapshot, model, or document path still needs retained approval, audit, and verification evidence. |
 | Proactive planning | Ambient scans identify stale work, blockers, approvals, open loops, contradiction candidates, and delegation opportunities. Governance Control records owner `accept`, `dismiss`, bounded `snooze`, indefinite `suppress`, and `resume` feedback in an immutable owner-scoped ledger that changes later attention evaluation. | Ambient mode is suggestion-first and cannot bypass approval, verification, leases, audit, or emergency stop. Attention feedback has `canExecute:false`, grants no delivery or execution authority, and invokes no notification or external effect. |
 | Advisory ambient outcome monitor | Governance Control can bind an existing outcome indicator to one of three fixed read-only local collectors: `workflow_open_loop_count`, `workflow_verified_completion_count`, or `overdue_commitment_count`. A durable singleton sweep leases due targets, appends immutable source-digested observations and run receipts, composes them into the existing outcome-evaluation service, and may surface an owner-scoped proactivity inbox decision. | The monitor is `advisory_monitor_only`. It cannot execute or deliver work, notify anyone, write Calendar data, mutate a workflow, authorize a mandate, or mutate learning. It reads only canonical local ledgers and accepts no caller-supplied SQL, URL, script, expression, or arbitrary tool instruction. Live external-account correctness and target-machine acceptance remain separate gates. |
-| Operations | nginx gateway, IDP, Postgres, Redis, optional Kafka-compatible event bus, health/readiness, support bundle, doctor/reconcile/migrate commands, versioned SQL migrations, a durable job runner (persisted retry + crash recovery), CI, Compose validation, and local smoke coverage. | **Source, workflow, and ambient** scheduling use durable recurring singleton jobs. Ordinary terminal occurrences and replacements share one transaction; review-sensitive ambient completion uses confirmed preparation and separate release with a durable `settling` admission barrier. Unknown outcomes require review under persisted replay policy; failed ambient queue startup does not fall back to a ticker. Source/workflow still have logged legacy ticker fallback. Actual cross-process crash/commit and operator-reconciliation acceptance remains required. The workflow schedule consumes only separately owner-authorized internal reminder deliveries; each delivery is revalidated, source-bound, idempotently receipted, and recorded as a local proactivity signal. No external notification, Calendar write or provider invocation is performed by reminder delivery. This is not an accepted distributed or HA platform. |
+| Operations | nginx gateway, IDP, Postgres, Redis, optional Kafka-compatible event bus, health/readiness, support bundle, doctor/reconcile/migrate commands, versioned SQL migrations, a durable job runner (persisted retry + crash recovery), CI, Compose validation, and local smoke coverage. | **Source, workflow, and ambient** scheduling use durable recurring singleton jobs. Ordinary terminal occurrences and replacements share one transaction; review-sensitive ambient completion uses confirmed preparation and separate release with a durable `settling` admission barrier. Unknown outcomes require review under persisted replay policy; failed ambient queue startup does not fall back to a ticker. Degraded source ticker fallback requires explicit `SOURCE_SCHEDULER_VOLATILE_FALLBACK=true`; workflow legacy fallback requires `DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED=true`. Both default to false. Actual cross-process crash/commit and operator-reconciliation acceptance remains required. The workflow schedule consumes only separately owner-authorized internal reminder deliveries; each delivery is revalidated, source-bound, idempotently receipted, and recorded as a local proactivity signal. No external notification, Calendar write or provider invocation is performed by reminder delivery. This is not an accepted distributed or HA platform. |
 
 ### Readiness Terms
 
@@ -1523,14 +1539,19 @@ These capabilities are not bundled or live-proven by this repository:
   Gmail, Google Drive, Google Contacts, Google Calendar, and Trello read-only connectors exist
   but remain unconfigured by default; every configured account still needs its
   own bounded acceptance evidence before operational trust.
-- Provider webhooks, local file watchers, a dedicated vector database, generic
-  MCP, QwenPaw, browser automation, and desktop-agent execution.
+- Provider webhooks beyond the implemented signed
+  [Trello intake](docs/trello-webhooks.md), local file watchers, a dedicated vector
+  database, unrestricted generic MCP, QwenPaw, browser automation, and
+  desktop-agent execution. Trello registration, public callback configuration
+  and actual signed delivery remain separate operator/acceptance gates; polling
+  success does not prove webhook readiness.
 - Hermes, Odysseus, and OpenClaw upstream installations. HAI provides guarded
   adapters, not the upstream software or unrestricted credentials.
 - Paid LLM use, public posting, financial commitments, account changes,
   deletion, and unrestricted device control.
-- Distributed workers, leader election, worker heartbeats, or high
-  availability. Versioned pre/post SQL migrations are implemented, but
+- An accepted distributed-worker or high-availability deployment and leader
+  election. The durable runner implements lease heartbeats; that alone does not
+  establish cross-process crash/commit or HA acceptance. Versioned pre/post SQL migrations are implemented, but
   clean-clone and rollback acceptance still belong in each target release.
 - Verified multi-user isolation on two real accounts. Owner scoping is covered
   in code and focused tests, but a real two-account exercise remains required
@@ -1562,7 +1583,7 @@ Postgres + Redis + optional Kafka-compatible event bus
 The local deployment targets Windows 11 with Docker Desktop. The control-plane
 backend, IDP, and nginx configuration manager use Go 1.27.3 and share an
 executable CI alignment contract. They use Gin, Gorm, Postgres, and
-Sarama/Kafka when the optional event-bus profile is enabled. The frontend uses Angular 22 and ng-zorro-antd 22. Use Node.js 26.12.0 Current and npm 12.2.1 for frontend development and verification; the repository `.nvmrc` and package metadata declare the supported frontend toolchain.
+Sarama/Kafka when the optional event-bus profile is enabled. The frontend uses Angular 22 and ng-zorro-antd 22. Use Node.js 26.12.1 Current and npm 12.2.1 for frontend development and verification; the repository `.nvmrc` and package metadata declare the supported frontend toolchain.
 Versioned SQL migrations are the schema source of truth and `DB_AUTOMIGRATE`
 defaults to `false`. Startup applies pre-phase migrations, optionally runs
 development-only AutoMigrate when explicitly enabled, then applies
@@ -1575,7 +1596,7 @@ post-phase migrations. See
 
 - Windows 11 with Docker Desktop, or another Docker Compose-capable environment.
 - Git.
-- Node.js 26.12.0 Current and npm 12.2.1,
+- Node.js 26.12.1 Current and npm 12.2.1,
   for frontend development outside Docker.
 - Go 1.27.3 for control-plane backend, IDP, and nginx-config-manager
   development outside Docker. Their modules, Docker builders, and CI toolchains
@@ -1700,7 +1721,7 @@ Then set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and
 The Gmail, Drive, Contacts, and Calendar connected-source callback is separate.
 Register it with the same hostname used by the gateway and configured redirect:
 `http://localhost:8088/api/v1/sources/oauth/google/callback`, set it as
-`GOOGLE_OAUTH_REDIRECT_URL`, and enable both APIs you intend to use. Each source
+`GOOGLE_OAUTH_REDIRECT_URL`, and enable each Google API you intend to use. Each source
 requests only its own read-only scope. Also set independent
 `HAI_OAUTH_TOKEN_ENCRYPTION_KEY` and `HAI_OAUTH_STATE_SIGNING_KEY` values; HAI
 does not fall back to JWT or backend secrets. Google redirects the browser, so a
@@ -1721,7 +1742,7 @@ Use a dedicated mailbox or provider app password over STARTTLS (typically port
 changing either integration:
 
 ```powershell
-docker compose --env-file .env.local -f docker-compose.local.yml up -d --build idp frontend gateway
+docker compose --env-file .env.local -f docker-compose.local.yml up -d --build idp frontend nginx
 ```
 
 ### Verify the local gateway
@@ -1729,10 +1750,10 @@ docker compose --env-file .env.local -f docker-compose.local.yml up -d --build i
 ```powershell
 docker compose --env-file .env.local -f docker-compose.local.yml ps
 docker compose --env-file .env.local -f docker-compose.local.yml logs backend
-curl.exe -i http://localhost/
-curl.exe -i http://localhost/healthz
-curl.exe -i http://localhost/readyz
-curl.exe -i http://localhost/api/v1/llm/policy
+curl.exe -i http://localhost:8088/
+curl.exe -i http://localhost:8088/healthz
+curl.exe -i http://localhost:8088/readyz
+curl.exe -i http://localhost:8088/api/v1/llm/policy
 ```
 
 Expected behavior:
@@ -1744,9 +1765,11 @@ Expected behavior:
 - Protected engine routes such as `/api/v1/llm/policy` return `401` without a
   signed session, not anonymous application data.
 
-If port 80 is already in use, change the nginx port mapping in
-`docker-compose.local.yml` from `\"80:80\"` to, for example, `\"8088:80\"`, then
-open `http://localhost:8088`.
+These commands use the default published port, 8088. If it is occupied, choose
+an available `GATEWAY_HOST_PORT` in the ignored `.env.local`, validate the
+rendered Compose configuration, and deliberately recreate the `nginx` service.
+Keep the gateway bound to loopback. Use the chosen port in all browser, probe
+and OAuth callback URLs; do not edit the mapping to expose all interfaces.
 
 For the target-machine acceptance sequence, use
 [fresh-clone dry run](docs/fresh-clone-dryrun.md). For diagnosis, use

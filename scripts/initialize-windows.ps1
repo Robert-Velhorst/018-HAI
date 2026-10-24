@@ -27,6 +27,31 @@ if ([string]::IsNullOrWhiteSpace($EnvFile)) {
 }
 $EnvFile = [System.IO.Path]::GetFullPath($EnvFile)
 
+function Assert-HaiFirstRunOwnerPassword {
+    param([AllowEmptyString()][string]$Password)
+
+    if ($Password -cne $Password.Trim()) {
+        throw 'The first-run owner password cannot begin or end with whitespace.'
+    }
+    if ($Password -match "[\x00\r\n']") {
+        throw 'The first-run owner password cannot contain NUL, a line break or a single quote.'
+    }
+    try {
+        $utf8 = New-Object Text.UTF8Encoding($false, $true)
+        $utf32 = New-Object Text.UTF32Encoding($false, $false, $true)
+        $byteCount = $utf8.GetByteCount($Password)
+        $characterCount = $utf32.GetByteCount($Password) / 4
+    } catch {
+        throw 'The first-run owner password must contain valid Unicode text.'
+    }
+    if ($characterCount -lt 12 -or $byteCount -gt 72) {
+        throw 'The first-run owner password must contain at least 12 characters and no more than 72 UTF-8 bytes.'
+    }
+    if ($Password -match '(?i)change-this|changeme|placeholder|example') {
+        throw 'The first-run owner password must not contain a known placeholder marker.'
+    }
+}
+
 if (-not $MigrateExisting) {
     if ((Test-Path -LiteralPath $EnvFile) -and -not $Force) {
         throw "$EnvFile already exists. Re-run with -Force only when replacing it is intentional."
@@ -41,7 +66,7 @@ if (-not $MigrateExisting) {
     }
 
     if ([string]::IsNullOrEmpty($AdminPasswordPlainText)) {
-        $securePassword = Read-Host "First-run owner password (at least 12 characters)" -AsSecureString
+        $securePassword = Read-Host "First-run owner password (12+ characters, at most 72 UTF-8 bytes)" -AsSecureString
         $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
         try {
             $AdminPasswordPlainText = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
@@ -49,12 +74,7 @@ if (-not $MigrateExisting) {
             [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
         }
     }
-    if ($AdminPasswordPlainText.Length -lt 12) {
-        throw "The first-run owner password must contain at least 12 characters."
-    }
-    if ($AdminPasswordPlainText -match "[\r\n']") {
-        throw "The first-run owner password cannot contain a line break or single quote."
-    }
+    Assert-HaiFirstRunOwnerPassword -Password $AdminPasswordPlainText
 }
 
 function New-HaiSecret {

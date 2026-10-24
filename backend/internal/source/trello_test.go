@@ -128,7 +128,74 @@ func configureTrelloTest(t *testing.T, baseURL string) {
 	t.Setenv(trelloAccountMemberIDEnv, testTrelloAccountMemberID)
 }
 
-func TestTrelloQuietBoardCursorOnlySkipsKnownBoardMetadataActivity(t *testing.T) {
+func TestSyncTrelloBoardMetadataChangeRefreshesExistingCardContext(t *testing.T) {
+	var boardName atomic.Value
+	boardName.Store("Original board")
+	var cardRequests atomic.Int32
+	var failCards atomic.Bool
+	cards := trelloTestCardPayload([]byte(`[{"id":"0123456789abcdef01234567","name":"Retained record","dateLastActivity":"2026-09-24T10:00:00Z","idList":"list-1"}]`))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/1/tokens/"):
+			_, _ = w.Write([]byte(`{"idMember":"000000000000000000000001","permissions":[{"modelType":"Board","read":true,"write":false}]}`))
+		case strings.HasSuffix(r.URL.Path, "/lists"):
+			_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"}]`))
+		case strings.HasSuffix(r.URL.Path, "/cards"):
+			cardRequests.Add(1)
+			if failCards.Load() {
+				w.Header().Set("Retry-After", "60")
+				http.Error(w, "synthetic snapshot failure", http.StatusServiceUnavailable)
+				return
+			}
+			_, _ = w.Write(cards)
+		case strings.HasSuffix(r.URL.Path, "/actions"):
+			if r.URL.Query().Get("filter") == "all" {
+				_, _ = w.Write([]byte(`[{"id":"000000000000000000000900","type":"updateBoard","date":"2026-09-24T11:00:00Z"}]`))
+			} else {
+				_, _ = w.Write([]byte(`[]`))
+			}
+		default:
+			_, _ = w.Write(trelloTestBoardJSON(boardName.Load().(string)))
+		}
+	}))
+	defer server.Close()
+	configureTrelloTest(t, server.URL)
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(newTrelloSource(sourceID, "abc123XY", ""))
+	service := NewService(repo, &fakeSourceMemoryService{})
+	first, err := service.Sync(sourceID, ImportRequest{Mode: ModeIncrementalSync})
+	if err != nil || len(first.Extractions) != 1 || !strings.Contains(first.Extractions[0].Text, "Board: Original board") {
+		t.Fatalf("initial import = %#v, %v; want original board context", first, err)
+	}
+	boardName.Store("Renamed board")
+	failCards.Store(true)
+	if _, err := service.Sync(sourceID, ImportRequest{Mode: ModeIncrementalSync}); err == nil {
+		t.Fatal("metadata cursor advanced without a successful card snapshot")
+	}
+	stored, err := repo.FindSource(sourceID)
+	if err != nil || stored.Cursor != first.Job.CursorAfter {
+		t.Fatalf("failed metadata snapshot changed the cursor: source=%#v err=%v", stored, err)
+	}
+	failCards.Store(false)
+	second, err := service.Sync(sourceID, ImportRequest{Mode: ModeIncrementalSync})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cardRequests.Load() != 3 || len(second.Extractions) != 1 || !strings.Contains(second.Extractions[0].Text, "Board: Renamed board") {
+		t.Fatalf("metadata change fetched %d card snapshots and produced %d extractions; want refreshed board context", cardRequests.Load(), len(second.Extractions))
+	}
+	activity, _, valid, err := parseTrelloCursor(second.Job.CursorAfter)
+	if err != nil || !valid || !activity.Equal(time.Date(2026, 9, 24, 11, 0, 0, 0, time.UTC)) {
+		t.Fatalf("successful metadata snapshot did not retain its activity cursor: %q, %v", second.Job.CursorAfter, err)
+	}
+	third, err := service.Sync(sourceID, ImportRequest{Mode: ModeIncrementalSync})
+	if err != nil || len(third.Extractions) != 0 || cardRequests.Load() != 3 {
+		t.Fatalf("unchanged metadata did not retain the quiet fast path: result=%#v card requests=%d err=%v", third, cardRequests.Load(), err)
+	}
+}
+
+func TestTrelloQuietBoardCursorOnlySkipsUnchangedActivity(t *testing.T) {
 	cursorTime := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 	activityTime := cursorTime.Add(2 * time.Minute)
 	tests := []struct {
@@ -139,10 +206,11 @@ func TestTrelloQuietBoardCursorOnlySkipsKnownBoardMetadataActivity(t *testing.T)
 	}{
 		{name: "no activity", actions: []trelloAction{}, wantQuiet: true, wantCursor: "existing-cursor"},
 		{
-			name:      "board metadata activity advances cursor",
+			name:      "board metadata activity proposes cursor after reconciliation",
 			actions:   []trelloAction{{Type: "updateBoard", Date: activityTime.Format(time.RFC3339Nano)}},
-			wantQuiet: true,
+			wantQuiet: false,
 		},
+		{name: "metadata at the cursor boundary was reconciled", actions: []trelloAction{{Type: "updateBoard", Date: cursorTime.Format(time.RFC3339Nano)}}, wantQuiet: true, wantCursor: "existing-cursor"},
 		{
 			name:    "card activity requires full sync",
 			actions: []trelloAction{{Type: "updateCard", Date: activityTime.Format(time.RFC3339Nano)}},
@@ -196,13 +264,13 @@ func TestTrelloQuietBoardCursorOnlySkipsKnownBoardMetadataActivity(t *testing.T)
 			if test.wantCursor != "" && cursor != test.wantCursor {
 				t.Fatalf("cursor = %q, want unchanged cursor %q", cursor, test.wantCursor)
 			}
-			if test.name == "board metadata activity advances cursor" {
+			if test.name == "board metadata activity proposes cursor after reconciliation" {
 				activity, _, ok, err := parseTrelloCursor(cursor)
 				if err != nil || !ok || !activity.Equal(activityTime) {
 					t.Fatalf("advanced cursor = %q (%v, %t, %v), want %s", cursor, activity, ok, err, activityTime)
 				}
 			}
-			if !test.wantQuiet && cursor != "" {
+			if !test.wantQuiet && test.name != "board metadata activity proposes cursor after reconciliation" && cursor != "" {
 				t.Fatalf("fallback cursor = %q, want empty cursor", cursor)
 			}
 		})

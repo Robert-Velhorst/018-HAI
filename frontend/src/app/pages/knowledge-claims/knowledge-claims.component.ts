@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, ViewChild } from '@angular/core'
 import { ActivatedRoute, Router } from '@angular/router'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
-import { catchError, forkJoin, of, Subscription } from 'rxjs'
+import { catchError, forkJoin, map, Observable, of, Subscription, take, throwIfEmpty, timeout } from 'rxjs'
 import { HaiProgressiveSectionComponent } from '../../control-room/progressive-section.component'
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
 import {
@@ -45,6 +45,7 @@ export class KnowledgeClaimsComponent implements OnInit, OnDestroy {
   correctionReason = ''
   correctionEffectiveFrom = ''
   correctionConfirmed = false
+  correctionRequiresRefresh = false
   private loadSubscription?: Subscription
   private lifecycleSubscription?: Subscription
   private correctionSubscription?: Subscription
@@ -100,7 +101,7 @@ export class KnowledgeClaimsComponent implements OnInit, OnDestroy {
   }
 
   get canApprove(): boolean {
-    return !this.loading && !this.authorityError
+    return !this.loading && !this.saving && !this.authorityError && !this.correctionRequiresRefresh
       && this.session?.authenticated === true
       && !!this.session.subject?.trim()
       && this.session.permissions?.canApprove === true
@@ -111,6 +112,8 @@ export class KnowledgeClaimsComponent implements OnInit, OnDestroy {
   }
 
   load(selectClaimId = ''): void {
+    if (this.saving) return
+    if (this.correctionRequiresRefresh) this.closeInspector()
     this.loadSubscription?.unsubscribe()
     this.session = undefined
     this.authorityError = ''
@@ -124,8 +127,8 @@ export class KnowledgeClaimsComponent implements OnInit, OnDestroy {
     this.loading = true
     this.errorMessage = ''
     this.loadSubscription = forkJoin({
-      queue: this.claims.reviewQueue(workspace),
-      session: this.authSession.session().pipe(catchError((error) => {
+      queue: this.observeOnce(this.claims.reviewQueue(workspace)),
+      session: this.observeOnce(this.authSession.session()).pipe(catchError((error) => {
         this.revokeAuthority(error)
         return of(undefined)
       })),
@@ -134,6 +137,7 @@ export class KnowledgeClaimsComponent implements OnInit, OnDestroy {
         this.queue = queue
         this.session = session
         this.loading = false
+        this.correctionRequiresRefresh = false
         if (!this.authorityError && (!session?.authenticated || !session.subject?.trim())) this.revokeAuthority({ status: 401 })
         const selected = queue.items.find((item) => item.claim.id === selectClaimId)
         if (selected) this.openInspector(selected)
@@ -147,6 +151,7 @@ export class KnowledgeClaimsComponent implements OnInit, OnDestroy {
   }
 
   applyWorkspace(): void {
+    if (this.saving) return
     this.closeInspector()
     this.router.navigate([], {
       relativeTo: this.route,
@@ -158,6 +163,7 @@ export class KnowledgeClaimsComponent implements OnInit, OnDestroy {
   }
 
   openInspector(item: IClaimReviewItem): void {
+    if (this.saving) return
     this.selected = item
     this.inspectorOpen = true
     this.detailLoading = true
@@ -191,7 +197,7 @@ export class KnowledgeClaimsComponent implements OnInit, OnDestroy {
     this.lifecycleSubscription?.unsubscribe()
     this.detailLoading = true
     this.lifecycleError = ''
-    this.lifecycleSubscription = this.claims.lifecycle(this.workspaceId, claimId).subscribe({
+    this.lifecycleSubscription = this.observeOnce(this.claims.lifecycle(this.workspaceId, claimId)).subscribe({
       next: (lifecycle) => {
         this.lifecycle = lifecycle
         this.detailLoading = false
@@ -243,14 +249,26 @@ export class KnowledgeClaimsComponent implements OnInit, OnDestroy {
       return
     }
     this.saving = true
+    const target = this.selected.claim
+    const workspace = this.workspaceId.trim()
     const requestId = this.newRequestId()
-    this.correctionSubscription = this.claims.correct(this.selected.claim.id, {
-      workspaceId: this.workspaceId,
+    this.correctionSubscription = this.observeOnce(this.claims.correct(target.id, {
+      workspaceId: workspace,
       requestId,
       correctedObject,
       reason,
       ...(effectiveFrom ? { effectiveFrom: effectiveFrom.toISOString() } : {}),
-    }).subscribe({
+    })).pipe(map(claim => {
+      if (!claim || typeof claim.id !== 'string' || !claim.id.trim() || claim.id === target.id
+        || claim.workspaceId !== workspace || claim.ownerIdentity !== target.ownerIdentity
+        || claim.subject !== target.subject || claim.predicate !== target.predicate
+        || claim.object !== correctedObject.replace(/\s+/g, ' ')
+        || claim.verificationStatus !== 'human_approved'
+        || !Array.isArray(claim.supersedesClaimIds) || !claim.supersedesClaimIds.includes(target.id)) {
+        throw new Error('Correction receipt does not match the requested successor.')
+      }
+      return claim
+    })).subscribe({
       next: (claim) => {
         this.saving = false
         this.notification.success('Correction recorded', 'The original claim remains in history and the approved successor is now active for review.')
@@ -263,8 +281,12 @@ export class KnowledgeClaimsComponent implements OnInit, OnDestroy {
           this.loadSubscription?.unsubscribe()
           this.loading = false
           this.revokeAuthority(error)
+          this.notification.error('Correction rejected', this.describeError(error, 'The correction was rejected.'))
+          return
         }
-        this.notification.error('Correction rejected', this.describeError(error, 'The correction was not stored.'))
+        this.correctionRequiresRefresh = true
+        this.correctionConfirmed = false
+        this.notification.error('Correction outcome unknown', 'HAI could not confirm whether the correction was stored. Refresh claim records and inspect the lifecycle before submitting another correction.')
       },
     })
   }
@@ -290,6 +312,10 @@ export class KnowledgeClaimsComponent implements OnInit, OnDestroy {
   private newRequestId(): string {
     const random = globalThis.crypto?.randomUUID?.()
     return random || `correction-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  }
+
+  private observeOnce<T>(request: Observable<T>): Observable<T> {
+    return request.pipe(timeout(10000), take(1), throwIfEmpty(() => new Error('Claim response was empty.')))
   }
 
   private revokeAuthority(error: { status?: number }): void {

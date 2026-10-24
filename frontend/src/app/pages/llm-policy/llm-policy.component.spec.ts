@@ -116,6 +116,67 @@ describe('LLMPolicyComponent', () => {
     expect(component.policyBudgetTooltip(policy)).toContain('Stored totals could not be read')
   })
 
+  it('does not display unavailable provider spend or tokens as measured zero', () => {
+    const component = createComponent()
+    const provider = { dailyBudgetEur: 2, budgetUsedEur: 0, inputTokensUsed: 0,
+      outputTokensUsed: 0, usageAccountingStatus: 'unavailable' } as any
+    expect(component.budgetText(provider)).toBe('Usage unavailable / max EUR 2')
+    const details = component.budgetTooltip(provider)
+    expect(details).toContain('Budget used: unavailable')
+    expect(details).toContain('Daily max: EUR 2')
+    expect(details).toContain('Input tokens: unavailable')
+    expect(details).toContain('Output tokens: unavailable')
+    expect(details).toContain('Total tokens: unavailable')
+    expect(details).not.toContain('Budget used: EUR 0')
+  })
+
+  it('does not expose stale policy token counters as measured totals when accounting failed', () => {
+    const component = createComponent()
+    const policy = { dailyBudgetUsedEur: 9, dailyPaidBudgetEur: 25, inputTokensUsed: 123,
+      outputTokensUsed: 45, usageAccountingStatus: 'unavailable' } as any
+    const details = component.policyBudgetTooltip(policy)
+    expect(details).toContain('Daily budget used: unavailable')
+    expect(details).toContain('Daily budget max: EUR 25')
+    expect(details).toContain('Input tokens: unavailable')
+    expect(details).toContain('Output tokens: unavailable')
+    expect(details).toContain('Total tokens: unavailable')
+    expect(component.tokenUsageText(policy)).toBe('Input/output tokens unavailable')
+  })
+
+  it('preserves an explicitly measured zero for durable accounting', () => {
+    const component = createComponent()
+    const provider = { dailyBudgetEur: 2, budgetUsedEur: 0, inputTokensUsed: 0,
+      outputTokensUsed: 0, usageAccountingStatus: 'durable' } as any
+    expect(component.budgetText(provider)).toBe('EUR 0 / 2')
+    expect(component.budgetTooltip(provider)).toContain('Budget used: EUR 0')
+    expect(component.budgetTooltip(provider)).toContain('Total tokens: 0')
+    expect(component.tokenUsageText({ ...provider } as any)).toBe('0 in / 0 out')
+  })
+
+  for (const checkedAt of ['not-a-date', '2026-10-23T10:01:00Z']) {
+    it(`does not present ${checkedAt} as a valid recent live probe`, () => {
+      spyOn(Date, 'now').and.returnValue(new Date('2026-10-23T10:00:00Z').getTime())
+      const component = createComponent()
+      const provider = { id: 'local', enabled: true, configured: true, local: true, paid: false } as any
+      component.policy = { requireRecentLiveProviderProbe: true, providerProbeMaxAgeSeconds: 300 } as any
+      component.probes = [{ providerId: 'local', live: true, checkedAt } as any]
+      expect(component.providerStatus(provider)).toBe('probe required')
+      expect(component.providerColor(provider)).toBe('orange')
+      expect(component.providerTone(provider)).toBe('watch')
+      expect(component.providerAttentionReason(provider)).not.toBe('')
+    })
+  }
+
+  it('retains a valid live probe at the exact configured age boundary', () => {
+    spyOn(Date, 'now').and.returnValue(new Date('2026-10-23T10:00:00Z').getTime())
+    const component = createComponent()
+    const provider = { id: 'local', enabled: true, configured: true, local: true, paid: false } as any
+    component.policy = { requireRecentLiveProviderProbe: true, providerProbeMaxAgeSeconds: 300 } as any
+    component.probes = [{ providerId: 'local', live: true, checkedAt: '2026-10-23T09:55:00Z' } as any]
+    expect(component.providerStatus(provider)).toBe('local')
+    expect(component.providerAttentionReason(provider)).toBe('')
+  })
+
   it('does not claim a maintenance check is scheduled when the due time is missing or invalid', () => {
     const component = createComponent()
 

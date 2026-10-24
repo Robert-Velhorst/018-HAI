@@ -60,10 +60,11 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
   }
 
   function candidateDecision(riskLevel: string = 'medium'): IPursuitDashboardDecision {
+    const id = '33333333-3333-4333-8333-333333333333';
     return {
-      pursuit: { id: 'candidate-1', title: 'Imported legal correspondence' } as any,
+      pursuit: { id, title: 'Imported legal correspondence' } as any,
       decision: {
-        id: 'pursuit:candidate-1:candidate-review',
+        id: `pursuit:${id}:candidate-review`,
         decisionType: 'pursuit_candidate_review',
         status: 'pending',
         riskLevel,
@@ -94,39 +95,49 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
   it('accepts a candidate through the explicit approval endpoint', () => {
     const { component, pursuits, notification } = createComponent();
     const card = candidateDecision();
-    pursuits.acceptCandidate.and.returnValue(of({}));
+    pursuits.acceptCandidate.and.returnValue(of({
+      pursuit: { id: card.pursuit.id, status: 'active', archived: false, sourceOfCreation: 'pursuit_intake' },
+      decisionQueue: [],
+      activity: [{ id: '22222222-2222-4222-8222-222222222222', pursuitId: card.pursuit.id,
+        eventType: 'pursuit.candidate_accepted', createdAt: '2026-10-23T10:00:00Z' }],
+    }));
 
     component.resolveDashboardDecision(card, true);
 
     expect(component.canResolveDashboardDecision(card)).toBeTrue();
-    expect(pursuits.acceptCandidate).toHaveBeenCalledWith('candidate-1', {
+    expect(pursuits.acceptCandidate).toHaveBeenCalledWith(card.pursuit.id, {
       requiresReview: false,
       reviewReason: 'Confirm this imported objective before planning work.',
     });
-    expect(notification.success).toHaveBeenCalledWith('Candidate accepted', 'HAI converted the candidate into governed pursuit work.');
+    expect(notification.info).toHaveBeenCalledWith('Candidate response received',
+      'The server reports an accepted candidate with a matching acceptance activity. This is not proof that a workflow was created or executed.');
+    expect(notification.success).not.toHaveBeenCalled();
     expect(component.refreshPursuits).toHaveBeenCalled();
   });
 
   it('archives a rejected candidate without creating workflow work', () => {
     const { component, pursuits, notification } = createComponent();
     const card = candidateDecision('high');
-    pursuits.archive.and.returnValue(of({}));
+    pursuits.archive.and.returnValue(of({ id: card.pursuit.id, archived: true, status: 'archived' }));
 
     component.resolveDashboardDecision(card, false);
 
-    expect(pursuits.archive).toHaveBeenCalledWith('candidate-1', true);
+    expect(pursuits.archive).toHaveBeenCalledWith(card.pursuit.id, true);
     expect(pursuits.acceptCandidate).not.toHaveBeenCalled();
-    expect(notification.success).toHaveBeenCalledWith('Candidate archived', 'The auto-created candidate was removed from active queues.');
+    expect(notification.info).toHaveBeenCalledWith('Archive response received',
+      'The server reports the requested pursuit archived. This is not independent verification of audit persistence.');
+    expect(notification.success).not.toHaveBeenCalled();
     expect(component.refreshPursuits).toHaveBeenCalled();
   });
 
   it('resolves a workflow approval from the unified queue', () => {
     const { component, workflows, notification } = createComponent();
+    const workflowId = '11111111-1111-4111-8111-111111111111';
     const card = {
       pursuit: { id: 'pursuit-1', title: 'Prepare legal response' },
       decision: {
-        id: 'workflow:workflow-1:approval',
-        workflowId: 'workflow-1',
+        id: `workflow:${workflowId}:approval`,
+        workflowId,
         decisionType: 'approval',
         status: 'pending',
         riskLevel: 'high',
@@ -136,25 +147,33 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
         noConsequence: 'The workflow remains blocked.',
       },
     } as IPursuitDashboardDecision;
-    workflows.resolveApproval.and.returnValue(of({}));
+    workflows.resolveApproval.and.returnValue(of({
+      item: { id: workflowId, requiresApproval: true, approvalStatus: 'approved', currentState: 'ready' },
+      decisions: [{ id: '22222222-2222-4222-8222-222222222222', workflowId, decisionType: 'approval',
+        decision: 'approved', approved: true, createdAt: '2026-10-23T10:00:00Z' }],
+    }));
 
     component.resolveDashboardDecision(card, true);
 
     expect(component.canResolveDashboardDecision(card)).toBeTrue();
-    expect(workflows.resolveApproval).toHaveBeenCalledWith('workflow-1', {
+    expect(workflows.resolveApproval).toHaveBeenCalledWith(workflowId, {
       approved: true,
       note: 'The workflow may move forward.',
       actor: 'Robert',
     });
-    expect(notification.success).toHaveBeenCalledWith('Approval recorded', 'Workflow approved through the audited gate.');
+    expect(notification.info).toHaveBeenCalledWith('Decision response received',
+      'The server returned the requested workflow state and matching decision record. This is not proof of execution or independent audit persistence.');
+    expect(notification.success).not.toHaveBeenCalled();
   });
 
   it('resolves a verified completion review from the unified queue', () => {
     const { component, pursuits, notification } = createComponent();
+    const pursuitId = '33333333-3333-4333-8333-333333333333';
+    const decisionId = `pursuit:${pursuitId}:completion-review`;
     const card = {
-      pursuit: { id: 'pursuit-1', title: 'Complete evidence bundle' },
+      pursuit: { id: pursuitId, title: 'Complete evidence bundle' },
       decision: {
-        id: 'pursuit:pursuit-1:completion-review',
+        id: decisionId,
         decisionType: 'pursuit_completion_review',
         status: 'pending',
         riskLevel: 'medium',
@@ -164,12 +183,18 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
         noConsequence: 'Keep it active.',
       },
     } as IPursuitDashboardDecision;
-    pursuits.resolveDecision.and.returnValue(of({}));
+    pursuits.resolveDecision.and.returnValue(of({
+      pursuit: { id: pursuitId, status: 'completed', completionState: 'verified', archived: false },
+      decisionQueue: [],
+      activity: [{ id: '22222222-2222-4222-8222-222222222222', pursuitId,
+        eventType: 'pursuit.decision_resolved', sourceId: decisionId,
+        sourceType: 'pursuit_decision:pursuit_completion_review:approved', createdAt: '2026-10-23T10:00:00Z' }],
+    }));
 
     component.resolveDashboardDecision(card, true);
 
-    expect(pursuits.resolveDecision).toHaveBeenCalledWith('pursuit-1', {
-      decisionId: 'pursuit:pursuit-1:completion-review',
+    expect(pursuits.resolveDecision).toHaveBeenCalledWith(pursuitId, {
+      decisionId,
       decisionType: 'pursuit_completion_review',
       approved: true,
       reason: 'Linked workflows are completed with accepted evidence.',
@@ -178,7 +203,9 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
       evidenceLabel: undefined,
       actor: 'Robert',
     });
-    expect(notification.success).toHaveBeenCalledWith('Pursuit completed', 'Verified completion and the Robert decision were recorded in the audit trail.');
+    expect(notification.info).toHaveBeenCalledWith('Completion response received',
+      'The server reports completed and verified state with a matching decision record. This is not independent verification of the outcome.');
+    expect(notification.success).not.toHaveBeenCalled();
   });
 
   it('retains confirmed command history when the next ledger read is unavailable', () => {
@@ -432,7 +459,10 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
   it('does not replace an unsaved OpenClaw path when ecosystem inventory refreshes', () => {
     const { component, agentRuntimes } = createComponent();
     const savedRuntime = { id: 'openclaw', ecosystemPath: 'C:\\old\\package.zip' };
-    agentRuntimes.prepareOpenClawEcosystemRefresh.and.returnValue(of({ authorization: 'approved-once' }));
+    agentRuntimes.prepareOpenClawEcosystemRefresh.and.returnValue(of({
+      idempotencyKey: 'fixture-refresh', taskId: 'fixture-task',
+      approvalSourceId: 'fixture-owner', approvalBindingDigest: 'a'.repeat(64),
+    }));
     agentRuntimes.refreshOpenClawEcosystem.and.returnValue(of(savedRuntime));
     component.runtimes = [savedRuntime as any];
     component.onOpenClawEcosystemPathInput('C:\\draft\\package.zip');
@@ -441,6 +471,7 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
 
     expect(component.openClawEcosystemPath).toBe('C:\\draft\\package.zip');
     expect((component as any).openClawEcosystemPathEdited).toBeTrue();
+    expect(agentRuntimes.refreshOpenClawEcosystem).toHaveBeenCalledTimes(1);
   });
 
   it('does not duplicate runtime skill requests while one is pending', () => {
@@ -579,7 +610,10 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
       ecosystemPath: 'C:\\OpenClaw\\current.zip',
       ecosystemRollbackAvailable: true,
     };
-    agentRuntimes.prepareOpenClawEcosystemRollback.and.returnValue(of({}));
+    agentRuntimes.prepareOpenClawEcosystemRollback.and.returnValue(of({
+      idempotencyKey: 'fixture-rollback', taskId: 'fixture-task',
+      approvalSourceId: 'fixture-owner', approvalBindingDigest: 'a'.repeat(64),
+    }));
     agentRuntimes.rollbackOpenClawEcosystem.and.returnValue(
       throwError(() => ({ error: { error: 'Previous archive failed integrity validation.' } }))
     );
@@ -589,9 +623,10 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
 
     expect(component.runtimes[0]).toBe(runtime as any);
     expect(component.openClawRollbackLoading).toBeFalse();
+    expect(agentRuntimes.rollbackOpenClawEcosystem).toHaveBeenCalledTimes(1);
     expect(notification.error).toHaveBeenCalledWith(
       'OpenClaw archive rollback failed',
-      'Previous archive failed integrity validation.'
+      'The rollback outcome could not be confirmed. Refresh runtime inventory before deciding whether to retry.'
     );
   });
 });

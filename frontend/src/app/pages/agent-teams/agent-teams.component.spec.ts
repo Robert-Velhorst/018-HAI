@@ -1,7 +1,7 @@
 import { AgentCoordinationMessage, AgentTeamAttention, AgentTeamContract } from '../../models/agent-teams.model'
 import { CommonModule } from '@angular/common'
 import { HttpErrorResponse } from '@angular/common/http'
-import { ComponentFixture, TestBed } from '@angular/core/testing'
+import { ComponentFixture, fakeAsync, TestBed, tick } from '@angular/core/testing'
 import { FormsModule } from '@angular/forms'
 import { Router } from '@angular/router'
 import { ControlRoomModule } from '../../control-room/control-room.module'
@@ -11,7 +11,7 @@ import { NzDrawerModule } from 'ng-zorro-antd/drawer'
 import { NzIconModule } from 'ng-zorro-antd/icon'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { NzSpinModule } from 'ng-zorro-antd/spin'
-import { of, throwError } from 'rxjs'
+import { EMPTY, of, Subject, throwError } from 'rxjs'
 import { AgentTeamsService } from '../../services/agent-teams.service'
 import { AuthSessionService } from '../../services/auth-session.service'
 import { AgentTeamsComponent } from './agent-teams.component'
@@ -142,6 +142,186 @@ describe('AgentTeamsComponent', () => {
     expect(deps.router.navigate).not.toHaveBeenCalled()
   })
 
+  function requestSetup() {
+    const deps = dependencies()
+    const service = jasmine.createSpyObj('AgentTeamsService', ['list', 'get', 'createGuided', 'addMember', 'changeMembership', 'transition', 'createDecision', 'acknowledge', 'recordConsensus', 'decisionOverview', 'outcomes', 'events', 'attention'])
+    const auth = jasmine.createSpyObj('AuthSessionService', ['session'])
+    service.list.and.returnValue(of([]))
+    service.attention.and.returnValue(of([]))
+    auth.session.and.returnValue(of({ permissions: { canAdminister: true, canOperate: true } }))
+    const fixture = new AgentTeamsComponent(service, auth, deps.preferences as never, deps.notification, deps.router)
+    fixture.loading = false
+    const team = selectedTeam()
+    team.roles = [{ id: 'reviewer', capabilityIds: [], authorityCeiling: 1, riskCeiling: 'low' } as any]
+    fixture.selected = team
+    fixture.session = { permissions: { canAdminister: true, canOperate: true } } as any
+    Object.assign(fixture.createForm, { key: 'review', name: 'Review', purpose: 'Retained charter' })
+    Object.assign(fixture.memberForm, { roleId: 'reviewer', agentId: 'agent-1', reason: 'Retained reason' })
+    Object.assign(fixture.decisionForm, { senderMembershipId: 'member-1', recipientMembershipId: 'member-2', issue: 'Retained issue', recommendation: 'Review', evidenceRefs: 'source:test' })
+    fixture.consensusForm = { correlationId: 'correlation-1', issue: 'Retained issue' }
+    return { fixture, service, auth, notification: deps.notification }
+  }
+
+  for (const [operation, action, argument] of [
+    ['list', 'refresh', undefined], ['createGuided', 'createTeam', undefined],
+    ['addMember', 'addMember', undefined], ['changeMembership', 'changeMembership', undefined],
+    ['transition', 'transition', 'suspend'], ['createDecision', 'createDecision', undefined],
+    ['acknowledge', 'acknowledge', undefined], ['recordConsensus', 'recordConsensus', undefined],
+    ['decisionOverview', 'loadSection', 'decisions'], ['outcomes', 'loadSection', 'consensus'],
+    ['events', 'loadSection', 'history'], ['get', 'loadSection', 'members'], ['attention', 'focusAttentionQueue', undefined],
+  ] as const) {
+    it(`contains synchronous ${operation} construction failures`, () => {
+      const { fixture, service, notification } = requestSetup()
+      spyOn(window, 'prompt').and.returnValue('Reviewed reason')
+      service[operation].and.callFake(() => { throw new Error('Synthetic request failure') })
+      const invoke = () => {
+        if (action === 'changeMembership') fixture.changeMembership({ id: 'member-1', agentId: 'agent-1', evidenceRefs: [] } as any, 'suspended')
+        else if (action === 'acknowledge') fixture.acknowledge(attentionItem(), 'accepted')
+        else if (action === 'loadSection') fixture.loadSection(argument as string, true)
+        else (fixture[action] as Function).call(fixture, argument)
+      }
+      expect(invoke).not.toThrow()
+      expect(fixture.loading || fixture.saving || fixture.detailLoading || fixture.attentionLoading).toBeFalse()
+      expect(notification.success).not.toHaveBeenCalled()
+    })
+  }
+
+  for (const operation of ['session', 'list']) {
+    it(`contains initial ${operation} construction failure without losing the draft`, () => {
+      const { fixture, service, auth } = requestSetup()
+      const api = operation === 'session' ? auth : service
+      api[operation].and.callFake(() => { throw new Error('Synthetic initialization failure') })
+      expect(() => fixture.ngOnInit()).not.toThrow()
+      expect(fixture.loading).toBeFalse()
+      expect(fixture.errorMessage).toBeTruthy()
+      expect(fixture.createForm.purpose).toBe('Retained charter')
+    })
+  }
+
+  it('does not apply an obsolete section result after leaving and returning to the same team', () => {
+    const { fixture, service } = requestSetup()
+    const obsolete = new Subject<any>()
+    service.decisionOverview.and.returnValue(obsolete)
+    const original = fixture.selected!
+    fixture.loadSection('decisions', true)
+    fixture.selectTeam({ ...original, id: 'another-team' })
+    fixture.selectTeam(original)
+    obsolete.next({ messages: [decisionMessage('obsolete', 'old-member')], attention: [] })
+    expect(fixture.messages).toEqual([])
+    ;(fixture as any).ngOnDestroy?.()
+  })
+
+  it('does not switch teams or reload while a charter write is pending', () => {
+    const { fixture, service } = requestSetup()
+    service.createGuided.and.returnValue(new Subject())
+    fixture.createTeam()
+    fixture.selectTeam({ ...fixture.selected!, id: 'other-team' })
+    fixture.refresh()
+    expect(fixture.selected?.id).toBe('team-1')
+    expect(service.list).not.toHaveBeenCalled()
+    ;(fixture as any).ngOnDestroy?.()
+  })
+
+  it('bounds an empty or silent attention read without claiming a decision succeeded', fakeAsync(() => {
+    const { fixture, service, notification } = requestSetup()
+    service.attention.and.returnValues(EMPTY, new Subject())
+    fixture.focusAttentionQueue()
+    expect(fixture.attentionLoading).toBeFalse()
+    expect(fixture.attentionError).toBeTruthy()
+    fixture.focusAttentionQueue()
+    tick(6001)
+    expect(fixture.attentionLoading).toBeFalse()
+    expect(fixture.attentionError).toBeTruthy()
+    expect(notification.success).not.toHaveBeenCalled()
+    ;(fixture as any).ngOnDestroy?.()
+  }))
+
+  it('cancels observations and refuses team API dispatch after teardown', () => {
+    const { fixture, service } = requestSetup()
+    const pending = new Subject<any[]>()
+    service.list.and.returnValue(pending)
+    fixture.refresh()
+    ;(fixture as any).ngOnDestroy?.()
+    pending.next([selectedTeam()])
+    expect(fixture.teams).toEqual([])
+    service.list.calls.reset()
+    fixture.refresh()
+    fixture.createTeam()
+    fixture.loadSection('decisions', true)
+    fixture.focusAttentionQueue()
+    expect(service.list).not.toHaveBeenCalled()
+    expect(service.createGuided).not.toHaveBeenCalled()
+    expect(service.decisionOverview).not.toHaveBeenCalled()
+    expect(service.attention).not.toHaveBeenCalled()
+  })
+
+  it('retries the initial permission read instead of leaving recovery permanently read-only', () => {
+    const { fixture, service, auth } = requestSetup()
+    fixture.session = undefined
+    auth.session.and.returnValues(throwError(() => new Error('Synthetic session failure')), of({ permissions: { canAdminister: true } }))
+    fixture.ngOnInit()
+    expect(fixture.errorMessage).toBeTruthy()
+    fixture.refresh()
+    expect(auth.session).toHaveBeenCalledTimes(2)
+    expect(fixture.canGovern).toBeTrue()
+    expect(fixture.errorMessage).toBe('')
+    expect(service.list).toHaveBeenCalledTimes(2)
+    fixture.ngOnDestroy()
+  })
+
+  it('deduplicates pending sections and keeps the busy state until all current reads finish', () => {
+    const { fixture, service } = requestSetup()
+    const outcomes = new Subject<any[]>()
+    const events = new Subject<any[]>()
+    service.outcomes.and.returnValue(outcomes)
+    service.events.and.returnValue(events)
+    fixture.loadSection('consensus', true)
+    fixture.loadSection('consensus', true)
+    fixture.loadSection('history', true)
+    expect(service.outcomes).toHaveBeenCalledTimes(1)
+    outcomes.next([])
+    expect(fixture.detailLoading).toBeTrue()
+    events.next([])
+    expect(fixture.detailLoading).toBeFalse()
+    fixture.ngOnDestroy()
+  })
+
+  it('cancels stale section reads before a team write begins', () => {
+    const { fixture, service } = requestSetup()
+    const obsolete = new Subject<any>()
+    service.decisionOverview.and.returnValue(obsolete)
+    service.createGuided.and.returnValue(new Subject())
+    fixture.loadSection('decisions', true)
+    fixture.createTeam()
+    obsolete.next({ messages: [decisionMessage('obsolete', 'member-1')], attention: [] })
+    expect(fixture.messages).toEqual([])
+    expect(fixture.detailLoading).toBeFalse()
+    fixture.ngOnDestroy()
+  })
+
+  it('retains a draft and reports uncertain creation when a write times out', fakeAsync(() => {
+    const { fixture, service, notification } = requestSetup()
+    service.createGuided.and.returnValue(new Subject())
+    fixture.createTeam()
+    tick(30001)
+    expect(fixture.saving).toBeFalse()
+    expect(fixture.createForm.purpose).toBe('Retained charter')
+    expect(notification.error).toHaveBeenCalledWith('Team creation unconfirmed', jasmine.stringContaining('may already have been saved'))
+    expect(notification.success).not.toHaveBeenCalled()
+    fixture.ngOnDestroy()
+  }))
+
+  it('does not interpret empty write completion as a created charter', () => {
+    const { fixture, service, notification } = requestSetup()
+    service.createGuided.and.returnValue(EMPTY)
+    fixture.createTeam()
+    expect(fixture.saving).toBeFalse()
+    expect(fixture.teams).toEqual([])
+    expect(notification.error).toHaveBeenCalled()
+    expect(notification.success).not.toHaveBeenCalled()
+    fixture.ngOnDestroy()
+  })
+
   describe('rendered attention queue', () => {
     const preferenceKey = 'hai.module-view.v1.agent-teams'
     let fixture: ComponentFixture<AgentTeamsComponent>
@@ -244,6 +424,14 @@ describe('AgentTeamsComponent', () => {
       expect(decisions.querySelectorAll('.decision-attention-list article').length).toBe(7)
       expect(decisions.querySelectorAll('.decision-attention-list .record-actions button').length).toBe(0)
       expect(decisions.textContent).toContain('Your current role cannot acknowledge this message.')
+    })
+
+    it('disables registry refresh and team selection during a pending write', () => {
+      fixture.componentInstance.saving = true
+      fixture.detectChanges()
+      const page: HTMLElement = fixture.nativeElement
+      expect((page.querySelector('.heading-actions button') as HTMLButtonElement).disabled).toBeTrue()
+      expect((page.querySelector('.team-list button') as HTMLButtonElement).disabled).toBeTrue()
     })
   })
 })

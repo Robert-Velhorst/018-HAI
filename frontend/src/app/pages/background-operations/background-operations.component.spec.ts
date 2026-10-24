@@ -1,9 +1,68 @@
 import { HttpErrorResponse, HttpHeaders } from '@angular/common/http'
-import { Observable, of, Subject, throwError, TimeoutError } from 'rxjs'
+import { fakeAsync, tick } from '@angular/core/testing'
+import { EMPTY, NEVER, Observable, of, Subject, throwError, TimeoutError } from 'rxjs'
 import { IBackgroundRunReport, IOperation, IOperationApprovalPreview, IOperationEvent } from '../../models/background-operations.model.interface'
 import { BackgroundOperationsComponent } from './background-operations.component'
 
 describe('BackgroundOperationsComponent', () => {
+  function approvalFixture() {
+    const item = sourceOperation('source-boundary', 4)
+    return { item, preview: { operation: item, revision: { operationId: item.id, version: 4, revisionDigest: 'c'.repeat(64) } } }
+  }
+
+  it('bounds the approval write after a fresh source preview', fakeAsync(() => {
+    const { item, preview } = approvalFixture()
+    const approve = jasmine.createSpy().and.returnValue(NEVER)
+    const component = make({ approvalPreview: () => of(preview), approve })
+    component.approve(item)
+    component.confirmSourceApprovalReview()
+    tick(30001)
+    expect(component.sourceApprovalReviewConfirming).toBeFalse()
+    expect(component.sourceApprovalReviewError).not.toBe('')
+    expect(component.isPending(item)).toBeFalse()
+    expect(approve).toHaveBeenCalledTimes(1)
+    component.ngOnDestroy()
+  }))
+
+  it('submits only once when the fresh preview emits repeatedly', () => {
+    const { item, preview } = approvalFixture()
+    const fresh = new Subject<IOperationApprovalPreview>()
+    const approvalPreview = jasmine.createSpy().and.returnValues(of(preview), fresh)
+    const approve = jasmine.createSpy().and.returnValue(of({ ...item, status: 'approved' }))
+    const component = make({ approvalPreview, approve })
+    component.approve(item)
+    component.confirmSourceApprovalReview()
+    fresh.next(preview)
+    fresh.next(preview)
+    fresh.complete()
+    expect(approve).toHaveBeenCalledTimes(1)
+    component.ngOnDestroy()
+  })
+
+  it('reports an empty source preview without silently accepting a review', () => {
+    const { item } = approvalFixture()
+    const approve = jasmine.createSpy()
+    const component = make({ approvalPreview: () => EMPTY, approve })
+    component.approve(item)
+    expect(component.sourceApprovalReviewError).toContain('No approval was submitted')
+    expect(component.sourceApprovalReviewLoading).toBeFalse()
+    expect(component.isPending(item)).toBeFalse()
+    expect(approve).not.toHaveBeenCalled()
+    component.ngOnDestroy()
+  })
+
+  it('does not confirm a retained source review after destruction', () => {
+    const { item, preview } = approvalFixture()
+    const approvalPreview = jasmine.createSpy().and.returnValue(of(preview))
+    const approve = jasmine.createSpy().and.returnValue(of(item))
+    const component = make({ approvalPreview, approve })
+    component.approve(item)
+    component.ngOnDestroy()
+    component.confirmSourceApprovalReview()
+    expect(approvalPreview).toHaveBeenCalledTimes(1)
+    expect(approve).not.toHaveBeenCalled()
+  })
+
   function make(
     overrides: Record<string, unknown> = {},
     notification = jasmine.createSpyObj('notification', ['error', 'success', 'warning', 'info']),

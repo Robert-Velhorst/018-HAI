@@ -28,14 +28,20 @@
     <a routerLink="/login">Sign in</a>
   </section>
 
+  <section class="claim-error" *ngIf="!inspectorOpen && correctionRequiresRefresh" role="alert">
+    <div><strong>Correction outcome unknown</strong><span>Refresh claim records and inspect the lifecycle before submitting another correction.</span></div>
+    <button nz-button type="button" (click)="load()" [disabled]="loading || saving">Refresh claim records</button>
+  </section>
+
   <ng-container *ngIf="!loading && !errorMessage && queue as currentQueue">
-    <section class="attention-summary" [attr.data-state]="attentionItems.length ? 'attention' : 'clear'">
-      <i nz-icon [nzType]="attentionItems.length ? 'warning' : 'check-circle'" nzTheme="outline"></i>
+    <section class="attention-summary" [attr.data-state]="attentionItems.length || currentQueue.truncated ? 'attention' : 'clear'">
+      <i nz-icon [nzType]="attentionItems.length || currentQueue.truncated ? 'warning' : 'check-circle'" nzTheme="outline"></i>
       <div>
-        <strong>{{ attentionItems.length ? attentionItems.length + ' claim' + (attentionItems.length === 1 ? '' : 's') + ' need attention' : 'No unresolved claim exceptions' }}</strong>
+        <strong>{{ currentQueue.truncated ? 'Claim review is incomplete' : attentionItems.length ? attentionItems.length + ' claim' + (attentionItems.length === 1 ? '' : 's') + ' need attention' : 'No unresolved claim exceptions' }}</strong>
+        <span *ngIf="currentQueue.truncated">The bounded scan may omit claim records. Inspect the register before treating the workspace as clear.</span>
         <span *ngIf="attentionItems.length">Review contradictions and unsupported statements before they can influence planning or execution.</span>
-        <span *ngIf="!attentionItems.length && currentQueue.items.length">The current bounded claim set is supported, corroborated, or superseded.</span>
-        <span *ngIf="!currentQueue.items.length">No semantic claims exist in workspace {{ workspaceId }} yet.</span>
+        <span *ngIf="!attentionItems.length && currentQueue.items.length && !currentQueue.truncated">The current bounded claim set is supported, corroborated, or superseded.</span>
+        <span *ngIf="!currentQueue.items.length && !currentQueue.truncated">No semantic claims exist in workspace {{ workspaceId }} yet.</span>
       </div>
       <button *ngIf="attentionItems[0] as next" nz-button nzType="primary" type="button" (click)="openInspector(next)">
         Review next
@@ -76,8 +82,8 @@
         summary="Change the owner-scoped project key and inspect the point-in-time evaluation."
         [advancedOnly]="true">
         <div class="workspace-form">
-          <label><span>Workspace</span><input nz-input [(ngModel)]="workspaceId" maxlength="160" /></label>
-          <button nz-button type="button" (click)="applyWorkspace()">Load workspace</button>
+          <label><span>Workspace</span><input nz-input [(ngModel)]="workspaceId" maxlength="160" [disabled]="saving" /></label>
+          <button nz-button type="button" (click)="applyWorkspace()" [disabled]="saving">Load workspace</button>
         </div>
         <dl class="boundary-grid">
           <div><dt>Effective at</dt><dd>{{ currentQueue.effectiveAt | date:'medium' }}</dd></div>
@@ -247,6 +253,11 @@
         <div><strong>Approval access needs checking</strong><span>{{ authorityError }}</span></div>
         <button nz-button type="button" (click)="load()" [disabled]="loading || saving">Refresh access</button>
         <a routerLink="/login">Sign in</a>
+      </section>
+
+      <section class="claim-error" *ngIf="correctionRequiresRefresh" role="alert">
+        <div><strong>Correction outcome unknown</strong><span>Refresh claim records and inspect the lifecycle before submitting another correction.</span></div>
+        <button nz-button type="button" (click)="load()" [disabled]="loading || saving">Refresh claim records</button>
       </section>
 
       <form class="correction-form" *ngIf="correctionOpen" (ngSubmit)="submitCorrection()">

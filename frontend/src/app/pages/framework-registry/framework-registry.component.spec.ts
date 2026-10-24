@@ -283,7 +283,7 @@ describe('FrameworkRegistryComponent', () => {
     expect(service.familyTaxonomy).toHaveBeenCalledTimes(1);
   });
 
-  it('loads the immutable taxonomy only when its Advanced section opens', () => {
+  it('loads taxonomy through the persisted section toggle without reloading on reopen', () => {
     component.setViewMode('advanced');
 
     expect(service.familyTaxonomy).not.toHaveBeenCalled();
@@ -700,6 +700,61 @@ describe('FrameworkRegistryComponent', () => {
     expect(component.inspectorVisible).toBeTrue();
   });
 
+  it('cancels obsolete preference history before opening another framework', () => {
+    const delayed = new Subject<never[]>();
+    service.preferenceHistory.and.returnValues(delayed.asObservable(), of([]));
+
+    component.openFrameworkById(framework.id);
+    expect(delayed.observed).toBeTrue();
+    component.openFrameworkById('formal-planning');
+
+    expect(delayed.observed).toBeFalse();
+    delayed.error(new HttpErrorResponse({ status: 503 }));
+    expect(component.preferenceHistory).toEqual([]);
+    expect(component.preferenceHistoryError).toBe('');
+    expect(component.preferenceHistoryLoading).toBeFalse();
+  });
+
+  it('cancels inspector and history reads when the inspector closes', () => {
+    const detail = new Subject<IFrameworkView>();
+    const history = new Subject<never[]>();
+    service.framework.and.returnValue(detail.asObservable());
+    service.preferenceHistory.and.returnValue(history.asObservable());
+
+    component.openFrameworkById(framework.id);
+    expect(detail.observed).toBeTrue();
+    expect(history.observed).toBeTrue();
+    component.closeInspector();
+
+    expect(detail.observed).toBeFalse();
+    expect(history.observed).toBeFalse();
+    expect(component.inspectorVisible).toBeFalse();
+    expect(component.inspectorLoading).toBeFalse();
+    expect(component.preferenceHistoryLoading).toBeFalse();
+    expect(component.selectedFramework).toBeUndefined();
+    expect(component.preferenceHistory).toEqual([]);
+  });
+
+  it('releases pending inspector and preference-history reads on destruction', () => {
+    const detail = new Subject<IFrameworkView>();
+    const history = new Subject<never[]>();
+    service.framework.and.returnValue(detail.asObservable());
+    service.preferenceHistory.and.returnValue(history.asObservable());
+    component.openFrameworkById(framework.id);
+
+    component.ngOnDestroy();
+
+    expect(detail.observed).toBeFalse();
+    expect(history.observed).toBeFalse();
+    expect(component.inspectorLoading).toBeFalse();
+    expect(component.preferenceHistoryLoading).toBeFalse();
+    history.error(new HttpErrorResponse({ status: 401 }));
+    detail.next(framework);
+    expect(component.selectedFramework).toBeUndefined();
+    expect(component.preferenceHistoryError).toBe('');
+    expect(notification.error).not.toHaveBeenCalled();
+  });
+
   it('cancels an obsolete refresh before it can replace newer state', () => {
     const delayedOverview = new Subject<IFrameworkRegistryOverview>();
     const newerOverview = {
@@ -775,7 +830,7 @@ describe('FrameworkRegistryComponent', () => {
     component.selectFrameworks();
 
     expect(component.selectionError).toBe(
-      'HAI could not create a framework recommendation. No execution was started.'
+      'HAI could not confirm whether the recommendation was recorded. Inspect selection history before retrying. No execution was started.'
     );
     expect(component.selectionError).not.toContain('super-secret-value');
   });

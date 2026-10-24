@@ -397,6 +397,7 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
   private monitorHistorySubscription?: Subscription
   private monitorCompositionSubscription?: Subscription
   private monitorCompositionHistorySubscription?: Subscription
+  private learningHistorySubscription?: Subscription
   private outcomeScopeKey = ''
   private resilienceScopeKey = ''
 
@@ -416,12 +417,17 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     this.monitorHistorySubscription?.unsubscribe()
     this.monitorCompositionSubscription?.unsubscribe()
     this.monitorCompositionHistorySubscription?.unsubscribe()
+    this.learningHistorySubscription?.unsubscribe()
   }
 
   refresh(): void {
     this.loadExecution()
     this.loadMandates()
     this.loadLearning()
+    if (this.learningHistoryLoaded || this.learningHistoryLoading
+      || this.preferences.get(this.moduleId).openSections['controlled-learning']) {
+      this.loadLearningSection(true, true)
+    }
     this.loadAgents()
     this.loadDomains()
     const openSections = this.preferences.get(this.moduleId).openSections
@@ -441,33 +447,32 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
   }
 
   loadExecution(): void {
+    const full = this.executionFullLoaded || this.executionFullLoading
+      || this.preferences.get(this.moduleId).openSections['execution-receipts'] === true
     this.beginLoad('execution')
+    this.executionFullLoading = full
+    this.executionFullLoaded = false
+    this.executionFullError = ''
     this.surfaceSubscriptions.execution?.unsubscribe()
-    this.surfaceSubscriptions.execution = this.service.listExecutionReceipts(50, 'summary').subscribe({
+    this.surfaceSubscriptions.execution = this.service.listExecutionReceipts(50, full ? 'full' : 'summary').subscribe({
       next: (response) => {
         this.receipts = response.receipts || []
+        this.executionFullLoading = false
+        this.executionFullLoaded = full
         this.finishLoad('execution')
       },
-      error: (error) => this.failLoad('execution', error, 'Authorization receipts are unavailable.'),
+      error: (error) => {
+        this.executionFullLoading = false
+        if (full) this.executionFullError = this.describeError(error, 'Full authorization evidence is unavailable.')
+        this.failLoad('execution', error, 'Authorization receipts are unavailable.')
+      },
     })
   }
 
   loadExecutionSection(open: boolean): void {
     if (!open || this.executionFullLoading || this.executionFullLoaded) return
     this.executionFullLoading = true
-    this.executionFullError = ''
-    this.surfaceSubscriptions.execution?.unsubscribe()
-    this.surfaceSubscriptions.execution = this.service.listExecutionReceipts(50, 'full').subscribe({
-      next: (response) => {
-        this.receipts = response.receipts || []
-        this.executionFullLoading = false
-        this.executionFullLoaded = true
-      },
-      error: (error) => {
-        this.executionFullLoading = false
-        this.executionFullError = this.describeError(error, 'Full authorization evidence is unavailable.')
-      },
-    })
+    this.loadExecution()
   }
 
   loadMandates(): void {
@@ -494,12 +499,12 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     })
   }
 
-  loadLearningSection(open: boolean): void {
-    if (!open || this.learningHistoryLoading || this.learningHistoryLoaded) return
+  loadLearningSection(open: boolean, refresh = false): void {
+    if (!open || (!refresh && (this.learningHistoryLoading || this.learningHistoryLoaded))) return
     this.learningHistoryLoading = true
     this.learningHistoryError = ''
-    this.surfaceSubscriptions.learning?.unsubscribe()
-    this.surfaceSubscriptions.learning = this.service.listLearningOutcomes(100).subscribe({
+    this.learningHistorySubscription?.unsubscribe()
+    this.learningHistorySubscription = this.service.listLearningOutcomes(100).subscribe({
       next: (response) => {
         this.learningOutcomes = response.outcomes || []
         this.learningHistoryLoading = false

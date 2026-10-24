@@ -116,6 +116,21 @@ themselves prove database persistence, restart recovery, or webhook acceptance.
 
 ## Sign-off
 
-A provider is "verified" only when every box is checked and a probe has succeeded
-in the target environment. Record the sign-off (who, when, scopes) alongside the
-enablement change.
+Complete every applicable checklist item and run the probe in the target
+environment before recording a configuration/probe sign-off. Record who approved
+it, when, the scopes and the exact operation verified alongside the enablement
+change; do not label the whole integration operationally accepted from that alone.
+
+State exactly what that evidence verifies. A successful metadata probe establishes
+only the tested endpoint response, not account ownership, available model capacity,
+source ingestion, scheduled delivery or execution of a user's requested action.
+An empty model catalog, queued job, mocked response or skipped live test is not
+end-to-end acceptance. For operational acceptance, separately record an explicitly
+authorized, bounded sample through the actual configured account and resource,
+its persisted result, verification and recovery outcome. Record the date, version,
+scope and approving operator without credentials or private source content.
+
+Local-first does not mean every configured provider or connector is offline.
+Review which data can leave the device before enabling an external integration.
+Standing permissions and approval requirements are configuration, not proof that
+an individual operation was completed correctly.

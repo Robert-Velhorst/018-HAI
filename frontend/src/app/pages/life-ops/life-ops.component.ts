@@ -1,5 +1,6 @@
-import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit } from '@angular/core'
 import { HttpErrorResponse } from '@angular/common/http'
+import { defer, EMPTY, finalize, merge, Observable, Subject, take, takeUntil, throwIfEmpty, timeout } from 'rxjs'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import {
   CapacitySignals,
@@ -132,7 +133,11 @@ interface PriorityForm {
     styleUrls: ['./life-ops.component.scss'],
     standalone: false
 })
-export class LifeOpsComponent implements OnInit {
+export class LifeOpsComponent implements OnInit, OnDestroy {
+  private readonly destroyed$ = new Subject<void>()
+  private readonly readsInvalidated$ = new Subject<void>()
+  private readonly entityChanged$ = new Subject<void>()
+  private destroyed = false
   readonly moduleId = 'life-ops'
   readonly capacityStatuses: CapacityStatus[] = [
     'available',
@@ -253,11 +258,35 @@ export class LifeOpsComponent implements OnInit {
     this.refresh()
   }
 
+  ngOnDestroy(): void {
+    this.destroyed = true
+    this.destroyed$.next()
+    this.destroyed$.complete()
+    this.readsInvalidated$.complete()
+    this.entityChanged$.complete()
+  }
+
+  private observeRequest<T>(request: () => Observable<T>, release: () => void, deadline = 30000, cancel: Observable<unknown> = EMPTY): Observable<T> {
+    if (this.destroyed) {
+      release()
+      return EMPTY
+    }
+    return defer(request).pipe(
+      timeout(deadline), take(1), throwIfEmpty(() => new Error('Life Ops response unavailable')),
+      takeUntil(cancel), takeUntil(this.destroyed$), finalize(release),
+    )
+  }
+
+  private beginMutation(): void {
+    this.saving = true
+    this.readsInvalidated$.next()
+  }
+
   refresh(): void {
-    if (this.loading) return
+    if (this.destroyed || this.loading || this.saving) return
     this.loading = true
     this.errorMessage = ''
-    this.service.overview().subscribe({
+    this.observeRequest(() => this.service.overview(), () => { this.loading = false }, 6000, this.readsInvalidated$).subscribe({
       next: (overview) => {
         if (!this.isOverview(overview)) {
           this.loading = false
@@ -331,9 +360,9 @@ export class LifeOpsComponent implements OnInit {
   get canApplyCapacityToPriority(): boolean {
     return Boolean(
       this.capacity &&
-      this.capacity.fresh &&
-      !this.capacity.needsReview &&
-      this.capacity.status !== 'unknown'
+      this.capacity.fresh === true &&
+      this.capacity.needsReview === false &&
+      this.capacityStatuses.includes(this.capacity.status) && this.capacity.status !== 'unknown'
     )
   }
 
@@ -367,12 +396,15 @@ export class LifeOpsComponent implements OnInit {
   }
 
   openEditor(editor: LifeOpsEditor): void {
+    if (this.destroyed || this.saving) return
+    if (editor !== 'link') this.entityChanged$.next()
     this.editor = editor
     if (editor === 'goal' && !this.editingGoalId) this.goalForm = this.newGoalForm()
   }
 
   closeEditor(): void {
-    if (this.saving) return
+    if (this.destroyed || this.saving) return
+    this.entityChanged$.next()
     this.editor = undefined
     this.editingGoalId = ''
     this.editingLinkId = ''
@@ -380,6 +412,7 @@ export class LifeOpsComponent implements OnInit {
   }
 
   reviewNeed(need: NeedObservation): void {
+    if (this.destroyed || this.saving) return
     this.reviewingNeedId = need.id
     this.needForm = {
       domainId: need.domainId,
@@ -400,6 +433,7 @@ export class LifeOpsComponent implements OnInit {
   }
 
   prepareCapacityRecord(): void {
+    if (this.destroyed || this.saving) return
     this.capacityForm = this.capacity
       ? {
           status: this.capacity.status,
@@ -422,15 +456,16 @@ export class LifeOpsComponent implements OnInit {
   }
 
   saveNeed(): void {
-    if (this.saving) return
+    if (this.destroyed || this.saving) return
     const request = this.needRequestPayload()
     if (!request) {
       this.notification.error('Need observation not saved', 'Enter each requested value, a source label, and valid observation dates. Scores must be whole numbers from 0 to 100.')
       return
     }
-    this.saving = true
-    this.service.recordNeed(request).subscribe({
+    this.beginMutation()
+    this.observeRequest(() => this.service.recordNeed(request), () => { this.saving = false }).subscribe({
       next: (need) => {
+        if (!this.acceptRecordAcknowledgement(need)) return
         this.saving = false
         this.needs = [need, ...this.needs]
         this.needForm = this.newNeedForm()
@@ -439,60 +474,71 @@ export class LifeOpsComponent implements OnInit {
         this.closeEditor()
         this.notification.success('Need state recorded', 'HAI will use this sourced observation when planning owner work.')
       },
-      error: (error) => this.mutationFailed(error, 'Need state was not recorded.'),
+      error: (error) => this.mutationFailed(error, 'The observation may have been recorded. Refresh existing observations before submitting it again.'),
     })
   }
 
   saveCapacity(): void {
-    if (this.saving) return
+    if (this.destroyed || this.saving) return
     const request = this.capacityRequestPayload()
     if (!request) {
       this.notification.error('Capacity snapshot not saved', 'Enter an explicit value for every capacity field, source label, and capture time. No blank value is converted to zero.')
       return
     }
-    this.saving = true
-    this.service.recordCapacity(request).subscribe({
+    this.beginMutation()
+    this.observeRequest(() => this.service.recordCapacity(request), () => { this.saving = false }).subscribe({
       next: (capacity) => {
+        if (!this.acceptRecordAcknowledgement(capacity)) return
         this.saving = false
         this.capacity = capacity
         this.capacityForm = this.newCapacityForm()
         this.closeEditor()
         this.notification.success('Capacity updated', 'New plans will use this capacity boundary.')
       },
-      error: (error) => this.mutationFailed(error, 'Capacity was not updated.'),
+      error: (error) => this.mutationFailed(error, 'The capacity snapshot may have been recorded. Refresh existing snapshots before submitting it again.'),
     })
   }
 
   saveLink(): void {
-    if (this.saving) return
+    if (this.destroyed || this.saving) return
     const request = this.linkRequestPayload()
     if (!request) {
       this.notification.error('Domain link not saved', 'Enter the entity, domain, source, and a confidence value from 0 to 1.')
       return
     }
-    this.saving = true
-    this.service.linkEntity(request).subscribe({
-      next: () => {
+    this.beginMutation()
+    this.observeRequest(() => this.service.linkEntity(request), () => { this.saving = false }).subscribe({
+      next: (link) => {
+        if (!this.acceptRecordAcknowledgement(link)) return
         this.saving = false
         this.editingLinkId = ''
-        this.loadEntityLinks()
+        if (this.linkForm.entityType.trim() === request.entityType && this.linkForm.entityId.trim() === request.entityId) this.loadEntityLinks()
         this.notification.success('Domain link saved', 'The entity now has an owner-scoped life-domain relationship.')
       },
-      error: (error) => this.mutationFailed(error, 'The domain link was not saved.'),
+      error: (error) => this.mutationFailed(error, 'The domain link may have been saved. Load the entity links before submitting it again.'),
     })
   }
 
   loadEntityLinks(): void {
-    if (!this.linkForm.entityType.trim() || !this.linkForm.entityId.trim()) return
+    if (this.destroyed || this.saving) return
+    this.entityChanged$.next()
+    const entityType = this.linkForm.entityType.trim()
+    const entityId = this.linkForm.entityId.trim()
+    this.entityLinksState = 'idle'
+    if (!entityType || !entityId) return
     this.entityLinksState = 'loading'
     this.entityLinksError = ''
     this.entityLinks = []
-    this.service.entityDomains(this.linkForm.entityType, this.linkForm.entityId).subscribe({
+    this.observeRequest(() => this.service.entityDomains(entityType, entityId), () => {
+      if (this.entityLinksState === 'loading') this.entityLinksState = 'idle'
+    }, 6000, merge(this.readsInvalidated$, this.entityChanged$)).subscribe({
       next: (links) => {
+        if (this.linkForm.entityType.trim() !== entityType || this.linkForm.entityId.trim() !== entityId) return
         this.entityLinks = links
         this.entityLinksState = 'loaded'
       },
       error: (error) => {
+        if (this.linkForm.entityType.trim() !== entityType || this.linkForm.entityId.trim() !== entityId) return
         this.entityLinksState = 'error'
         this.entityLinksError = this.describeError(error, 'HAI could not load this entity.')
       },
@@ -500,6 +546,8 @@ export class LifeOpsComponent implements OnInit {
   }
 
   editLink(link: EntityDomainLink): void {
+    if (this.destroyed || this.saving) return
+    this.entityChanged$.next()
     this.editingLinkId = link.id
     this.linkForm = {
       entityType: link.entityType,
@@ -516,6 +564,7 @@ export class LifeOpsComponent implements OnInit {
   }
 
   beginEditGoal(goal: GoalNode): void {
+    if (this.destroyed || this.saving) return
     this.editingGoalId = goal.id
     this.goalForm = {
       parentId: goal.parentId ?? '',
@@ -535,20 +584,21 @@ export class LifeOpsComponent implements OnInit {
   }
 
   resetGoalForm(): void {
+    if (this.destroyed || this.saving) return
     this.editingGoalId = ''
     this.goalForm = this.newGoalForm()
     this.applyDomainDefaults()
   }
 
   saveGoal(): void {
-    if (this.saving) return
+    if (this.destroyed || this.saving) return
     const data = this.goalRequestData()
     if (!data) {
       this.notification.error('Goal not saved', 'Enter a title, life domain, source label, confidence value, and any success/stop conditions required for this goal level.')
       return
     }
-    this.saving = true
-    const request = this.editingGoalId
+    this.beginMutation()
+    const request = () => this.editingGoalId
       ? this.service.updateGoal(this.editingGoalId, {
           ...data,
           ...(this.goalForm.parentId
@@ -560,8 +610,9 @@ export class LifeOpsComponent implements OnInit {
           ...data,
           ...(this.goalForm.parentId ? { parentId: this.goalForm.parentId } : {}),
         })
-    request.subscribe({
-      next: () => {
+    this.observeRequest(request, () => { this.saving = false }).subscribe({
+      next: (goal) => {
+        if (!this.acceptRecordAcknowledgement(goal)) return
         this.saving = false
         this.goalForm = this.newGoalForm()
         this.editingGoalId = ''
@@ -569,19 +620,19 @@ export class LifeOpsComponent implements OnInit {
         this.notification.success('Goal saved', 'The hierarchy will be refreshed from the owner record.')
         this.refresh()
       },
-      error: (error) => this.mutationFailed(error, 'The goal was not saved.'),
+      error: (error) => this.mutationFailed(error, 'The goal may have been saved. Refresh the goal hierarchy before submitting it again.'),
     })
   }
 
   assessPriority(): void {
-    if (this.saving) return
+    if (this.destroyed || this.saving) return
     const factors = this.priorityFactorsPayload()
     if (!factors || !this.validPriorityForm()) {
       this.notification.error('Priority not assessed', 'Enter a title, entity type and ID, plus an explicit 0-100 estimate for every decision factor.')
       return
     }
-    this.saving = true
-    this.service.assessPriority({
+    this.beginMutation()
+    this.observeRequest(() => this.service.assessPriority({
       entityType: this.priorityForm.entityType,
       entityId: this.priorityForm.entityId,
       title: this.priorityForm.title,
@@ -592,13 +643,14 @@ export class LifeOpsComponent implements OnInit {
       ...(this.priorityForm.useCapacity && this.canApplyCapacityToPriority && this.capacity
         ? { capacity: this.capacity }
         : {}),
-    }).subscribe({
+    }), () => { this.saving = false }).subscribe({
       next: (assessment) => {
+        if (!this.acceptRecordAcknowledgement(assessment)) return
         this.saving = false
         this.priorityAssessment = assessment
         this.notification.success('Priority assessed', 'The result is an explanation, not an automatic execution decision.')
       },
-      error: (error) => this.mutationFailed(error, 'Priority could not be assessed.'),
+      error: (error) => this.mutationFailed(error, 'The assessment outcome is unconfirmed. Check recorded priorities before trying again.'),
     })
   }
 
@@ -832,15 +884,21 @@ export class LifeOpsComponent implements OnInit {
 
   private mutationFailed(error: unknown, fallback: string): void {
     this.saving = false
-    this.notification.error('Life Ops update failed', this.describeError(error, fallback))
+    this.notification.error('Life Ops outcome unconfirmed', this.describeError(error, fallback))
+  }
+
+  private acceptRecordAcknowledgement(value: unknown): boolean {
+    const record = value as { id?: unknown; ownerIdentity?: unknown } | null
+    if (record && typeof record.id === 'string' && record.id.trim() &&
+        typeof record.ownerIdentity === 'string' && record.ownerIdentity.trim()) return true
+    this.mutationFailed(undefined, 'The update may have been recorded, but no usable owner-scoped acknowledgement was received. Refresh existing records before submitting it again.')
+    return false
   }
 
   private describeError(error: unknown, fallback: string): string {
     if (error instanceof HttpErrorResponse) {
-      const message = error.error?.error
-      if (typeof message === 'string' && message.trim()) return message
+      if (error.status === 401 || error.status === 403) return 'Access is unavailable. Check your sign-in and permissions before continuing.'
     }
-    if (error instanceof Error && error.message.trim()) return error.message
     return fallback
   }
 

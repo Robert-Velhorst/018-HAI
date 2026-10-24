@@ -5,6 +5,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ($FocusedOrphanShutdown -and $FocusedInstallerSettings) {
+    throw 'Choose at most one focused lifecycle mode; no fixture was created.'
+}
 $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $supportSource = Join-Path $repositoryRoot 'installer\windows\Hai-InstallerSupport.ps1'
 $startSource = Join-Path $repositoryRoot 'installer\windows\Start-HAI.ps1'
@@ -978,7 +981,7 @@ try {
             $resolvedConfiguration = @{
                 services = @{
                     backend = @{ environment = @{ HAI_A2A_BRIDGE_ENABLED = $resolvedEnabled; HAI_A2A_BRIDGE_URL = $resolvedUrl } }
-                    'a2a-gateway' = @{ ports = @(@{ target = 80; published = $resolvedPort; host_ip = '127.0.0.1'; protocol = 'tcp' }) }
+                    'a2a-gateway' = @{ ports = @(@{ target = 8080; published = $resolvedPort; host_ip = '127.0.0.1'; protocol = 'tcp' }) }
                 }
             }
             $global:LASTEXITCODE = 0
@@ -1412,9 +1415,16 @@ try {
     Remove-Variable -Name runtimeStartupDockerCalls,runtimeRejectDockerCalls,runtimeStartProcessCalls,runtimeAllowStartProcess,runtimeOpenedUrls -Scope Global -ErrorAction SilentlyContinue
     $resolvedTemporaryRoot = [IO.Path]::GetFullPath($temporaryRoot)
     $resolvedTempParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
-    if ($resolvedTemporaryRoot.StartsWith($resolvedTempParent, [StringComparison]::OrdinalIgnoreCase) -and
-        [IO.Path]::GetFileName($resolvedTemporaryRoot) -match '\Ahai-runtime-lifecycle-[a-f0-9]{32}\z' -and
-        (Test-Path -LiteralPath $resolvedTemporaryRoot -PathType Container)) {
+    if (-not $resolvedTemporaryRoot.StartsWith($resolvedTempParent, [StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($resolvedTemporaryRoot) -notmatch '\Ahai-runtime-lifecycle-[a-f0-9]{32}\z') {
+        throw 'Unsafe lifecycle fixture cleanup root; nothing was removed.'
+    }
+    if (Test-Path -LiteralPath $resolvedTemporaryRoot -PathType Container) {
+        $rootItem = Get-Item -LiteralPath $resolvedTemporaryRoot -Force -ErrorAction Stop
+        if (($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            @(Get-ChildItem -LiteralPath $resolvedTemporaryRoot -Recurse -Force -Attributes ReparsePoint -ErrorAction Stop).Count -gt 0) {
+            throw 'Lifecycle fixture contains a reparse point; nothing was removed.'
+        }
         Remove-Item -LiteralPath $resolvedTemporaryRoot -Recurse -Force
     }
 }

@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http'
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing'
 import { CommonModule } from '@angular/common'
 import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http'
-import { ComponentFixture, TestBed } from '@angular/core/testing'
+import { ComponentFixture, fakeAsync, TestBed, tick } from '@angular/core/testing'
 import { FormsModule } from '@angular/forms'
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations'
 import { ActivatedRoute } from '@angular/router'
@@ -28,7 +28,7 @@ import { NZ_ICONS, NzIconModule } from 'ng-zorro-antd/icon'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { NzSpinModule } from 'ng-zorro-antd/spin'
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
-import { of, throwError } from 'rxjs'
+import { of, Subject, throwError } from 'rxjs'
 import { ControlRoomModule } from '../../control-room/control-room.module'
 import { IPlanGraph, IPlanNode } from '../../models/plan-graph.model.interface'
 import { PlanGraphService } from '../../services/plan-graph.service'
@@ -275,6 +275,102 @@ describe('PlanCoordinationComponent', () => {
     expect(component.loading).toBeFalse()
     expect(component.errorMessage).toBe('plan graph store unavailable')
     expect(component.plans).toEqual([])
+  })
+
+  for (const operation of ['list', 'get', 'preview', 'accept', 'replan']) {
+    it(`contains synchronous ${operation} request construction failures`, () => {
+      service[operation as keyof typeof service].and.callFake(() => { throw new Error('Synthetic request failure') })
+      component.previewForm.title = 'Retained draft'
+      component.previewForm.objective = 'Retained objective'
+      component.previewForm.successCriteria = 'Source checked'
+      component.selectedPlan = plan({ status: operation === 'replan' ? 'accepted' : 'draft' })
+      component.replanReason = 'Retained reason'
+      const actions: Record<string, () => void> = {
+        list: () => component.refresh(), get: () => component.selectPlan(plan()),
+        preview: () => component.createPreview(), accept: () => component.acceptSelected(),
+        replan: () => component.replanSelected(),
+      }
+      expect(actions[operation]).not.toThrow()
+      expect(component.saving || component.detailLoading).toBeFalse()
+      if (operation === 'list') expect(component.loading).toBeFalse()
+      expect(component.previewForm.title).toBe('Retained draft')
+      expect(notification.success).not.toHaveBeenCalled()
+    })
+  }
+
+  it('keeps the newest selected detail when an obsolete request returns late', () => {
+    const obsolete = new Subject<IPlanGraph>()
+    service.get.and.returnValues(obsolete, of(plan({ id: 'new-plan' })))
+    component.selectPlan(plan({ id: 'old-plan' }))
+    component.selectPlan(plan({ id: 'new-plan' }))
+    obsolete.next(plan({ id: 'old-plan', revision: 99 }))
+    expect(component.selectedPlan?.id).toBe('new-plan')
+    expect(component.detailLoading).toBeFalse()
+  })
+
+  it('keeps a newer list refresh when the previous list responds late', () => {
+    const obsolete = new Subject<IPlanGraph[]>()
+    service.list.and.returnValues(obsolete, of([plan({ id: 'new-plan' })]))
+    component.refresh()
+    component.refresh()
+    obsolete.next([plan({ id: 'old-plan' })])
+    expect(component.plans.map((item) => item.id)).toEqual(['new-plan'])
+  })
+
+  it('prevents overlapping preview submission and selection changes during a write', () => {
+    const pending = new Subject<IPlanGraph>()
+    service.preview.and.returnValue(pending)
+    component.previewForm.title = 'Retained draft'
+    component.previewForm.objective = 'Outcome'
+    component.previewForm.successCriteria = 'Evidence'
+    component.selectedPlan = plan()
+    component.createPreview()
+    component.createPreview()
+    component.selectPlan(plan({ id: 'other-plan' }))
+    component.refresh()
+    expect(service.preview).toHaveBeenCalledTimes(1)
+    expect(service.get).not.toHaveBeenCalled()
+    expect(service.list).not.toHaveBeenCalled()
+    expect(component.selectedPlan?.id).toBe('plan-1')
+    pending.error(new Error('Synthetic interrupted request'))
+    expect(component.saving).toBeFalse()
+    expect(component.previewForm.title).toBe('Retained draft')
+  })
+
+  it('bounds silent reads and keeps them distinct from an empty plan collection', fakeAsync(() => {
+    service.list.and.returnValue(new Subject())
+    component.refresh()
+    tick(6001)
+    expect(component.loading).toBeFalse()
+    expect(component.errorMessage).toBeTruthy()
+    service.get.and.returnValue(new Subject())
+    component.selectPlan(plan())
+    tick(6001)
+    expect(component.detailLoading).toBeFalse()
+    expect(notification.error).toHaveBeenCalled()
+    ;(component as any).ngOnDestroy?.()
+  }))
+
+  it('cancels observations and blocks API dispatch after teardown', () => {
+    const pending = new Subject<IPlanGraph[]>()
+    service.list.and.returnValue(pending)
+    component.refresh()
+    ;(component as any).ngOnDestroy?.()
+    pending.next([plan()])
+    expect(component.plans).toEqual([])
+    service.list.calls.reset()
+    component.refresh()
+    component.selectPlan(plan())
+    component.selectedPlan = plan()
+    component.acceptSelected()
+    component.previewForm.title = 'Draft'
+    component.previewForm.objective = 'Outcome'
+    component.previewForm.successCriteria = 'Evidence'
+    component.createPreview()
+    expect(service.list).not.toHaveBeenCalled()
+    expect(service.get).not.toHaveBeenCalled()
+    expect(service.accept).not.toHaveBeenCalled()
+    expect(service.preview).not.toHaveBeenCalled()
   })
 })
 

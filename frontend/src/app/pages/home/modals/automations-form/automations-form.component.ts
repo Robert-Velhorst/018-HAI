@@ -129,6 +129,14 @@ export class AutomationsFormComponent implements OnInit {
   }
 
   openModal(automation?: IAutomationModel, isUpdate: boolean = false) {
+    if (this.submitting) return
+    this.automationForm.reset({
+      launchType: 'browser_url', runtimeType: 'browser', healthCheckType: 'http',
+      healthCheckIntervalSeconds: 60, expectedHttpStatus: 200,
+    })
+    this.selectedImage = undefined
+    this.removeImage = false
+    this.modalTitle = isUpdate ? 'Update Automation' : 'Add Automation'
     this.isVisible = true
     this.isUpdate = isUpdate
     if (automation) {
@@ -152,11 +160,6 @@ export class AutomationsFormComponent implements OnInit {
         dependencyNotes: automation.dependencyNotes || '',
       })
       this.automationForm.get('image')?.setValue(automation.image)
-    }
-    if ((!this.modalTitle || this.modalTitle === '') && !this.isUpdate) {
-      this.modalTitle = 'Add Automation'
-    } else if ((!this.modalTitle || this.modalTitle === '') && this.isUpdate) {
-      this.modalTitle = 'Update Automation'
     }
     this.changeDetector.markForCheck()
   }

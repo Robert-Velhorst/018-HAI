@@ -211,7 +211,30 @@ jobs:
           }
       - name: Installer payload and safety contract
         shell: pwsh
-        run: ./scripts/test-windows-installer-contract.ps1
+        run: |
+          ./scripts/test-windows-installer-static-mode.ps1
+          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-windows-installer-static-mode.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell static installer contracts failed" }
+          ./scripts/test-windows-initializer-password.ps1
+          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-windows-initializer-password.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell password preflight failed" }
+          ./scripts/test-openclaw-migration-process-contract.ps1
+          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-openclaw-migration-process-contract.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell migration process contract failed" }
+          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-openclaw-maintenance-migration.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell maintenance migration fixtures failed" }
+          ./scripts/test-windows-installer-contract.ps1
+          ./scripts/test-hai-transcript-patch-path-audit.ps1
+      - name: Installer DACL and uninstall grace regression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          ./scripts/test-installer-environment-acl-contract.ps1
+          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-installer-environment-acl-contract.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell installer DACL contract failed" }
+          ./scripts/test-installer-uninstall-stop-contract.ps1
+          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-installer-uninstall-stop-contract.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell uninstall grace contract failed" }
       - name: Existing HAI data recovery guard
         shell: pwsh
         run: ./scripts/test-windows-existing-data-env-guard.ps1
@@ -328,6 +351,8 @@ jobs:
         working-directory: .
         run: bash scripts/test-generate-secrets.sh
       - run: go vet ./...
+      - name: Migration guide matches embedded schema
+        run: go test -count=1 -run '^TestMigrationDocumentation' ./migrations
       - run: go test ./...
       - name: Compile Trello live acceptance without contacting a provider
         run: go test -count=1 -tags live -run '^TestTrelloLiveAcceptanceProviderBoundary$' ./internal/source
@@ -432,6 +457,36 @@ jobs:
           do
             grep -q -- "^--- PASS: ${test_name} (" "$rotation_log"
           done
+      - name: Password reset and account mutation PostgreSQL regressions
+        shell: bash
+        env:
+          HAI_IDP_TEST_DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/hai_idp_auth_test?sslmode=disable"
+          HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS: "true"
+        run: |
+          set -euo pipefail
+          tests=(
+            TestPasswordResetDigestAtRestAndLegacyTokenMigration
+            TestPasswordResetTokenCanBeConsumedOnlyOnceUnderConcurrency
+            TestConcurrentFailedLoginsAtomicallyIncrementAndLockAccount
+            TestFailedLoginAfterExpiredLockoutStartsNewCounterWindow
+            TestStaleUserUpdateCannotRestoreConsumedResetTokenOrSessionVersion
+            TestAuthenticatedPasswordChangeRevokesSessionsAndPendingResetTokens
+            TestDeletingAndReactivatingUserDoesNotRestoreOldSessionOrResetToken
+            TestPasswordChangeWithStaleValidatedSessionCannotOverwriteReset
+            TestAtomicAccountUpdateChangesEmailAndPasswordWithSessionGuard
+            TestEmailOnlyAccountUpdateInvalidatesPendingPasswordReset
+            TestSetPasswordResetTokenRejectsStaleAccountVersion
+          )
+          selection="$(IFS='|'; printf '%s' "${tests[*]}")"
+          reset_log="$(mktemp "$RUNNER_TEMP/idp-password-reset.XXXXXX.log")"
+          go test -count=1 -race -p=1 -parallel=1 -timeout=180s -run "^(${selection})$" ./internal/app/authentication -v 2>&1 | tee "$reset_log"
+          if grep -Eq -- '^[[:space:]]*--- (SKIP|FAIL):|^FAIL([[:space:]]|$)' "$reset_log"; then
+            echo "Password reset regressions reported SKIP or FAIL" >&2
+            exit 1
+          fi
+          for test_name in "${tests[@]}"; do
+            grep -q -- "^--- PASS: ${test_name} (" "$reset_log"
+          done
       - name: Durable session PostgreSQL and Redis real-store regressions
         shell: bash
         env:
@@ -516,7 +571,9 @@ jobs:
       - run: test "$(npm --version)" = "12.2.1"
       - run: npm ci
       - name: Build resource configuration regressions
-        run: node --test --test-concurrency=1 ../scripts/test-frontend-build-resource-limit.cjs scripts/build-with-limits.test.mjs scripts/release-cache.test.mjs scripts/control-room-logic.test.mjs scripts/hai-os-observation.test.mjs scripts/module-view-preferences.test.mjs scripts/deep-link-focus.test.mjs scripts/framework-secret-boundary.test.mjs
+        run: |
+          node --test --test-concurrency=1 ../scripts/test-frontend-build-resource-limit.cjs
+          npm run test:native
       - name: Strict control-room compiler checks (no emit)
         run: npm run check:control-room
       - run: npm run build
@@ -707,6 +764,8 @@ jobs:
           persist-credentials: false
       - name: CI workflow contract
         run: python3 scripts/test_ci_contract.py
+      - name: Environment example contract
+        run: python3 scripts/test_environment_template_contract.py
       - name: Docker build-context ignore contracts
         run: python3 scripts/test_docker_build_context.py
       - name: No-fake claims and tracked-artifact audit
@@ -869,13 +928,34 @@ jobs:
             hai_durablejob_test \
             hai_workflow_lease_expiry_test \
             hai_workflow_followup_test \
-            hai_ambient_monitor_test
+            hai_ambient_monitor_test \
+            hai_automation_events_test
           do
             createdb \
               --host=127.0.0.1 \
               --port=5432 \
               --username=postgres \
               "${database}"
+          done
+      - name: Automation mutation and outbox persistence (PostgreSQL)
+        env:
+          HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS: "true"
+          HAI_REQUIRE_POSTGRES_INTEGRATION: "true"
+          HAI_TEST_DATABASE_DSN: "host=127.0.0.1 user=postgres password=postgres dbname=hai_automation_events_test port=5432 sslmode=disable TimeZone=UTC"
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/automation-outbox-postgres.log"
+          go test -count=1 -p 1 -parallel 1 -timeout 180s \
+            -run '^(TestPostgresAutomationMutationsCommitOutboxAtomically|TestPostgresOutboxCommitDispatchAndRollback|TestPostgresOutboxRetriesPublisherFailure|TestPostgresOutboxExpiresAbandonedFinalLease|TestPostgresOutboxStatsRetryAndPrune)$' \
+            ./internal/automation/ ./internal/events/ -v | tee "$log"
+          for test_name in \
+            TestPostgresAutomationMutationsCommitOutboxAtomically \
+            TestPostgresOutboxCommitDispatchAndRollback \
+            TestPostgresOutboxRetriesPublisherFailure \
+            TestPostgresOutboxExpiresAbandonedFinalLease \
+            TestPostgresOutboxStatsRetryAndPrune
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$log"
           done
       - name: Ambient monitor advisory release lifecycle (PostgreSQL)
         env:
@@ -965,13 +1045,13 @@ jobs:
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -tags integration \
             -run '^(TestIsLoopbackIntegrationHost|TestIsLoopbackIntegrationConfig|TestConcurrentMigrationRunnersSerializeAndRecheck|TestLegacyBaselineRejectsDifferentExistingPrimaryKey|TestMigrationStatusAndRollbackDoNotCreateLedgerOnFreshDatabase|TestRunMigrationsAppliesAndIsIdempotent|TestRollbackMigrationReversesPostMigration)$' \
             ./internal/infra/ -v | tee "$infra_log"
-          grep -q -- '^--- PASS: TestIsLoopbackIntegrationHost' "$infra_log"
-          grep -q -- '^--- PASS: TestIsLoopbackIntegrationConfig' "$infra_log"
-          grep -q -- '^--- PASS: TestConcurrentMigrationRunnersSerializeAndRecheck' "$infra_log"
-          grep -q -- '^--- PASS: TestLegacyBaselineRejectsDifferentExistingPrimaryKey' "$infra_log"
-          grep -q -- '^--- PASS: TestMigrationStatusAndRollbackDoNotCreateLedgerOnFreshDatabase' "$infra_log"
-          grep -q -- '^--- PASS: TestRunMigrationsAppliesAndIsIdempotent' "$infra_log"
-          grep -q -- '^--- PASS: TestRollbackMigrationReversesPostMigration' "$infra_log"
+          grep -q -- '^--- PASS: TestIsLoopbackIntegrationHost (' "$infra_log"
+          grep -q -- '^--- PASS: TestIsLoopbackIntegrationConfig (' "$infra_log"
+          grep -q -- '^--- PASS: TestConcurrentMigrationRunnersSerializeAndRecheck (' "$infra_log"
+          grep -q -- '^--- PASS: TestLegacyBaselineRejectsDifferentExistingPrimaryKey (' "$infra_log"
+          grep -q -- '^--- PASS: TestMigrationStatusAndRollbackDoNotCreateLedgerOnFreshDatabase (' "$infra_log"
+          grep -q -- '^--- PASS: TestRunMigrationsAppliesAndIsIdempotent (' "$infra_log"
+          grep -q -- '^--- PASS: TestRollbackMigrationReversesPostMigration (' "$infra_log"
           RUN_MODE=test DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=postgres DB_PASSWORD=postgres \
             DB_NAME=hai_migration_runner_test DB_AUTOMIGRATE=false \
             HAI_SEMANTIC_RETRIEVAL_ENABLED=false \
@@ -1099,23 +1179,26 @@ jobs:
           grep -q -- '^--- PASS: TestPostgresClaimRecoveryStateAndHistoryAtomic (' "$claim_recovery_log"
           HAI_TEST_DATABASE_DSN="$registry_dsn" go test -count=1 -tags integration \
             ./internal/frameworkregistry/ -v | tee "$registry_log"
-          grep -q -- '^--- PASS: TestFrameworkRegistryPostgresIntegrationRequiredEnvironment' "$registry_log"
-          grep -q -- '^--- PASS: TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun' "$registry_log"
-          grep -q -- '^--- PASS: TestFrameworkRegistryPostgresConstraintsAndImmutability' "$registry_log"
+          grep -q -- '^--- PASS: TestFrameworkRegistryPostgresIntegrationRequiredEnvironment (' "$registry_log"
+          grep -q -- '^--- PASS: TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun (' "$registry_log"
+          grep -q -- '^--- PASS: TestFrameworkRegistryPostgresConstraintsAndImmutability (' "$registry_log"
           HAI_TEST_DATABASE_DSN="$task_dsn" go test -count=1 -tags integration \
             -run '^TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability$' \
             ./internal/task/ -v | tee "$task_log"
-          grep -q -- '^--- PASS: TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability' "$task_log"
+          grep -q -- '^--- PASS: TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability (' "$task_log"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 \
-            -run '^(TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals|TestPostgresRepositoryClaimsOwnerControlApprovalAcrossReceipts)$' \
+            -run '^(TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals|TestPostgresRepositoryClaimsOwnerControlApprovalAcrossReceipts|TestPostgresReceiptPersistsOpsControlReviewProvenance|TestPostgresRepositoryRejectsExpiredApprovalAtConsumption|TestPostgresFinalEffectExerciseRejectsStaleAuthority)$' \
             ./internal/executionauth/ -v | tee "$execution_auth_log"
-          grep -q -- '^--- PASS: TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals' "$execution_auth_log"
-          grep -q -- '^--- PASS: TestPostgresRepositoryClaimsOwnerControlApprovalAcrossReceipts' "$execution_auth_log"
+          grep -q -- '^--- PASS: TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals (' "$execution_auth_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryClaimsOwnerControlApprovalAcrossReceipts (' "$execution_auth_log"
+          grep -q -- '^--- PASS: TestPostgresReceiptPersistsOpsControlReviewProvenance (' "$execution_auth_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryRejectsExpiredApprovalAtConsumption (' "$execution_auth_log"
+          grep -q -- '^--- PASS: TestPostgresFinalEffectExerciseRejectsStaleAuthority (' "$execution_auth_log"
           HAI_AGENTREGISTRY_TEST_DATABASE_DSN="$agent_registry_dsn" go test -count=1 \
             -run '^(TestPostgresRepositoryRoundTripOwnerIsolationCASAndImmutableLedgers|TestPostgresAgentRegistryMigrationCanReplayAgainstExistingSchema)$' \
             ./internal/agentregistry/ -v | tee "$agent_registry_log"
-          grep -q -- '^--- PASS: TestPostgresRepositoryRoundTripOwnerIsolationCASAndImmutableLedgers' "$agent_registry_log"
-          grep -q -- '^--- PASS: TestPostgresAgentRegistryMigrationCanReplayAgainstExistingSchema' "$agent_registry_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryRoundTripOwnerIsolationCASAndImmutableLedgers (' "$agent_registry_log"
+          grep -q -- '^--- PASS: TestPostgresAgentRegistryMigrationCanReplayAgainstExistingSchema (' "$agent_registry_log"
           resilience_log="$RUNNER_TEMP/resilience-postgres.log"
           HAI_RESILIENCE_TEST_DATABASE_DSN="$resilience_dsn" go test -count=1 \
             ./internal/resilience/ -v | tee "$resilience_log"
@@ -1125,7 +1208,7 @@ jobs:
             TestPostgresRepositoryConcurrentFencingAndEventChain \
             TestPostgresRepositoryRejectsCorruptStoredPayload
           do
-            grep -q -- "^--- PASS: ${test_name}" "$resilience_log"
+            grep -q -- "^--- PASS: ${test_name} (" "$resilience_log"
           done
           brain_skill_selection_log="$RUNNER_TEMP/brain-skill-selection-postgres.log"
           RUN_MODE=test DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=postgres DB_PASSWORD=postgres \
@@ -1134,13 +1217,13 @@ jobs:
             go run ./cmd/main.go migrate up
           HAI_BRAIN_SKILL_SELECTION_TEST_DATABASE_DSN="$brain_skill_selection_dsn" go test -count=1 -tags integration \
             ./internal/brain_skill_selection/ -v | tee "$brain_skill_selection_log"
-          grep -q -- '^--- PASS: TestPostgresRepositoryAndSelectionServiceIntegration' "$brain_skill_selection_log"
-          grep -q -- '^--- PASS: TestPostgresRepositoryConcurrentOpposingSelectionWrites' "$brain_skill_selection_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryAndSelectionServiceIntegration (' "$brain_skill_selection_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryConcurrentOpposingSelectionWrites (' "$brain_skill_selection_log"
           evaluation_log="$RUNNER_TEMP/evaluation-postgres.log"
           HAI_EVALUATION_TEST_DATABASE_DSN="$evaluation_dsn" go test -count=1 -tags integration \
             ./internal/evaluation/ -v | tee "$evaluation_log"
-          grep -q -- '^--- PASS: TestGormRepositoryOwnerIsolationRoundTripAndImmutableReceipts' "$evaluation_log"
-          grep -q -- '^--- PASS: TestGormRepositoryFailsClosedOnStoredDigestMismatch' "$evaluation_log"
+          grep -q -- '^--- PASS: TestGormRepositoryOwnerIsolationRoundTripAndImmutableReceipts (' "$evaluation_log"
+          grep -q -- '^--- PASS: TestGormRepositoryFailsClosedOnStoredDigestMismatch (' "$evaluation_log"
           durablejob_log="$RUNNER_TEMP/durablejob-postgres.log"
           HAI_DURABLEJOB_TEST_DATABASE_DSN="$durablejob_dsn" go test -count=1 -tags integration \
             ./internal/durablejob/ -v | tee "$durablejob_log"
@@ -1180,7 +1263,7 @@ jobs:
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -tags integration \
             -run '^TestAccountFeedRegistryRollbackRefusesDataAndAllowsEmptySchema$' \
             ./migrations/ -v | tee "$account_feed_rollback_log"
-          grep -q -- '^--- PASS: TestAccountFeedRegistryRollbackRefusesDataAndAllowsEmptySchema' "$account_feed_rollback_log"
+          grep -q -- '^--- PASS: TestAccountFeedRegistryRollbackRefusesDataAndAllowsEmptySchema (' "$account_feed_rollback_log"
           for test_case in feed_configuration audit_history empty_schema_rolls_back; do
             grep -q -- "^[[:space:]]*--- PASS: TestAccountFeedRegistryRollbackRefusesDataAndAllowsEmptySchema/${test_case} (" "$account_feed_rollback_log"
           done
@@ -1391,6 +1474,8 @@ jobs:
         run: |
           python scripts/test_ci_contract.py
           if ($LASTEXITCODE -ne 0) { throw "CI workflow contract failed with exit code $LASTEXITCODE" }
+          python scripts/test_environment_template_contract.py
+          if ($LASTEXITCODE -ne 0) { throw "Environment example contract failed with exit code $LASTEXITCODE" }
           python scripts/test_python_runner_ci.py
           if ($LASTEXITCODE -ne 0) { throw "Python runner CI policy failed with exit code $LASTEXITCODE" }
           python scripts/test_python_runner_container_smoke.py

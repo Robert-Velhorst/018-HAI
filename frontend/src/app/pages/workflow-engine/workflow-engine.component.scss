@@ -993,25 +993,24 @@ small {
 }
 
 /* Keep the shared disclosure compact in the toolbar and preserve its popover layout. */
-app-workflow-engine hai-progressive-section.workflow-more-tools {
+:host hai-progressive-section.workflow-more-tools {
   flex: 0 0 148px;
   position: relative;
   width: 148px;
 }
 
-app-workflow-engine hai-progressive-section.workflow-more-tools::ng-deep .hai-progressive-section {
+:host hai-progressive-section.workflow-more-tools::ng-deep .hai-progressive-section {
   overflow: visible;
 }
 
-app-workflow-engine hai-progressive-section.workflow-more-tools::ng-deep .hai-progressive-section__summary {
+:host hai-progressive-section.workflow-more-tools::ng-deep .hai-progressive-section__summary {
   border: 1px solid var(--hai-border);
   border-radius: 6px;
   min-height: 40px;
   padding: 0 11px;
 }
 
-app-workflow-engine hai-progressive-section.workflow-more-tools::ng-deep .hai-progressive-section__content,
-app-workflow-engine .workflow-more-tools__body {
+:host hai-progressive-section.workflow-more-tools::ng-deep .hai-progressive-section__content {
   background: var(--hai-surface);
   border: 1px solid var(--hai-border);
   border-radius: 8px;
@@ -1024,22 +1023,34 @@ app-workflow-engine .workflow-more-tools__body {
   z-index: 10;
 }
 
-app-workflow-engine .workflow-more-tools__body {
+:host .workflow-more-tools__body {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-app-workflow-engine .workflow-more-tools__body button {
+:host .workflow-more-tools__body button {
   justify-content: flex-start;
   width: 100%;
 }
 
-app-workflow-engine .action-strip {
+:host .action-strip {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-app-workflow-engine :is(.workflow-quiet, .workflow-empty) {
+@media (max-width: 980px) {
+  :host .action-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  :host .action-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+:host :is(.workflow-quiet, .workflow-empty) {
   align-items: center;
   background: var(--hai-surface);
   border: 1px solid var(--hai-border);
@@ -1049,13 +1060,13 @@ app-workflow-engine :is(.workflow-quiet, .workflow-empty) {
   padding: 20px 22px;
 }
 
-app-workflow-engine .workflow-quiet {
+:host .workflow-quiet {
   gap: 16px;
   margin: 20px 28px 0;
 }
 
-app-workflow-engine .workflow-quiet__icon,
-app-workflow-engine .workflow-empty > i {
+:host .workflow-quiet__icon,
+:host .workflow-empty > i {
   align-items: center;
   background: var(--hai-blue-soft);
   border-radius: 8px;
@@ -1067,43 +1078,43 @@ app-workflow-engine .workflow-empty > i {
   width: 46px;
 }
 
-app-workflow-engine .workflow-quiet :is(h2, p),
-app-workflow-engine .workflow-empty :is(h2, p) {
+:host .workflow-quiet :is(h2, p),
+:host .workflow-empty :is(h2, p) {
   margin: 0;
 }
 
-app-workflow-engine .workflow-quiet h2,
-app-workflow-engine .workflow-empty h2 {
+:host .workflow-quiet h2,
+:host .workflow-empty h2 {
   color: var(--hai-text);
   font-size: 16px;
 }
 
-app-workflow-engine .workflow-quiet p,
-app-workflow-engine .workflow-empty p {
+:host .workflow-quiet p,
+:host .workflow-empty p {
   color: var(--hai-muted);
   font-size: 13px;
   line-height: 1.5;
   margin-top: 4px;
 }
 
-app-workflow-engine .workflow-main.workflow-main--idle {
+:host .workflow-main.workflow-main--idle {
   grid-template-columns: minmax(0, 920px);
   justify-content: center;
   padding-top: 16px;
 }
 
-app-workflow-engine .workflow-empty {
+:host .workflow-empty {
   gap: 14px;
   min-height: 104px;
 }
 
 @media (max-width: 700px) {
-  app-workflow-engine .workflow-quiet {
+  :host .workflow-quiet {
     grid-template-columns: 46px minmax(0, 1fr);
     margin: 16px 16px 0;
   }
 
-  app-workflow-engine .workflow-quiet button {
+  :host .workflow-quiet button {
     grid-column: 1 / -1;
     justify-self: start;
   }
@@ -1478,7 +1489,7 @@ app-workflow-engine .workflow-empty {
     gap: 8px;
   }
 
-  app-workflow-engine .workflow-empty {
+  :host .workflow-empty {
     grid-template-columns: 1fr;
   }
 

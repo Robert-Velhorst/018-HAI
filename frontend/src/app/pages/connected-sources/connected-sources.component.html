@@ -189,7 +189,7 @@
         <strong>{{ connectorCountMetric() }}</strong>
         <span>{{ connectorCatalogLoaded && !connectorCatalogUnavailable ? 'of ' + connectors.length + ' connectors' : 'connector catalog unavailable' }}</span>
       </div>
-      <div title="Exact total from the API. Only the 100 most recent records are loaded here for responsive review.">
+      <div [title]="extractionScopeSummary()">
         <strong>{{ extractionCountMetric() }}</strong>
         <span>extracted records<span *ngIf="extractionsLoaded && extractionPageIsTruncated()"> · {{ extractions.length }} on this page</span></span>
       </div>

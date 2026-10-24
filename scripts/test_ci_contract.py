@@ -2,9 +2,11 @@ import json
 import io
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import unittest
+from urllib.parse import urlsplit
 from unittest.mock import patch
 
 
@@ -57,6 +59,22 @@ def browser_test_program() -> str:
     if not match:
         raise AssertionError("browser step must execute its private test process")
     return "\n".join(line.removeprefix("          ") for line in match.group(1).splitlines())
+
+
+def pass_marker_probe(pattern: str, name: str, label: str) -> str:
+    exact = f"--- PASS: {name} (0.01s)"
+    outputs = "\n".join((
+        exact,
+        f"--- PASS: {name}Extra (0.01s)",
+        f"--- SKIP: {name} (0.01s)",
+        f"--- FAIL: {name} (0.01s)",
+        f"prefix {exact}",
+    )) + "\n"
+    # Replace the substitution shell with grep; do not fork a printf pipeline.
+    probe = "exec grep -- " + shlex.quote(pattern) + " <<'HAI_MARKER_FIXTURE'\n" + outputs + "HAI_MARKER_FIXTURE\n"
+    return (f"actual=$(\n{probe})\n"
+            f"if [ \"$actual\" != {shlex.quote(exact)} ]; then "
+            f"echo {shlex.quote('invalid marker behavior ' + label)} >&2; exit 1; fi")
 
 
 def exercise_browser_program(scenario: str) -> dict:
@@ -133,6 +151,27 @@ console.log(JSON.stringify({ error, calls, output, files, env, evidence, owner, 
 
 
 class CIWorkflowContractTest(unittest.TestCase):
+    def test_postgres_role_fixture_uses_digest_pinned_image(self):
+        fixture = (ROOT / "scripts" / "test-runtime-db-role-provisioning.ps1").read_text(encoding="utf-8")
+        image = re.search(r"postgres:18\.6-alpine@sha256:[a-f0-9]{64}", WORKFLOW)
+        self.assertIsNotNone(image, "CI must declare the reviewed PostgreSQL image")
+        self.assertTrue('"' + image.group(0) + '"' in fixture, "Role fixture must use the CI-pinned image")
+
+    def test_postgres_role_fixture_uses_container_pgdata(self):
+        fixture = (ROOT / "scripts" / "test-runtime-db-role-provisioning.ps1").read_text(encoding="utf-8")
+        command = next(line for line in fixture.splitlines() if "$authOutput =" in line)
+        self.assertIn("sh -c 'set -eu;", command)
+        self.assertIn('${PGDATA:?PGDATA must be set}', command)
+        self.assertIn('"$PGDATA/pg_hba.conf"', command)
+        self.assertIn('pg_ctl reload -D "$PGDATA"', command)
+        self.assertNotIn("/var/lib/postgresql/data", command)
+
+    def test_postgres_role_fixture_has_current_version_diagnostics(self):
+        fixture = (ROOT / "scripts" / "test-runtime-db-role-provisioning.ps1").read_text(encoding="utf-8")
+        self.assertFalse("PostgreSQL 17" in fixture, "Stale PostgreSQL version in role fixture diagnostics")
+        self.assertTrue("PostgreSQL 18.6 test instance" in fixture)
+        self.assertTrue("PostgreSQL 18.6 instance did not become ready" in fixture)
+
     def test_trello_live_contract_is_compiled_without_live_credentials(self) -> None:
         backend = job_block("backend")
         self.assertIn(
@@ -343,10 +382,58 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertLess(frontend.index("npm ci"), frontend.index("npm run check:control-room"))
         self.assertLess(frontend.index("npm run check:control-room"), frontend.index("npm run build"))
         self.assertIn("npx ng test --watch=false --browsers=ChromeHeadlessNoSandbox", frontend)
-        self.assertIn("scripts/deep-link-focus.test.mjs", package["scripts"]["test"])
-        self.assertIn("scripts/framework-secret-boundary.test.mjs", package["scripts"]["test"])
-        self.assertIn("scripts/framework-secret-boundary.test.mjs", frontend)
-        self.assertTrue(package["scripts"]["test"].endswith("&& ng test --watch=false"))
+        self.assert_frontend_native_release_gates(package["scripts"], frontend)
+
+    def assert_frontend_native_release_gates(self, scripts: dict, frontend: str) -> None:
+        self.assertEqual(
+            shlex.split(scripts["test"]),
+            ["npm", "run", "test:native", "&&", "ng", "test", "--watch=false"],
+        )
+        native = shlex.split(scripts["test:native"])
+        self.assertEqual(native[:3], ["node", "--test", "--test-concurrency=1"])
+        self.assertCountEqual(native[3:], [
+            "scripts/lockfile-contract.test.mjs", "proxy.conf.test.cjs",
+            "scripts/template-landmarks.test.mjs", "scripts/focused-test-config.test.mjs",
+            "scripts/build-with-limits.test.mjs", "scripts/authenticated-theme-manifest.test.mjs",
+            "scripts/release-cache.test.mjs", "scripts/control-room-logic.test.mjs",
+            "scripts/hai-os-observation.test.mjs", "scripts/module-view-preferences.test.mjs",
+            "scripts/launch-request-safety.test.mjs", "scripts/runtime-stop-ui.test.mjs",
+            "scripts/pursuit-decision-ui.test.mjs", "scripts/deep-link-focus.test.mjs",
+            "scripts/framework-secret-boundary.test.mjs",
+            "scripts/framework-registry-history-state.test.mjs",
+        ])
+        for path in native[3:]:
+            self.assertTrue((ROOT / "frontend" / path).is_file(), path)
+        step = re.search(
+            r"(?ms)^      - name: Build resource configuration regressions\n(.*?)(?=^      - |\Z)",
+            frontend,
+        )
+        self.assertIsNotNone(step)
+        self.assertNotIn("continue-on-error", step.group(1))
+        self.assertRegex(step.group(1), r"(?m)^          npm run test:native$")
+        self.assertLess(frontend.index("npm run test:native"), frontend.index("npx ng test --watch=false"))
+
+    def test_frontend_shared_native_gate_rejects_bypasses(self) -> None:
+        package = json.loads((ROOT / "frontend" / "package.json").read_text(encoding="utf-8"))
+        scripts = package["scripts"]
+        frontend = job_block("frontend")
+        for path in shlex.split(scripts["test:native"])[3:]:
+            with self.subTest(omitted_native_test=path):
+                changed = {**scripts, "test:native": scripts["test:native"].replace(" " + path, "", 1)}
+                with self.assertRaises(AssertionError):
+                    self.assert_frontend_native_release_gates(changed, frontend)
+        for command in ["ng test --watch=false", "npm run test:native", "npm run test:native; ng test --watch=false"]:
+            with self.subTest(weakened_test_command=command):
+                with self.assertRaises(AssertionError):
+                    self.assert_frontend_native_release_gates({**scripts, "test": command}, frontend)
+        for command in [scripts["test:native"].replace("--test-concurrency=1", "--test-concurrency=8"), scripts["test:native"] + " || true"]:
+            with self.subTest(weakened_native_command=command):
+                with self.assertRaises(AssertionError):
+                    self.assert_frontend_native_release_gates({**scripts, "test:native": command}, frontend)
+        for replacement in ["# npm run test:native", "npm run test:native || true", "echo npm run test:native"]:
+            with self.subTest(weakened_ci_command=replacement):
+                with self.assertRaises(AssertionError):
+                    self.assert_frontend_native_release_gates(scripts, frontend.replace("npm run test:native", replacement))
 
     def test_frontend_theme_excludes_unused_ng_zorro_components(self) -> None:
         theme = (ROOT / "frontend" / "src" / "theme.less").read_text(
@@ -485,9 +572,10 @@ class CIWorkflowContractTest(unittest.TestCase):
             "/* Workflow Engine follows the command-center rule:", global_styles
         )
         self.assertIn(
-            "app-workflow-engine hai-progressive-section.workflow-more-tools {",
+            ":host hai-progressive-section.workflow-more-tools {",
             workflow_styles,
         )
+        self.assertNotRegex(workflow_styles, r"(?m)^\s*app-workflow-engine\b")
         self.assertIn("ViewEncapsulation.Emulated", workflow_component)
         self.assertNotIn("ViewEncapsulation.None", workflow_component)
 
@@ -693,6 +781,12 @@ class CIWorkflowContractTest(unittest.TestCase):
         )
 
         self.assertEqual(len(compose_profiles), 25)
+        command_profiles = set(
+            re.findall(r"--profile\s+([a-z][a-z0-9-]*)\b", documentation)
+        )
+        for profile in command_profiles:
+            with self.subTest(command_profile=profile):
+                self.assertIn(profile, compose_profiles)
         self.assertEqual(documented_profiles, compose_profiles)
 
     def test_searxng_discovery_is_opt_in_and_network_isolated(self) -> None:
@@ -1031,6 +1125,70 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn("socket.create_connection", fastmcp)
 
 
+    def test_a2a_nginx_gateway_uses_bounded_graceful_shutdown(self) -> None:
+        compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
+        gateway = compose_service_block(compose, "a2a-gateway")
+        # The command execs Nginx, not the Go API. INT aborts active requests;
+        # QUIT drains them, bounded by the existing container stop deadline.
+        self.assertIn("exec nginx", gateway)
+        self.assertRegex(gateway, r"(?m)^    stop_signal: SIGQUIT$")
+        self.assertRegex(gateway, r"(?m)^    stop_grace_period: 25s$")
+        self.assertNotIn("The Go API", gateway)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is required for the installer contract")
+    def test_installer_a2a_settings_match_canonical_compose_listener(self) -> None:
+        engines = [shutil.which("pwsh")]
+        legacy = shutil.which("powershell.exe")
+        if legacy:
+            engines.append(legacy)
+        for engine in engines:
+            with self.subTest(engine=Path(engine).name):
+                result = subprocess.run(
+                    [engine, "-NoProfile", "-NonInteractive", "-File",
+                     str(ROOT / "scripts/test-installer-a2a-compose-contract.ps1")],
+                    cwd=ROOT, capture_output=True, text=True, timeout=45,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("Installer A2A Compose contract: 12 PASS;", result.stdout)
+
+    def test_installer_acl_and_uninstall_contracts_are_wired_on_windows(self) -> None:
+        job = job_block("windows-installer")
+        for script, message in (
+            ("test-installer-environment-acl-contract.ps1", "Windows PowerShell installer DACL contract failed"),
+            ("test-installer-uninstall-stop-contract.ps1", "Windows PowerShell uninstall grace contract failed"),
+        ):
+            with self.subTest(script=script):
+                self.assertIn(f"          ./scripts/{script}", job)
+                self.assertIn(f'powershell.exe" -NoProfile -File ./scripts/{script}', job)
+                self.assertIn(f'if ($LASTEXITCODE -ne 0) {{ throw "{message}" }}', job)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is required for the uninstall contract")
+    def test_installer_uninstall_respects_grace_and_failure_boundaries(self) -> None:
+        engines = [shutil.which("pwsh")]
+        legacy = shutil.which("powershell.exe")
+        if legacy:
+            engines.append(legacy)
+        for engine in engines:
+            with self.subTest(engine=Path(engine).name):
+                result = subprocess.run(
+                    [engine, "-NoProfile", "-NonInteractive", "-File",
+                     str(ROOT / "scripts/test-installer-uninstall-stop-contract.ps1")],
+                    cwd=ROOT, capture_output=True, text=True, timeout=45,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("Installer uninstall stop contract: 6 PASS;", result.stdout)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is required for the lifecycle mode contract")
+    def test_lifecycle_fixture_rejects_conflicting_focus_modes(self) -> None:
+        result = subprocess.run(
+            [shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-File",
+             str(ROOT / "scripts/test-windows-runtime-lifecycle.ps1"),
+             "-FocusedOrphanShutdown", "-FocusedInstallerSettings"],
+            cwd=ROOT, capture_output=True, text=True, timeout=45,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Choose at most one focused lifecycle mode", result.stderr)
+
     def test_optional_event_bus_does_not_expand_the_default_local_stack(self) -> None:
         compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
         defaults = (ROOT / ".env.example").read_text(encoding="utf-8")
@@ -1252,6 +1410,45 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn("GATEWAY_HOST_PORT=8088", defaults)
         self.assertIn("http://localhost:8088/api/v1/sources/oauth/google/callback", defaults)
         self.assertIn("http://localhost:8088", readme)
+
+    def test_readme_frontend_toolchain_matches_declared_versions(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        package = json.loads((ROOT / "frontend/package.json").read_text(encoding="utf-8"))
+        node = (ROOT / "frontend/.nvmrc").read_text(encoding="utf-8").strip().removeprefix("v")
+        self.assertEqual(package["engines"]["node"], f"^{node}")
+        npm = package["packageManager"].removeprefix("npm@")
+        versions = re.findall(r"Node\.js ([0-9]+\.[0-9]+\.[0-9]+) Current and npm ([0-9]+\.[0-9]+\.[0-9]+)", readme)
+        self.assertEqual(versions, [(node, npm), (node, npm)])
+
+    def test_readme_auth_recreate_targets_declared_compose_services(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        section = readme.split("### Optional Google sign-in and password recovery\n", 1)[1].split("\n### ", 1)[0]
+        compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
+        services = set(re.findall(r"(?m)^  ([A-Za-z0-9_-]+):$", compose.split("\nnetworks:\n", 1)[0]))
+        commands = re.findall(r"(?m)^docker compose .+\bup\b.+$", section)
+        self.assertEqual(len(commands), 1)
+        parts = shlex.split(commands[0])
+        # This specific documented command supports these two no-value flags.
+        targets = [part for part in parts[parts.index("up") + 1:] if part not in ("-d", "--build")]
+        self.assertTrue(targets)
+        self.assertTrue(set(targets) <= services, "Auth restart names an undeclared Compose service")
+        self.assertIn("idp", targets)
+        self.assertIn("nginx", targets)
+
+    def test_readme_gateway_curl_commands_use_the_configured_default_port(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        section = readme.split("### Verify the local gateway\n", 1)[1].split("\n### ", 1)[0]
+        defaults = (ROOT / ".env.example").read_text(encoding="utf-8")
+        port = int(re.search(r"(?m)^GATEWAY_HOST_PORT=([0-9]+)$", defaults).group(1))
+        urls = re.findall(r"(?m)^curl\.exe -i (\S+)$", section)
+        self.assertEqual(len(urls), 4)
+        self.assertEqual({urlsplit(url).path for url in urls}, {"/", "/healthz", "/readyz", "/api/v1/llm/policy"})
+        for url in urls:
+            with self.subTest(path=urlsplit(url).path):
+                parsed = urlsplit(url)
+                self.assertEqual(parsed.scheme, "http")
+                self.assertEqual(parsed.hostname, "localhost")
+                self.assertEqual(parsed.port, port)
 
     def test_directly_invoked_contract_and_smoke_files_exist(self) -> None:
         for relative_path in (
@@ -2375,6 +2572,24 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         self.assertIn("-AllowUnavailableDockerOnHostedRunner", installer)
         self.assertNotIn("-AllowDirtyWorktree", installer)
 
+    def test_migration_process_deadlines_run_on_both_powershell_engines(self) -> None:
+        installer = job_block("windows-installer")
+        self.assertIn("./scripts/test-openclaw-migration-process-contract.ps1", installer)
+        self.assertIn(
+            'powershell.exe" -NoProfile -File ./scripts/test-openclaw-migration-process-contract.ps1',
+            installer,
+        )
+        self.assertIn(
+            'powershell.exe" -NoProfile -File ./scripts/test-openclaw-maintenance-migration.ps1',
+            installer,
+        )
+        self.assertIn('throw "Windows PowerShell migration process contract failed"', installer)
+        self.assertIn('throw "Windows PowerShell maintenance migration fixtures failed"', installer)
+        self.assertLess(
+            installer.index("./scripts/test-openclaw-migration-process-contract.ps1"),
+            installer.index("./scripts/test-windows-installer-contract.ps1"),
+        )
+
     def test_windows_installer_ci_compiles_the_distributable(self) -> None:
         installer = job_block("windows-installer")
         for contract in (
@@ -2426,7 +2641,8 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
                 self.assertIn("timeout-minutes:", job_block(job_id))
 
     def test_external_actions_are_pinned_to_reviewed_full_shas(self) -> None:
-        uses_lines = re.findall(r"(?m)^\s*uses:\s*(.+)$", WORKFLOW)
+        uses_lines = re.findall(r"(?m)^[ \t]*(?:-[ \t]+)?uses:[ \t]*(.+)$", WORKFLOW)
+        self.assertTrue(uses_lines, "workflow action references were not inspected")
         for raw_reference in uses_lines:
             reference = raw_reference.strip()
             if reference.startswith(("./", "docker://")):
@@ -2447,6 +2663,24 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         for action, sha in reviewed.items():
             self.assertIn(f"{action}@{sha}", WORKFLOW)
 
+    def test_action_pin_guard_rejects_named_and_unnamed_floating_steps(self) -> None:
+        for step in (
+            "      - uses: actions/checkout@main\n",
+            "      - name: Synthetic unpinned action\n        uses: actions/checkout@main\n",
+        ):
+            with self.subTest(step_style="unnamed" if "- uses:" in step else "named"):
+                with patch.dict(globals(), {"WORKFLOW": WORKFLOW + "\n" + step}):
+                    with self.assertRaises(AssertionError):
+                        self.test_external_actions_are_pinned_to_reviewed_full_shas()
+
+    def test_action_pin_guard_cannot_pass_on_reference_comments_alone(self) -> None:
+        comments = "\n".join(
+            "# " + line.strip() for line in WORKFLOW.splitlines() if "actions/" in line
+        )
+        with patch.dict(globals(), {"WORKFLOW": comments}):
+            with self.assertRaises(AssertionError):
+                self.test_external_actions_are_pinned_to_reviewed_full_shas()
+
     def test_redacted_secret_scan_is_a_read_only_ci_job(self) -> None:
         job = job_block("secret-scan")
         self.assertIn("permissions:\n      contents: read", job)
@@ -2458,6 +2692,64 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         self.assertIn("capture_output=True", scanner)
         self.assertNotIn("stdout=", scanner)
 
+
+    def test_database_pass_markers_require_exact_test_name_boundaries(self) -> None:
+        markers = []
+        for line in job_block("migrations-integration").splitlines():
+            if line.strip().startswith("grep -q -- "):
+                arguments = shlex.split(line.strip())
+                if "--- PASS:" in arguments[3]:
+                    markers.append(arguments[3])
+        self.assertGreater(len(markers), 30)
+        for pattern in markers:
+            with self.subTest(pattern=pattern):
+                self.assertTrue(pattern.startswith("^"))
+                self.assertTrue(pattern.endswith(" ("), "a longer test name must not satisfy the required PASS")
+
+    @unittest.skipUnless(shutil.which("bash") or Path("C:/Program Files/Git/bin/bash.exe").is_file(), "Bash is required to execute workflow grep expressions")
+    def test_database_pass_markers_reject_prefix_skip_and_fail_output(self) -> None:
+        commands = ["set -eu"]
+        checked_patterns = set()
+        count = 0
+        for line in job_block("migrations-integration").splitlines():
+            if not line.strip().startswith("grep -q -- "):
+                continue
+            arguments = shlex.split(line.strip())
+            pattern = arguments[3]
+            if "--- PASS:" not in pattern:
+                continue
+            for variable in ("test_name", "case_name", "test_case", "operation"):
+                pattern = pattern.replace("${" + variable + "}", "SyntheticCase")
+            name = pattern.removeprefix("^").removeprefix("[[:space:]]*").removeprefix("--- PASS: ").removesuffix(" (")
+            if pattern not in checked_patterns:
+                commands.append(pass_marker_probe(pattern, name, str(count)))
+                checked_patterns.add(pattern)
+            count += 1
+        self.assertGreater(count, 30)
+        git_bash = Path("C:/Program Files/Git/bin/bash.exe")
+        bash = str(git_bash) if git_bash.is_file() else shutil.which("bash")
+        result = subprocess.run([bash, "--noprofile", "--norc", "-s"],
+                                input="\n".join(commands) + "\n", text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which("bash") or Path("C:/Program Files/Git/bin/bash.exe").is_file(), "Bash is required to execute workflow grep expressions")
+    def test_pass_marker_probe_rejects_weakened_patterns(self) -> None:
+        commands = [pass_marker_probe(r"^--- PASS: SyntheticCase (", "SyntheticCase", "valid")]
+        for index, pattern in enumerate((
+            r"--- PASS: SyntheticCase (",
+            r"^--- PASS: SyntheticCase",
+            r"^--- ",
+            r"^--- SKIP: SyntheticCase (",
+            r"^--- FAIL: SyntheticCase (",
+            r"^--- PASS: OtherCase (",
+        )):
+            probe = pass_marker_probe(pattern, "SyntheticCase", f"negative-{index}")
+            commands.append(f"if (\n{probe}\n); then echo 'weakened marker accepted {index}' >&2; exit 1; fi")
+        git_bash = Path("C:/Program Files/Git/bin/bash.exe")
+        bash = str(git_bash) if git_bash.is_file() else shutil.which("bash")
+        result = subprocess.run([bash, "--noprofile", "--norc", "-s"],
+                                input="\n".join(commands) + "\n", text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_oauth_source_revisions_require_real_postgres_passes(self) -> None:
         migrations = job_block("migrations-integration")

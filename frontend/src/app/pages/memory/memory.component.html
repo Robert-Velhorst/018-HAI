@@ -34,7 +34,7 @@
     <section *ngIf="memoryLoadError" class="memory-message memory-message--error" role="alert">
       <strong>Memory records unavailable</strong>
       <span>{{ memoryLoadError }}</span>
-      <button type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading">Retry</button>
+      <button type="button" nz-button nzType="default" (click)="retryMemoryLibrary()" [nzLoading]="loading" [disabled]="loading">{{ isAdvancedView ? 'Retry' : 'Open library to retry' }}</button>
     </section>
 
     <hai-progressive-section

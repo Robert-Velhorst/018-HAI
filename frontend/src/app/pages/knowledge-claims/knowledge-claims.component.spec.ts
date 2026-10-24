@@ -1,5 +1,5 @@
-import { of, Subject, throwError } from 'rxjs'
-import { TestBed } from '@angular/core/testing'
+import { EMPTY, NEVER, of, Subject, throwError } from 'rxjs'
+import { fakeAsync, TestBed, tick } from '@angular/core/testing'
 import { ActivatedRoute, Router } from '@angular/router'
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
 import { IClaimReviewQueue } from '../../models/knowledge-claim.model.interface'
@@ -18,7 +18,10 @@ describe('KnowledgeClaimsComponent', () => {
   let component: KnowledgeClaimsComponent
 
   beforeEach(() => window.localStorage.removeItem(viewPreferenceKey))
-  afterEach(() => window.localStorage.removeItem(viewPreferenceKey))
+  afterEach(() => {
+    component?.ngOnDestroy()
+    window.localStorage.removeItem(viewPreferenceKey)
+  })
 
   const queue: IClaimReviewQueue = {
     effectiveAt: '2026-08-04T10:00:00Z',
@@ -73,6 +76,60 @@ describe('KnowledgeClaimsComponent', () => {
     expect(component.canApprove).toBeTrue()
   })
 
+  for (const source of ['queue', 'session'] as const) {
+    for (const stalled of [false, true]) {
+      it(`settles ${stalled ? 'stalled' : 'empty'} ${source} reads without approval authority`, fakeAsync(() => {
+        if (source === 'queue') claims.reviewQueue.and.returnValue(stalled ? NEVER : EMPTY)
+        else auth.session.and.returnValue(stalled ? NEVER : EMPTY)
+        component.load()
+        tick(10001)
+        expect(component.loading).toBeFalse()
+        expect(component.canApprove).toBeFalse()
+        expect(component.errorMessage || component.authorityError).not.toBe('')
+      }))
+    }
+  }
+
+  for (const stalled of [false, true]) {
+    it(`settles ${stalled ? 'stalled' : 'empty'} lifecycle reads with a visible retry state`, fakeAsync(() => {
+      component.load()
+      claims.lifecycle.and.returnValue(stalled ? NEVER : EMPTY)
+      component.openInspector(queue.items[0])
+      tick(10001)
+      expect(component.detailLoading).toBeFalse()
+      expect(component.lifecycleError).not.toBe('')
+      expect(component.lifecycle).toBeUndefined()
+    }))
+  }
+
+  for (const outcome of ['empty', 'stalled', 'offline', 'wrong-workspace'] as const) {
+    it(`keeps a ${outcome} correction outcome unconfirmed until records are refreshed`, fakeAsync(() => {
+      component.load()
+      component.openInspector(queue.items[0])
+      component.beginCorrection()
+      component.correctedObject = 'not ready'
+      component.correctionReason = 'The source changed.'
+      component.correctionConfirmed = true
+      claims.correct.and.returnValue(outcome === 'empty' ? EMPTY : outcome === 'stalled' ? NEVER
+        : outcome === 'offline' ? throwError(() => ({ status: 0 }))
+        : of({ ...queue.items[0].claim, id: 'wrong-successor', workspaceId: 'another-workspace' }))
+      component.submitCorrection()
+      tick(10001)
+      expect(component.saving).toBeFalse()
+      expect(component.canApprove).toBeFalse()
+      expect(component.correctionConfirmed).toBeFalse()
+      expect(notification.success).not.toHaveBeenCalled()
+      expect(notification.error).toHaveBeenCalledWith('Correction outcome unknown', jasmine.any(String))
+      component.correctionConfirmed = true
+      component.submitCorrection()
+      expect(claims.correct).toHaveBeenCalledTimes(1)
+      component.load()
+      expect(component.inspectorOpen).toBeFalse()
+      expect(component.canApprove).toBeTrue()
+      expect(component.correctionConfirmed).toBeFalse()
+    }))
+  }
+
   it('revokes approval after a denied correction without losing the draft', () => {
     component.ngOnInit()
     component.openInspector(queue.items[0])
@@ -91,6 +148,64 @@ describe('KnowledgeClaimsComponent', () => {
     component.load()
     expect(component.canApprove).toBeTrue()
     expect(component.correctionConfirmed).toBeFalse()
+  })
+
+  it('accepts a matching human-approved successor without claiming source verification', () => {
+    component.load()
+    component.openInspector(queue.items[0])
+    component.beginCorrection()
+    component.correctedObject = 'not ready'
+    component.correctionReason = 'The source changed.'
+    component.correctionConfirmed = true
+    claims.correct.and.returnValue(of({ ...queue.items[0].claim,
+      id: 'successor-1', object: 'not ready', verificationStatus: 'human_approved', supersedesClaimIds: ['claim-1'],
+    }))
+    component.submitCorrection()
+    expect(component.saving).toBeFalse()
+    expect(component.correctionRequiresRefresh).toBeFalse()
+    expect(notification.success).toHaveBeenCalledWith('Correction recorded', jasmine.any(String))
+    expect(claims.correct).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps an uncertain mutation gated when the reconciliation refresh fails', () => {
+    component.load()
+    component.openInspector(queue.items[0])
+    component.beginCorrection()
+    component.correctedObject = 'not ready'
+    component.correctionReason = 'The source changed.'
+    component.correctionConfirmed = true
+    claims.correct.and.returnValue(throwError(() => ({ status: 503 })))
+    component.submitCorrection()
+    claims.reviewQueue.and.returnValue(throwError(() => ({ status: 503 })))
+    component.load()
+    expect(component.correctionRequiresRefresh).toBeTrue()
+    expect(component.canApprove).toBeFalse()
+    expect(notification.success).not.toHaveBeenCalled()
+    component.correctionConfirmed = true
+    component.submitCorrection()
+    expect(claims.correct).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows an incomplete bounded queue as attention rather than an all-clear empty state', async () => {
+    claims.reviewQueue.and.returnValue(of({ ...queue, items: [], counts: {}, truncated: true }))
+    await TestBed.configureTestingModule({
+      imports: [KnowledgeClaimsModule],
+      providers: [
+        { provide: KnowledgeClaimService, useValue: claims },
+        { provide: AuthSessionService, useValue: auth },
+        { provide: Router, useValue: router },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: () => null } } } },
+      ],
+    }).compileComponents()
+    const fixture = TestBed.createComponent(KnowledgeClaimsComponent)
+    try {
+      fixture.detectChanges()
+      const summary = (fixture.nativeElement as HTMLElement).querySelector('.attention-summary')!
+      expect(summary.getAttribute('data-state')).toBe('attention')
+      expect(summary.textContent).toContain('Claim review is incomplete')
+      expect(summary.textContent).not.toContain('No semantic claims exist')
+      expect(summary.textContent).not.toContain('No unresolved claim exceptions')
+    } finally { fixture.destroy() }
   })
 
   it('cancels older refreshes rather than restoring a previous actor', () => {

@@ -17,6 +17,7 @@ var (
 	secretKeyPattern         = regexp.MustCompile(`"(?:\\.|[^"\\])*"\s*[:=]\s*|'(?:\\.|[^'\\])*'\s*[:=]\s*`)
 	quotedTextPattern        = regexp.MustCompile(`"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'`)
 	absoluteURLShapePattern  = regexp.MustCompile(`(?i)^[a-z][a-z0-9+.-]*://`)
+	embeddedURLPattern       = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s"'<>]+`)
 	unquotedSecretKeyPattern = regexp.MustCompile(`(?i:\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|private[_-]?key|passphrase|credentials?|encryption[_-]?key)\b)\s*[:=]\s*`)
 	bearerSecretPattern      = regexp.MustCompile(`(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}`)
 	cookieHeaderPattern      = regexp.MustCompile(`(?im)(^|[ \t])((?:cookie|set-cookie)\s*[:=]\s*)[^\r\n]*`)
@@ -118,6 +119,7 @@ func redactJSON(decoder *json.Decoder, depth int) (any, bool, error) {
 func redactText(value string) string {
 	value = redactAbsoluteURL(value)
 	redacted := redactQuotedURLs(value)
+	redacted = embeddedURLPattern.ReplaceAllStringFunc(redacted, redactAbsoluteURL)
 	redacted = privateKeyPattern.ReplaceAllString(redacted, "[REDACTED_PRIVATE_KEY]")
 	// Cookie values can contain several credentials separated by semicolons.
 	redacted = cookieHeaderPattern.ReplaceAllString(redacted, "${1}${2}[REDACTED]")
@@ -170,7 +172,9 @@ func redactAbsoluteURL(raw string) string {
 	for key, values := range query {
 		if sensitiveKey(key) {
 			for _, entry := range values {
-				changed = changed || strings.TrimSpace(entry) != "[REDACTED]"
+				// A prior text pass can leave "key= [REDACTED]". The URL span
+				// ends at that space; an empty value contains no new credential.
+				changed = changed || (strings.TrimSpace(entry) != "" && strings.TrimSpace(entry) != "[REDACTED]")
 			}
 		}
 	}

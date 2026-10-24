@@ -36,6 +36,7 @@ const (
 	StatusConflicting                = "conflicting"
 	StatusUnsupported                = "unsupported"
 	StatusNeedsReview                = "needs_review"
+	minimumClaimEvidenceOverlap      = 0.22
 	minimumMemoryPromotionConfidence = 0.75
 	minimumMemoryEvidenceQuality     = 0.75
 	// ExplanationUntrustedProvenance is the verdict for a claim that a source
@@ -59,18 +60,18 @@ type EvidenceInput struct {
 }
 
 type AnswerRequest struct {
-	OwnerIdentity          string          `json:"-"`
-	Question               string          `json:"question"`
-	ProjectKey             string          `json:"projectKey,omitempty"`
-	PursuitID              string          `json:"pursuitId,omitempty"`
-	Mode                   string          `json:"mode,omitempty"`
-	DraftAnswer            string          `json:"draftAnswer,omitempty"`
-	ExternalEvidence       []EvidenceInput `json:"externalEvidence,omitempty"`
-	IncludeSensitive       bool            `json:"includeSensitive,omitempty"`
+	OwnerIdentity    string          `json:"-"`
+	Question         string          `json:"question"`
+	ProjectKey       string          `json:"projectKey,omitempty"`
+	PursuitID        string          `json:"pursuitId,omitempty"`
+	Mode             string          `json:"mode,omitempty"`
+	DraftAnswer      string          `json:"draftAnswer,omitempty"`
+	ExternalEvidence []EvidenceInput `json:"externalEvidence,omitempty"`
+	IncludeSensitive bool            `json:"includeSensitive,omitempty"`
 	// Human approval is server-owned and cannot be asserted by a JSON client.
-	HumanApproved          bool            `json:"-"`
-	HumanApprovalReference string          `json:"-"`
-	AllowMemoryUpdate      bool            `json:"allowMemoryUpdate,omitempty"`
+	HumanApproved          bool   `json:"-"`
+	HumanApprovalReference string `json:"-"`
+	AllowMemoryUpdate      bool   `json:"allowMemoryUpdate,omitempty"`
 }
 
 type VerificationResult struct {
@@ -244,7 +245,7 @@ func (s *service) AnswerContext(ctx context.Context, request AnswerRequest) (*Ve
 	mode := normalizeMode(request.Mode)
 	questions := researchQuestions(request.Question, request.ProjectKey)
 	logs := []string{"converted request into research questions"}
-	run, err := s.repo.CreateRun(&models.VerificationRun{
+	initial := models.VerificationRun{
 		OwnerIdentity:     request.OwnerIdentity,
 		Mode:              mode,
 		Question:          strings.TrimSpace(request.Question),
@@ -252,9 +253,20 @@ func (s *service) AnswerContext(ctx context.Context, request AnswerRequest) (*Ve
 		Status:            StatusUncertain,
 		ResearchQuestions: joinValues(questions),
 		SourcesSearched:   "connected_sources,provided_evidence",
-	})
+	}
+	creation := initial
+	run, err := s.repo.CreateRun(&creation)
 	if err != nil {
 		return nil, err
+	}
+	if run == nil || run.ID == uuid.Nil {
+		return nil, fmt.Errorf("create verification run: repository returned no run identity")
+	}
+	observed := *run
+	observed.ID = uuid.Nil
+	observed.CreatedAt, observed.UpdatedAt = time.Time{}, time.Time{}
+	if observed != initial {
+		return nil, fmt.Errorf("create verification run: acknowledgement does not match the requested creation")
 	}
 	memoryOptInRecorded := false
 	if request.AllowMemoryUpdate {
@@ -318,13 +330,21 @@ func (s *service) AnswerContext(ctx context.Context, request AnswerRequest) (*Ve
 			s.markCanceledRun(run, cancelErr)
 			return nil, cancelErr
 		}
+		auditAction, auditMessage := "", ""
 		if err != nil {
 			knowledgeError = "semantic claim projection failed"
 			logs = append(logs, knowledgeError)
-			s.audit(run.ID, "verification.knowledge_projection_failed", err.Error())
+			auditAction, auditMessage = "verification.knowledge_projection_failed", knowledgeError
 		} else if len(knowledgeClaimIDs) > 0 {
 			logs = append(logs, "source-backed claims projected into immutable semantic knowledge")
-			s.audit(run.ID, "verification.knowledge_projected", fmt.Sprintf("projected %d semantic claim(s)", len(knowledgeClaimIDs)))
+			auditAction = "verification.knowledge_projected"
+			auditMessage = fmt.Sprintf("projected %d semantic claim(s)", len(knowledgeClaimIDs))
+		}
+		if auditAction != "" {
+			if auditErr := s.auditErr(run.ID, auditAction, auditMessage); auditErr != nil {
+				auditWarnings = append(auditWarnings, auditAction)
+				logs = append(logs, "semantic projection audit could not be durably recorded")
+			}
 		}
 	}
 	if err := s.stopIfCanceled(ctx, run); err != nil {
@@ -373,8 +393,16 @@ type verificationTransactionRepository interface {
 }
 
 func (s *service) persistCompletedVerification(run *models.VerificationRun, evidence []models.VerificationEvidence, claims []models.VerificationClaim) error {
+	if run == nil || run.ID == uuid.Nil {
+		return fmt.Errorf("persist completed verification run: run identity is required")
+	}
+	expected := *run
 	persist := func(repository Repository) error {
 		for index := range evidence {
+			wanted := evidence[index]
+			if wanted.RunID != expected.ID {
+				return fmt.Errorf("persist verification evidence: run identity does not match finalization")
+			}
 			saved, err := repository.CreateEvidence(&evidence[index])
 			if err != nil {
 				return fmt.Errorf("persist verification evidence: %w", err)
@@ -382,9 +410,22 @@ func (s *service) persistCompletedVerification(run *models.VerificationRun, evid
 			if saved == nil || saved.ID == uuid.Nil {
 				return fmt.Errorf("persist verification evidence: repository returned no durable identifier")
 			}
+			observed := *saved
+			if wanted.ID == uuid.Nil {
+				observed.ID = uuid.Nil
+			}
+			observed.CreatedAt, observed.UpdatedAt = time.Time{}, time.Time{}
+			wanted.CreatedAt, wanted.UpdatedAt = time.Time{}, time.Time{}
+			if observed != wanted {
+				return fmt.Errorf("persist verification evidence: acknowledgement does not match the requested record")
+			}
 			evidence[index] = *saved
 		}
 		for index := range claims {
+			wanted := claims[index]
+			if wanted.RunID != expected.ID {
+				return fmt.Errorf("persist verification claim: run identity does not match finalization")
+			}
 			saved, err := repository.CreateClaim(&claims[index])
 			if err != nil {
 				return fmt.Errorf("persist verification claim: %w", err)
@@ -392,16 +433,36 @@ func (s *service) persistCompletedVerification(run *models.VerificationRun, evid
 			if saved == nil || saved.ID == uuid.Nil {
 				return fmt.Errorf("persist verification claim: repository returned no durable identifier")
 			}
+			observed := *saved
+			if wanted.ID == uuid.Nil {
+				observed.ID = uuid.Nil
+			}
+			observed.CreatedAt, observed.UpdatedAt = time.Time{}, time.Time{}
+			wanted.CreatedAt, wanted.UpdatedAt = time.Time{}, time.Time{}
+			if observed != wanted {
+				return fmt.Errorf("persist verification claim: acknowledgement does not match the requested record")
+			}
 			claims[index] = *saved
 		}
-		if _, err := repository.CreateAuditLog(&models.VerificationAuditLog{
+		if err := persistVerificationAudit(repository, models.VerificationAuditLog{
 			RunID: run.ID, Action: "verification.completed",
 			Message: "important claims decomposed and verified before acceptance",
 		}); err != nil {
 			return fmt.Errorf("persist verification completion audit: %w", err)
 		}
-		if _, err := repository.UpdateRun(run); err != nil {
+		stored, err := repository.UpdateRun(run)
+		if err != nil {
 			return fmt.Errorf("persist completed verification run: %w", err)
+		}
+		if stored == nil {
+			return fmt.Errorf("persist completed verification run: repository returned no acknowledgement")
+		}
+		observed, wanted := *stored, expected
+		// Database-managed timestamps may change; run identity, ownership and data may not.
+		observed.CreatedAt, observed.UpdatedAt = time.Time{}, time.Time{}
+		wanted.CreatedAt, wanted.UpdatedAt = time.Time{}, time.Time{}
+		if observed != wanted {
+			return fmt.Errorf("persist completed verification run: acknowledgement does not match the requested finalization")
 		}
 		return nil
 	}
@@ -785,8 +846,9 @@ func bestEvidenceForClaim(claim string, evidence []models.VerificationEvidence) 
 		if evidence[i].Rejected || evidence[i].Snippet == "" {
 			continue
 		}
-		score := overlapScore(claimTokens, tokenSet(evidence[i].Snippet))
-		if score < 0.2 {
+		sourceTokens := tokenSet(evidence[i].Snippet)
+		score := overlapScore(claimTokens, sourceTokens)
+		if score < minimumClaimEvidenceOverlap || overlapCount(claimTokens, sourceTokens) < 2 {
 			continue
 		}
 		score = score*0.75 + evidence[i].QualityScore*0.25
@@ -990,12 +1052,31 @@ func (s *service) audit(runID uuid.UUID, action, message string) {
 }
 
 func (s *service) auditErr(runID uuid.UUID, action, message string) error {
-	_, err := s.repo.CreateAuditLog(&models.VerificationAuditLog{
+	return persistVerificationAudit(s.repo, models.VerificationAuditLog{
 		RunID:   runID,
 		Action:  action,
 		Message: message,
 	})
-	return err
+}
+
+func persistVerificationAudit(repository Repository, record models.VerificationAuditLog) error {
+	wanted := record
+	saved, err := repository.CreateAuditLog(&record)
+	if err != nil {
+		return err
+	}
+	if saved == nil || saved.ID == uuid.Nil {
+		return fmt.Errorf("verification audit acknowledgement has no durable identity")
+	}
+	observed := *saved
+	if wanted.ID == uuid.Nil {
+		observed.ID = uuid.Nil
+	}
+	observed.CreatedAt, wanted.CreatedAt = time.Time{}, time.Time{}
+	if observed != wanted {
+		return fmt.Errorf("verification audit acknowledgement does not match the requested event")
+	}
+	return nil
 }
 
 func normalizeMode(mode string) string {
@@ -1116,7 +1197,7 @@ func containsContradiction(claim string, evidence []models.VerificationEvidence)
 		if item.Rejected || !item.Used {
 			continue
 		}
-		if overlapScore(tokenSet(claim), tokenSet(item.Snippet)) < 0.2 {
+		if overlapScore(tokenSet(claim), tokenSet(item.Snippet)) < minimumClaimEvidenceOverlap {
 			continue
 		}
 		if hasConflictingSingleWeekday(claim, item.Snippet) {

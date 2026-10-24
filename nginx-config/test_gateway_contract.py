@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import subprocess
 import unittest
 
@@ -13,7 +14,10 @@ LEGACY_COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 
 
 def location_block(marker: str, config: str = NGINX_TEMPLATE) -> str:
-    start = config.index(marker)
+    match = re.search(r"(?m)^[ \t]*" + re.escape(marker) + r"(?=[ \t]*(?:\{|$))", config)
+    if match is None:
+        raise ValueError(f"missing nginx block: {marker}")
+    start = match.start()
     brace = config.index("{", start)
     depth = 0
     for index in range(brace, len(config)):
@@ -40,6 +44,24 @@ def compose_service_block(name: str) -> str:
         len(lines),
     )
     return "\n".join(lines[start:end])
+
+
+class GatewayBlockSelectionTest(unittest.TestCase):
+    def test_root_location_does_not_select_api_prefix(self) -> None:
+        config = "location /api/v1 {\n    return 403;\n}\nlocation / {\n    return 200;\n}\n"
+        block = location_block("location /", config)
+        self.assertIn("return 200;", block)
+        self.assertNotIn("return 403;", block)
+
+    def test_missing_root_is_not_satisfied_by_api_location(self) -> None:
+        with self.assertRaises(ValueError):
+            location_block("location /", "location /api/v1 {\n    return 403;\n}\n")
+
+    def test_comment_and_longer_prefix_do_not_satisfy_route(self) -> None:
+        config = "# location /api/v1 {\nlocation /api/v10 {\n    return 410;\n}\nlocation /api/v1 {\n    return 200;\n}\n"
+        block = location_block("location /api/v1", config)
+        self.assertIn("return 200;", block)
+        self.assertNotIn("return 410;", block)
 
 
 class GatewayAuthContractTest(unittest.TestCase):
@@ -162,6 +184,22 @@ class GatewayAuthContractTest(unittest.TestCase):
         self.assertIn("proxy_pass http://$backend_upstream;", backend)
         self.assertNotIn("location ~", backend)
 
+    def test_openclaw_approval_upload_has_the_same_protected_envelope_as_apply(self) -> None:
+        apply = location_block("location = /api/v1/agent-runtimes/openclaw/ecosystem/upload")
+        approval = location_block("location = /api/v1/agent-runtimes/openclaw/ecosystem/approval/upload")
+
+        def directives(block: str) -> list[str]:
+            return [line.strip() for line in block.splitlines()[1:]
+                    if line.strip() and not line.strip().startswith("#")]
+
+        self.assertEqual(directives(approval), directives(apply))
+        self.assertIn("client_max_body_size 752m;", approval)
+        self.assertIn("proxy_request_buffering off;", approval)
+        self.assertIn("proxy_read_timeout 15m;", approval)
+        self.assertIn("proxy_send_timeout 15m;", approval)
+        self.assertIn("auth_request /auth-verify;", approval)
+        self.assertIn('proxy_set_header Authorization "Bearer $hai_verified_access_token";', approval)
+
     def test_dashboard_gateway_targets_the_frontend_listening_port(self) -> None:
         frontend_config = (ROOT / "frontend" / "nginx-custom.conf").read_text(
             encoding="utf-8"
@@ -189,6 +227,21 @@ class GatewayAuthContractTest(unittest.TestCase):
         self.assertIn("$upstream_http_x_hai_refreshed_refresh_cookie", generated_route)
         self.assertIn("add_header Set-Cookie $hai_refreshed_access_cookie always;", generated_route)
         self.assertIn("add_header Set-Cookie $hai_refreshed_refresh_cookie always;", generated_route)
+
+    def test_compatibility_and_generated_cookie_headers_retain_parent_security_policy(self) -> None:
+        generated_route = (
+            ROOT / "nginx-config-manager" / "internal" / "app" / "autoconfig" / "config_template.go"
+        ).read_text(encoding="utf-8")
+        routes = (
+            ("compatibility", location_block("location /generic-auto/ {", GENERIC_AUTO_ROUTE)),
+            ("generated", generated_route),
+        )
+        for name, route in routes:
+            with self.subTest(route=name):
+                self.assertEqual(route.count("add_header_inherit merge;"), 1)
+                self.assertNotIn("add_header_inherit off;", route)
+                self.assertIn("add_header Set-Cookie $hai_refreshed_access_cookie always;", route)
+                self.assertIn("add_header Set-Cookie $hai_refreshed_refresh_cookie always;", route)
 
     def test_host_runtime_bridge_is_not_exposed_by_dashboard_gateway(self) -> None:
         bridge = location_block("location ^~ /api/v1/host-runtime/")

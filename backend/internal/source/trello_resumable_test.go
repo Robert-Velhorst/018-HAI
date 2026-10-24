@@ -286,6 +286,77 @@ func TestTrelloDurableRejectsCardFromDifferentBoardBeforeImport(t *testing.T) {
 	}
 }
 
+func TestTrelloDurableRawCardPagesRequireBoardEvidence(t *testing.T) {
+	for _, board := range []struct {
+		name string
+		id   any
+		want bool
+	}{
+		{name: "missing"},
+		{name: "empty", id: ""},
+		{name: "whitespace", id: " "},
+		{name: "malformed", id: "unverified-board"},
+		{name: "different", id: "fedcba9876543210fedcba98"},
+		{name: "canonical", id: trelloTestCanonicalBoardID, want: true},
+		{name: "normalized", id: " " + strings.ToUpper(trelloTestCanonicalBoardID) + " ", want: true},
+	} {
+		t.Run(board.name, func(t *testing.T) {
+			card := map[string]any{
+				"id": testTrelloMongoID(42), "name": "Unmodified provider fixture",
+				"dateLastActivity": "2026-09-20T12:00:00Z", "idList": "list-1",
+			}
+			if board.id != nil {
+				card["idBoard"] = board.id
+			}
+			var cardReads int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.Method != http.MethodGet || r.URL.Query().Has("key") || r.URL.Query().Has("token") ||
+					r.Header.Get("Authorization") != trelloAuthorizationHeader("test-key", "test-read-token") {
+					t.Error("raw-page fixture received an unauthorized or non-read request")
+					http.Error(w, "invalid read", http.StatusBadRequest)
+					return
+				}
+				switch r.URL.Path {
+				case "/1/boards/abc123XY":
+					_ = json.NewEncoder(w).Encode(map[string]string{"id": trelloTestCanonicalBoardID, "name": "Board", "shortUrl": "https://trello.com/b/abc123XY"})
+				case "/1/boards/abc123XY/lists":
+					_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"}]`))
+				case "/1/boards/abc123XY/cards":
+					cardReads++
+					_ = json.NewEncoder(w).Encode([]any{card})
+				default:
+					if strings.HasPrefix(r.URL.Path, "/1/tokens/") {
+						_, _ = w.Write([]byte(`{"idMember":"000000000000000000000001","permissions":[{"modelType":"Board","read":true,"write":false}]}`))
+					} else {
+						t.Errorf("unexpected raw-page fixture route %s", r.URL.Path)
+						http.NotFound(w, r)
+					}
+				}
+			}))
+			t.Cleanup(server.Close)
+			configureTrelloTest(t, server.URL)
+			source := newTrelloSource(uuid.New(), "abc123XY", "")
+			job := &models.SourceSyncJob{ID: uuid.New(), SourceID: source.ID, Status: "running"}
+			repo := &trelloSliceFixtureRepo{fakeSourceRepo: newFakeSourceRepo(source)}
+			slice, err := NewService(repo, nil).(*service).prepareTrelloSyncSlice(context.Background(), source, job)
+			if cardReads != 1 {
+				t.Fatalf("read %d card pages; want a real raw-page validation attempt", cardReads)
+			}
+			if board.want {
+				if err != nil || slice == nil || len(slice.Items) != 1 {
+					t.Fatalf("valid board evidence rejected: slice=%v err=%v", slice, err)
+				}
+			} else if err == nil || !strings.Contains(strings.ToLower(err.Error()), "board") || slice != nil {
+				t.Fatalf("unverified card was not rejected: slice=%v err=%v", slice, err)
+			}
+			if len(repo.rawItems) != 0 || len(repo.extractions) != 0 {
+				t.Fatal("preparing a page persisted source data before its durable commit")
+			}
+		})
+	}
+}
+
 type trelloCountingReader struct {
 	remaining int
 	read      int

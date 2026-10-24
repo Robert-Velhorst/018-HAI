@@ -5,7 +5,7 @@
       <p>Turn an objective into an immutable coordination plan. Acceptance does not authorize execution.</p>
     </div>
     <div class="heading-actions">
-      <button nz-button type="button" (click)="refresh()" [disabled]="loading" [attr.aria-busy]="loading">
+      <button nz-button type="button" (click)="refresh()" [disabled]="loading || saving" [attr.aria-busy]="loading">
         <i nz-icon nzType="reload" nzTheme="outline"></i>
         Refresh
       </button>
@@ -15,7 +15,7 @@
   <div class="source-error" *ngIf="errorMessage" role="alert">
     <i nz-icon nzType="warning" nzTheme="outline"></i>
     <div><strong>Plan coordination is unavailable</strong><span>{{ errorMessage }}</span></div>
-    <button nz-button type="button" (click)="refresh()">Retry</button>
+    <button nz-button type="button" (click)="refresh()" [disabled]="loading || saving">Retry</button>
   </div>
 
   <div class="plan-loading" *ngIf="loading" role="status" aria-live="polite">
@@ -35,6 +35,7 @@
           *ngFor="let item of plans; trackBy: trackById"
           [class.plan-list__row--active]="item.id === plan.id"
           [attr.aria-current]="item.id === plan.id ? 'true' : null"
+          [disabled]="saving"
           (click)="selectPlan(item)"
         >
           <span class="status-dot" [attr.data-status]="item.status"></span>

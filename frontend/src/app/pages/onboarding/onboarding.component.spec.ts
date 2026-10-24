@@ -26,6 +26,20 @@ describe('OnboardingComponent', () => {
     expect(c.current).toBe(1);
   });
 
+  it('discloses enabled external services instead of promising unconditional local data isolation', () => {
+    const component = new OnboardingComponent(router, route);
+    expect(component.steps[0].description).toContain('external');
+    expect(component.steps[0].description).toContain('data');
+    expect(component.steps[0].description).not.toContain('Your data stays on your machine');
+  });
+
+  it('describes configured approval policy rather than promising approval of every side effect', () => {
+    const component = new OnboardingComponent(router, route);
+    expect(component.steps[2].description).toContain('configured');
+    expect(component.steps[2].description).toContain('approval policy');
+    expect(component.steps[2].description).not.toContain('Nothing with real side effects');
+  });
+
   it('recognizes the last step', () => {
     const c = new OnboardingComponent(router, route);
     c.current = c.steps.length - 1;

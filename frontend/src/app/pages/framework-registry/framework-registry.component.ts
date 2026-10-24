@@ -4,11 +4,18 @@ import { Router } from '@angular/router';
 import {
   Subject,
   Subscription,
+  Observable,
+  defer,
   catchError,
   finalize,
+  map,
   forkJoin,
   of,
+  take,
   takeUntil,
+  throwIfEmpty,
+  throwError,
+  timeout,
 } from 'rxjs';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
@@ -32,6 +39,7 @@ import {
 } from '../../models/framework-registry.model.interface';
 import { AuthSessionService } from '../../services/auth-session.service';
 import { FrameworkRegistryService } from '../../services/framework-registry.service';
+import { HttpTimeoutPolicy } from '../../shared/http-timeout-policy';
 
 const MODULE_ID = 'framework-registry';
 
@@ -130,6 +138,8 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   private overviewSubscription?: Subscription;
   private familyTaxonomySubscription?: Subscription;
   private readonly destroy$ = new Subject<void>();
+  private destroyed = false;
+  private inspectorVersion = 0;
   private readonly preferenceStateHints = new Map<string, FrameworkPreferenceState>();
 
   constitutionEditing = false;
@@ -186,6 +196,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
     this.refreshSubscription?.unsubscribe();
     this.inspectorSubscription?.unsubscribe();
     this.preferenceHistorySubscription?.unsubscribe();
@@ -205,17 +216,19 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
 
   get canManageOwnerControls(): boolean {
     return Boolean(
-      this.authSession?.authenticated &&
+      this.authSession?.authenticated === true &&
+      typeof this.authSession.subject === 'string' && this.authSession.subject.trim().length > 0 &&
       this.authSession.role === 'owner' &&
-      this.authSession.permissions.canAdminister
+      this.authSession.permissions?.canAdminister === true
     );
   }
 
   get canRequestSelection(): boolean {
     return Boolean(
-      this.authSession?.authenticated &&
+      this.authSession?.authenticated === true &&
+      typeof this.authSession.subject === 'string' && this.authSession.subject.trim().length > 0 &&
       (this.authSession.role === 'owner' || this.authSession.role === 'operator') &&
-      this.authSession.permissions.canOperate
+      this.authSession.permissions?.canOperate === true
     );
   }
 
@@ -329,6 +342,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   }
 
   refresh(): void {
+    if (this.destroyed) return;
     this.refreshSubscription?.unsubscribe();
     this.preferenceStateHints.clear();
     this.loading = true;
@@ -336,38 +350,38 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     this.authSession = undefined;
 
     this.refreshSubscription = forkJoin({
-      session: this.authSessionService.session().pipe(
+      session: this.observe(() => this.authSessionService.session()).pipe(
         catchError(() => {
           this.loadErrors['authorization'] =
             'Session authority could not be verified. Mutating controls remain disabled.';
           return of(undefined);
         })
       ),
-      overview: this.service.overview().pipe(
+      overview: this.observe(() => this.service.overview()).pipe(
         catchError((error: unknown) => {
           this.loadErrors['overview'] = this.errorMessage(error, 'Registry overview is unavailable.');
           return of(undefined);
         })
       ),
-      frameworks: this.service.frameworks().pipe(
+      frameworks: this.observe(() => this.service.frameworks()).pipe(
         catchError((error: unknown) => {
           this.loadErrors['frameworks'] = this.errorMessage(error, 'Framework records are unavailable.');
           return of(undefined);
         })
       ),
-      selections: this.service.selections().pipe(
+      selections: this.observe(() => this.service.selections()).pipe(
         catchError((error: unknown) => {
           this.loadErrors['selections'] = this.errorMessage(error, 'Selection history is unavailable.');
           return of(undefined);
         })
       ),
-      constitution: this.service.constitution().pipe(
+      constitution: this.observe(() => this.service.constitution()).pipe(
         catchError((error: unknown) => {
           this.loadErrors['constitution'] = this.errorMessage(error, 'The active Constitution is unavailable.');
           return of(undefined);
         })
       ),
-      constitutionHistory: this.service.constitutionHistory().pipe(
+      constitutionHistory: this.observe(() => this.service.constitutionHistory()).pipe(
         catchError((error: unknown) => {
           this.loadErrors['constitutionHistory'] = this.errorMessage(
             error,
@@ -461,13 +475,13 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   }
 
   loadFamilyTaxonomy(): void {
-    if (this.familyTaxonomy || this.familyTaxonomyLoading) {
+    if (this.destroyed || this.familyTaxonomy || this.familyTaxonomyLoading) {
       return;
     }
     this.familyTaxonomySubscription?.unsubscribe();
     this.familyTaxonomyLoading = true;
     delete this.loadErrors['familyTaxonomy'];
-    this.familyTaxonomySubscription = this.service.familyTaxonomy().pipe(
+    this.familyTaxonomySubscription = this.observe(() => this.service.familyTaxonomy()).pipe(
       takeUntil(this.destroy$),
       finalize(() => (this.familyTaxonomyLoading = false))
     ).subscribe({
@@ -482,7 +496,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   }
 
   selectFrameworks(): void {
-    if (this.selectionBusy) {
+    if (this.destroyed || this.selectionBusy) {
       return;
     }
     if (!this.canRequestSelection) {
@@ -503,7 +517,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     this.selectionError = '';
     const request = this.buildSelectionRequest(requestText);
 
-    this.service.select(request).pipe(
+    this.observe(() => this.service.select(request), true).pipe(
       takeUntil(this.destroy$),
       finalize(() => (this.selectionBusy = false))
     ).subscribe({
@@ -523,7 +537,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
       error: (error: unknown) => {
         this.selectionError = this.errorMessage(
           error,
-          'HAI could not create a framework recommendation. No execution was started.'
+          'HAI could not confirm whether the recommendation was recorded. Inspect selection history before retrying. No execution was started.'
         );
         this.notification.error('Selection failed', this.selectionError);
       },
@@ -541,6 +555,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   }
 
   openFrameworkById(frameworkId: string): void {
+    if (this.destroyed) return;
     const normalizedId = frameworkId.trim();
     if (!normalizedId) {
       return;
@@ -552,6 +567,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
         : undefined;
     }
     this.inspectorVisible = true;
+    this.inspectorVersion += 1;
     this.inspectedFrameworkId = normalizedId;
     this.inspectorLoading = true;
     this.inspectorError = '';
@@ -560,7 +576,11 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     this.preferenceHistoryError = '';
     this.inspectorSubscription?.unsubscribe();
 
-    this.inspectorSubscription = this.service.framework(normalizedId).pipe(
+    this.inspectorSubscription = this.observe(() => this.service.framework(normalizedId)).pipe(
+      map((detail) => {
+        if (detail.id !== normalizedId) throw new Error('Framework identity did not match the requested record');
+        return detail;
+      }),
       takeUntil(this.destroy$),
       finalize(() => (this.inspectorLoading = false))
     ).subscribe({
@@ -580,11 +600,11 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   }
 
   loadPreferenceHistory(frameworkId = this.inspectedFrameworkId): void {
-    if (!frameworkId) return;
+    if (this.destroyed || !frameworkId) return;
     this.preferenceHistorySubscription?.unsubscribe();
     this.preferenceHistoryLoading = true;
     this.preferenceHistoryError = '';
-    this.preferenceHistorySubscription = this.service.preferenceHistory(frameworkId).pipe(
+    this.preferenceHistorySubscription = this.observe(() => this.service.preferenceHistory(frameworkId)).pipe(
       takeUntil(this.destroy$),
       finalize(() => (this.preferenceHistoryLoading = false))
     ).subscribe({
@@ -605,6 +625,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   }
 
   closeInspector(): void {
+    this.inspectorVersion += 1;
     const returnFocus = this.inspectorReturnFocus;
     this.inspectorSubscription?.unsubscribe();
     this.preferenceHistorySubscription?.unsubscribe();
@@ -619,14 +640,14 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     this.inspectedFrameworkId = '';
     this.inspectorReturnFocus = undefined;
     window.setTimeout(() => {
-      if (returnFocus?.isConnected) {
+      if (!this.destroyed && !this.inspectorVisible && returnFocus?.isConnected) {
         returnFocus.focus();
       }
     });
   }
 
   savePreference(): void {
-    if (this.preferenceSaving) {
+    if (this.destroyed || this.preferenceSaving) {
       return;
     }
     if (!this.requireOwnerAuthority('Framework preference changes')) {
@@ -653,32 +674,41 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     }
 
     const frameworkId = this.selectedFramework.id;
+    const inspectorVersion = this.inspectorVersion;
     this.preferenceSaving = true;
-    this.service.updatePreference(frameworkId, patch).pipe(
+    this.observe(() => this.service.updatePreference(frameworkId, patch), true).pipe(
+      map((updated) => {
+        if (updated.id !== frameworkId) throw new Error('Preference receipt did not match the requested framework');
+        return updated;
+      }),
       takeUntil(this.destroy$),
       finalize(() => (this.preferenceSaving = false))
     ).subscribe({
       next: (updated) => {
         this.preferenceStateHints.set(updated.id, patch.state);
-        this.selectedFramework = updated;
-        this.preferenceEditor = this.preferenceEditorFromFramework(updated);
+        const sameInspector = this.inspectorVersion === inspectorVersion && this.selectedFramework?.id === frameworkId;
+        if (sameInspector) {
+          this.selectedFramework = updated;
+          this.preferenceEditor = this.preferenceEditorFromFramework(updated);
+        }
         this.frameworks = this.frameworks.map((framework) =>
           framework.id === updated.id ? updated : framework
         );
         this.notification.success('Preference saved', `${updated.name} was updated for this owner.`);
-        this.loadPreferenceHistory(updated.id);
+        if (sameInspector) this.loadPreferenceHistory(updated.id);
         this.refreshOverview();
       },
       error: (error: unknown) => {
         this.notification.error(
           'Preference not saved',
-          this.errorMessage(error, 'The existing framework preference was not changed.')
+          this.errorMessage(error, 'The preference-save outcome is unconfirmed. Refresh the framework record before retrying.')
         );
       },
     });
   }
 
   beginConstitutionDraft(): void {
+    if (this.destroyed) return;
     if (!this.requireOwnerAuthority('Constitution amendments')) {
       return;
     }
@@ -712,7 +742,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   }
 
   createConstitutionDraft(): void {
-    if (this.constitutionSaving) {
+    if (this.destroyed || this.constitutionSaving) {
       return;
     }
     if (!this.requireOwnerAuthority('Constitution amendments')) {
@@ -750,7 +780,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     };
 
     this.constitutionSaving = true;
-    this.service.createConstitutionDraft(request).pipe(
+    this.observe(() => this.service.createConstitutionDraft(request), true).pipe(
       takeUntil(this.destroy$),
       finalize(() => (this.constitutionSaving = false))
     ).subscribe({
@@ -768,7 +798,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
       error: (error: unknown) => {
         this.constitutionError = this.constitutionMutationError(
           error,
-          'The active Constitution was not changed.',
+          'The draft-save outcome is unconfirmed. Inspect Constitution history before retrying; creating a draft does not activate it.',
           'The active Constitution changed before this draft was saved. Refresh and review the current version before drafting again.'
         );
         this.notification.error(
@@ -780,7 +810,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   }
 
   activateConstitutionDraft(): void {
-    if (this.constitutionActivating) {
+    if (this.destroyed || this.constitutionActivating) {
       return;
     }
     if (!this.requireOwnerAuthority('Constitution activation')) {
@@ -810,10 +840,12 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
 
     this.constitutionError = '';
     this.constitutionActivating = true;
-    this.service.activateConstitution(this.constitutionDraft.id, {
+    const draftId = this.constitutionDraft.id;
+    const activation = {
       confirmation: this.activationConfirmation,
       approvalNote: this.activationNote.trim(),
-    }).pipe(
+    };
+    this.observe(() => this.service.activateConstitution(draftId, activation), true).pipe(
       takeUntil(this.destroy$),
       finalize(() => (this.constitutionActivating = false))
     ).subscribe({
@@ -832,7 +864,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
       error: (error: unknown) => {
         this.constitutionError = this.constitutionMutationError(
           error,
-          'The draft remains inactive and the current Constitution is unchanged.',
+          'The activation outcome is unconfirmed. Refresh the active Constitution and history before deciding whether to retry.',
           'This draft is stale or no longer activatable. Refresh the active Constitution and prepare a new reviewed draft.'
         );
         this.notification.error(
@@ -846,6 +878,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   chooseSelection(selection: IFrameworkSelectionDecision): void {
     this.currentSelection = selection;
     window.setTimeout(() => {
+      if (this.destroyed || this.currentSelection !== selection) return;
       const heading = document.getElementById('recommendation-heading');
       heading?.scrollIntoView({ behavior: this.scrollBehavior(), block: 'start' });
       heading?.focus({ preventScroll: true });
@@ -968,8 +1001,9 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   }
 
   private refreshOverview(): void {
+    if (this.destroyed) return;
     this.overviewSubscription?.unsubscribe();
-    this.overviewSubscription = this.service.overview().pipe(
+    this.overviewSubscription = this.observe(() => this.service.overview()).pipe(
       takeUntil(this.destroy$)
     ).subscribe({
       next: (overview) => (this.overview = overview),
@@ -989,6 +1023,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
 
   private focusElement(id: string): void {
     window.setTimeout(() => {
+      if (this.destroyed) return;
       document.getElementById(id)?.focus();
     });
   }
@@ -1001,6 +1036,22 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     } catch {
       return 'auto';
     }
+  }
+
+  private observe<T>(request: () => Observable<T>, mutation = false): Observable<T> {
+    return defer(request).pipe(
+      take(1),
+      throwIfEmpty(),
+      timeout({ first: mutation ? HttpTimeoutPolicy.operationMs : HttpTimeoutPolicy.readMs }),
+      catchError((error: unknown) => {
+        if (mutation && error instanceof HttpErrorResponse && [401, 403].includes(error.status)) {
+          this.authSession = undefined;
+          this.refreshSubscription?.unsubscribe();
+          this.loadErrors['authorization'] = 'Session authority must be checked again before another change.';
+        }
+        return throwError(() => error);
+      })
+    );
   }
 
   private buildSelectionRequest(requestText: string): IFrameworkSelectionRequest {
@@ -1109,29 +1160,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     if (response.status === 403) {
       return 'Your account does not have permission to perform this registry action.';
     }
-    if (![400, 409, 422].includes(response.status)) {
-      return fallback;
-    }
-
-    const body = response?.error as { error?: unknown; message?: unknown } | string | null;
-    let candidate = '';
-    if (typeof body === 'string' && body.trim()) {
-      candidate = body.trim();
-    } else if (body && typeof body === 'object') {
-      if (typeof body.error === 'string' && body.error.trim()) {
-        candidate = body.error.trim();
-      } else if (typeof body.message === 'string' && body.message.trim()) {
-        candidate = body.message.trim();
-      }
-    }
-    if (
-      !candidate ||
-      candidate.length > 240 ||
-      /(?:sql|database|gorm|stack|trace|panic|dial tcp|internal server|exception|password|passwd|secret|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|authorization|cookie|bearer)/i.test(candidate)
-    ) {
-      return fallback;
-    }
-    return candidate.replace(/\s+/g, ' ');
+    return fallback;
   }
 
   private constitutionMutationError(

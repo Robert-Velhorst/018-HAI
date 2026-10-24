@@ -78,12 +78,12 @@
     *ngIf="lastReport || lastRunError || lastRunNotice"
     class="bg-ops__run-result"
     [class.bg-ops__run-result--error]="lastRunError && lastRunFailure?.tone !== 'warning'"
-    [class.bg-ops__run-result--warning]="lastRunError && lastRunFailure?.tone === 'warning'"
+    [class.bg-ops__run-result--warning]="lastRunError ? lastRunFailure?.tone === 'warning' : !lastRunNotice && lastReportHasIssues"
     [class.bg-ops__run-result--notice]="lastRunNotice"
     [attr.role]="lastRunError ? 'alert' : 'status'"
     [attr.aria-live]="lastRunError ? 'assertive' : 'polite'"
   >
-    <span nz-icon [nzType]="lastRunError ? 'close-circle' : lastRunNotice ? 'info-circle' : 'check-circle'" aria-hidden="true"></span>
+    <span nz-icon [nzType]="lastRunError ? 'close-circle' : lastRunNotice ? 'info-circle' : lastReportHasIssues ? 'exclamation-circle' : 'check-circle'" aria-hidden="true"></span>
     <div class="bg-ops__run-result-copy" *ngIf="lastRunError; else reportSummary">
       <strong>{{ lastRunHeading }}</strong>
       <span *ngIf="lastRunFailure?.statusLabel" class="bg-ops__failure-status">{{ lastRunFailure.statusLabel }}</span>
@@ -102,8 +102,8 @@
       </div>
       <ng-template #completedReport>
         <div class="bg-ops__run-result-copy" *ngIf="lastReport as report">
-          <strong>{{ report.errors?.length ? 'Pass finished with issues' : 'Pass complete' }}</strong>
-          <p>{{ report.feedsRead }} feeds checked, {{ report.operationsCreated }} operations created, {{ report.verified }} verified.</p>
+          <strong>{{ lastReportHasIssues ? 'Pass finished with issues' : 'Pass complete' }}</strong>
+          <p>{{ report.feedsRead }} feeds checked, {{ report.operationsCreated }} operations created, {{ report.verified }} verified<span *ngIf="report.failed > 0">, {{ report.failed }} failed</span>.</p>
           <ul *ngIf="report.errors?.length">
             <li *ngFor="let error of report.errors">{{ safeDiagnosticText(error) }}</li>
           </ul>

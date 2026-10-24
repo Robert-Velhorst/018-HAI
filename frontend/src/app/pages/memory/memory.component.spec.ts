@@ -333,6 +333,46 @@ describe('MemoryComponent', () => {
     component.ngOnDestroy();
   });
 
+  for (const method of ['query', 'retrieve', 'create', 'update', 'archive', 'restore', 'delete', 'exportMemories', 'reindexSemantic', 'importConversation']) {
+    it(`contains synchronous ${method} request construction failures without losing drafts`, () => {
+      const { component, memoryService, preferences, memoryEngine, notification } = createComponent();
+      preferences.setMode('memory', 'advanced');
+      component.memoryForm.patchValue({ content: 'Retained manual draft' });
+      component.importForm.patchValue({ sourceUri: 'https://synthetic.invalid/thread', messagesText: 'user: Retained import draft' });
+      if (method === 'update') component.editingId = 'manual';
+      const api = method === 'importConversation' ? memoryEngine : memoryService;
+      api[method].and.callFake(() => { throw new Error('Synthetic request construction failure'); });
+      if (method === 'delete') spyOn(window, 'confirm').and.returnValue(true);
+      const actions: Record<string, () => void> = {
+        query: () => component.refresh(),
+        retrieve: () => component.retrieve(),
+        create: () => component.save(),
+        update: () => component.save(),
+        archive: () => component.archive(record()),
+        restore: () => component.restore({ ...record(), archived: true }),
+        delete: () => component.delete(record()),
+        exportMemories: () => component.exportMemories(),
+        reindexSemantic: () => component.reindexSemantic(),
+        importConversation: () => component.importConversation(),
+      };
+
+      expect(actions[method]).not.toThrow();
+      expect(component.loading).toBeFalse();
+      expect(component.saving).toBeFalse();
+      expect(component.retrieving).toBeFalse();
+      expect(component.importing).toBeFalse();
+      expect(component.exporting).toBeFalse();
+      expect(component.reindexingSemantic).toBeFalse();
+      expect(component.pendingMemoryIds.size).toBe(0);
+      expect(component.memoryForm.enabled).toBeTrue();
+      expect(component.memoryForm.value.content).toBe('Retained manual draft');
+      expect(component.importForm.value.messagesText).toContain('Retained import draft');
+      expect(component.memoryLoadError || component.operationError).toBeTruthy();
+      expect(notification.success).not.toHaveBeenCalled();
+      component.ngOnDestroy();
+    });
+  }
+
   it('cancels a library load when Advanced closes and retries on the next open', () => {
     const { component, memoryService, preferences } = createComponent();
     const pending = new Subject<IMemoryQueryResult>();
@@ -675,6 +715,30 @@ describe('MemoryComponent rendered HTTP action chains (synthetic fixtures only)'
     expect(detail.textContent).not.toContain('Accept');
     (Array.from(detail.querySelectorAll('button')).find((button) => button.textContent?.includes('Open review'))!).click();
     expect(TestBed.inject(Router).navigate).toHaveBeenCalledWith(['/grounded-answers']);
+    http.verify();
+    fixture.destroy();
+  });
+
+  it('recovers an Advanced inventory failure from Basic through an explicit library action', async () => {
+    const { fixture, http, preferences } = await setup(true);
+    preferences.setSection('memory', 'memory-records', true);
+    http.expectOne((request) => request.url.endsWith('/memory/query')).flush({}, { status: 503, statusText: 'Unavailable' });
+    preferences.setMode('memory', 'basic');
+    fixture.detectChanges();
+    http.expectNone((request) => request.url.endsWith('/memory/query'));
+
+    const retry = fixture.nativeElement.querySelector('.memory-message--error button') as HTMLButtonElement;
+    expect(retry.textContent).toContain('Open library to retry');
+    retry.click();
+    fixture.detectChanges();
+
+    expect(preferences.get('memory').mode).toBe('advanced');
+    expect(preferences.get('memory').openSections['memory-records']).toBeTrue();
+    const recovery = http.expectOne((request) => request.url.endsWith('/memory/query'));
+    recovery.flush(page([record('recovered-memory')]));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.memory-message--error')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.memory-row').textContent).toContain('recovered-memory');
     http.verify();
     fixture.destroy();
   });

@@ -27,7 +27,12 @@ const (
 	migrationAdvisoryLockKey = int64(0x4841494d494752)
 )
 
-const previousAccountFeedSyncCursorChecksum = "6660b907490fb479b2959704b90a2566cf6c5b5b274cd5b30425786f61960f1c"
+// Pin both reviewed checkout encodings; never authorize arbitrary SQL solely by version.
+const (
+	previousAccountFeedSyncCursorChecksum     = "6660b907490fb479b2959704b90a2566cf6c5b5b274cd5b30425786f61960f1c"
+	reviewedAccountFeedSyncCursorLFChecksum   = "f8d74df6fa0f90b38571c2d3b2c90b0066718714f22d39239521c5fcee91e22f"
+	reviewedAccountFeedSyncCursorCRLFChecksum = "84d1ec8154a4187866cfe30f448811e0074ea11b00e7a0adec8ff29337490e9c"
+)
 
 // Migration is one versioned change loaded from an embedded directory.
 type Migration struct {
@@ -50,14 +55,17 @@ func MigrationChecksum(migration Migration) string {
 }
 
 func migrationChecksumMatches(migration Migration, stored string) bool {
-	if stored == MigrationChecksum(migration) {
+	current := MigrationChecksum(migration)
+	if stored == current {
 		return true
 	}
 	// 0128's down script was hardened after the original migration shipped.
 	// The up script is unchanged, so accept only the exact prior checksum for
 	// this version while retaining strict checksum validation for every other
 	// migration and every unknown 0128 revision.
-	return migration.Version == "pre/0128_account_feed_sync_cursor" && stored == previousAccountFeedSyncCursorChecksum
+	return migration.Version == "pre/0128_account_feed_sync_cursor" &&
+		stored == previousAccountFeedSyncCursorChecksum &&
+		(current == reviewedAccountFeedSyncCursorLFChecksum || current == reviewedAccountFeedSyncCursorCRLFChecksum)
 }
 
 // loadMigrations reads every NNNN_name.up.sql (and optional matching .down.sql)

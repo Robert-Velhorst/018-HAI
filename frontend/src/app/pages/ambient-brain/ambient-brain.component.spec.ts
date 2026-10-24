@@ -186,6 +186,53 @@ describe('AmbientBrainComponent progressive view', () => {
     expect(page.querySelector('button[aria-label="Open automation registry"] i')?.getAttribute('aria-hidden')).toBe('true');
   });
 
+  for (const operation of ['overview', 'telemetry', 'guards', 'scan', 'profile', 'accept', 'dismiss'] as const) {
+    it(`handles a synchronous service setup failure without stranding ${operation}`, () => {
+      const component = fixture.componentInstance;
+      const fail = () => { throw new Error('private request setup detail'); };
+      let invoke: () => void;
+      switch (operation) {
+        case 'overview': ambient.overview.and.callFake(fail); invoke = () => component.refresh(); break;
+        case 'telemetry': autonomy.overview.and.callFake(fail); invoke = () => component.refreshAutonomy(); break;
+        case 'guards': autonomy.runStressSuite.and.callFake(fail); invoke = () => component.runStressSuite(); break;
+        case 'scan': ambient.scan.and.callFake(fail); invoke = () => component.runScan(); break;
+        case 'profile':
+          component.openNeed(component.overview!.needs[0]);
+          ambient.updateNeed.and.callFake(fail);
+          invoke = () => component.saveNeed(component.selectedNeed!);
+          break;
+        case 'accept': ambient.accept.and.callFake(fail); invoke = () => component.accept(opportunity); break;
+        case 'dismiss': ambient.dismiss.and.callFake(fail); invoke = () => component.dismiss(opportunity); break;
+      }
+      expect(invoke).not.toThrow();
+      expect(component.loading || component.autonomyLoading || component.stressTesting || component.scanning ||
+        !!component.savingNeed || !!component.resolving).toBeFalse();
+      expect(component.errorMessage + component.autonomyErrorMessage).not.toContain('private request setup detail');
+      if (operation === 'overview' || operation === 'scan' || operation === 'accept' || operation === 'dismiss') {
+        expect(component.decisionsNeedRefresh).toBeTrue();
+      }
+      if (operation === 'profile') expect(component.selectedNeed).toBeDefined();
+      expect(notifications.success).not.toHaveBeenCalled();
+    });
+  }
+
+  for (const state of ['empty', 'disabled', 'enabled'] as const) {
+    it(`only offers priority tuning with an enabled target (${state})`, () => {
+      const component = fixture.componentInstance;
+      component.overview = {
+        ...ambientOverview,
+        needs: state === 'empty' ? [] : [{ ...ambientOverview.needs[0], enabled: state === 'enabled' }],
+      };
+      fixture.detectChanges();
+      const button = Array.from(fixture.nativeElement.querySelectorAll('.action-tile'))
+        .find((node: any) => node.textContent.includes('Tune priorities')) as HTMLButtonElement;
+      expect(button.disabled).toBe(state !== 'enabled');
+      button.click();
+      expect(!!component.selectedNeed).toBe(state === 'enabled');
+      expect(ambient.updateNeed).not.toHaveBeenCalled();
+    });
+  }
+
   it('keeps the need editor open and preserves the original values when a save fails', () => {
     const original = fixture.componentInstance.overview!.needs[0];
     fixture.componentInstance.openNeed(original);

@@ -94,14 +94,14 @@ try {
         "--env", "POSTGRES_PASSWORD=$ownerPassword",
         "--env", "POSTGRES_DB=$databaseName",
         "--env", "POSTGRES_HOST_AUTH_METHOD=scram-sha-256",
-        "postgres:18.6-alpine"
+        "postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873"
     )
     # Set before launch so the finally block also checks for a partially
     # created container if Docker reports a startup error.
     $containerStarted = $true
     $output = @(& docker @dockerArguments 2>&1)
     if ($LASTEXITCODE -ne 0) {
-        throw "Could not start the isolated PostgreSQL 17 test instance: $($output -join "`n")"
+        throw "Could not start the isolated PostgreSQL 18.6 test instance: $($output -join "`n")"
     }
     $output = @(& docker cp $provisionerPath "${containerName}:/tmp/provision-runtime-role.sh" 2>&1)
     if ($LASTEXITCODE -ne 0) {
@@ -117,12 +117,12 @@ try {
         }
         Start-Sleep -Seconds 1
     }
-    if (-not $ready) { throw "The disposable PostgreSQL 17 instance did not become ready." }
+    if (-not $ready) { throw "The disposable PostgreSQL 18.6 instance did not become ready." }
 
     # The official image keeps a loopback trust rule ahead of its generated
     # host-auth fallback. Replace that rule in this disposable fixture so bad
     # passwords are actually tested over TCP rather than silently bypassed.
-    $authOutput = @(& docker exec --user postgres $containerName sh -c "sed -i 's/trust/scram-sha-256/g' /var/lib/postgresql/data/pg_hba.conf && pg_ctl reload -D /var/lib/postgresql/data" 2>&1)
+    $authOutput = @(& docker exec --user postgres $containerName sh -c 'set -eu; : "${PGDATA:?PGDATA must be set}"; sed -i "s/trust/scram-sha-256/g" "$PGDATA/pg_hba.conf" && pg_ctl reload -D "$PGDATA"' 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "Could not enable SCRAM authentication in the disposable PostgreSQL fixture: $($authOutput -join "`n")"
     }

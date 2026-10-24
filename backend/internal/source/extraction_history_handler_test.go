@@ -25,6 +25,11 @@ type extractionHistoryScopeRepository struct {
 	sourceIDs []uuid.UUID
 }
 
+func (r *extractionHistoryScopeRepository) FindExtractionPageForSources(ids []uuid.UUID, _ string, _ bool, _ int) ([]models.SourceExtraction, int64, error) {
+	r.sourceIDs = append([]uuid.UUID(nil), ids...)
+	return []models.SourceExtraction{}, 0, nil
+}
+
 func (r *extractionHistoryScopeRepository) FindExtractionsPageForSources(ids []uuid.UUID, _ string, _ bool, _, _ int) ([]models.SourceExtraction, int, error) {
 	r.sourceIDs = append([]uuid.UUID(nil), ids...)
 	return []models.SourceExtraction{}, 0, nil
@@ -89,9 +94,26 @@ func TestExtractionHistoryScopeExcludesUnownedLegacySources(t *testing.T) {
 	ids, err := service.extractionSourceIDsForOwner(" alice ")
 	require.NoError(t, err)
 	require.Equal(t, []uuid.UUID{ownID}, ids)
-	_, err = service.ExtractionsForOwnerPage("alice", "project", false, HistoryPageRequest{Limit: 8, Offset: 8})
-	require.NoError(t, err)
-	require.Equal(t, []uuid.UUID{ownID}, repo.sourceIDs, "paged repository must receive only owned sources")
+	for _, paged := range []bool{false, true} {
+		t.Run(map[bool]string{false: "bounded", true: "offset"}[paged], func(t *testing.T) {
+			repo.sourceIDs = nil
+			if paged {
+				_, err = service.ExtractionsForOwnerPage(" alice ", "project", false, HistoryPageRequest{Limit: 8, Offset: 8})
+			} else {
+				_, err = service.ExtractionPageForOwner(" alice ", "project", false, 8)
+			}
+			require.NoError(t, err)
+			require.Equal(t, []uuid.UUID{ownID}, repo.sourceIDs, "repository must receive only owned sources before paging")
+			repo.sourceIDs = nil
+			if paged {
+				_, err = service.ExtractionsForOwnerPage(" ", "project", false, HistoryPageRequest{Limit: 8, Offset: 8})
+			} else {
+				_, err = service.ExtractionPageForOwner(" ", "project", false, 8)
+			}
+			require.Error(t, err)
+			require.Nil(t, repo.sourceIDs, "missing owner must be rejected before querying extractions")
+		})
+	}
 	_, err = service.extractionSourceIDsForOwner(" ")
 	require.Error(t, err)
 }

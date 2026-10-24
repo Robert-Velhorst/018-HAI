@@ -31,13 +31,13 @@ describe('HireAIService', () => {
     service.search({ query: 'support', location: 'Europe' }).subscribe()
     const first = http.expectOne('/api/v1/hire-ai/jobs/search')
     expect(first.request.method).toBe('POST')
-    expect(first.request.body).toEqual({ filters: { query: 'support', location: 'Europe' }, limit: 10 })
+    expect(first.request.body).toEqual({ filters: { query: 'support', location: 'Europe' }, limit: 25 })
     first.flush({ generatedAt: '2026-10-18T00:00:00Z', policy: { remoteOnly: true, listingSafety: 'clear', canonicalListingsOnly: true }, jobs: [], nextCursor: null })
 
     const cursor = { createdAt: '2026-10-18T00:00:00Z', id: 42 }
     service.search({ query: 'support' }, cursor).subscribe()
     const next = http.expectOne('/api/v1/hire-ai/jobs/search')
-    expect(next.request.body).toEqual({ filters: { query: 'support' }, limit: 10, cursor })
+    expect(next.request.body).toEqual({ filters: { query: 'support' }, limit: 25, cursor })
     next.flush({ generatedAt: '2026-10-18T00:00:00Z', policy: { remoteOnly: true, listingSafety: 'clear', canonicalListingsOnly: true }, jobs: [], nextCursor: null })
   })
 })

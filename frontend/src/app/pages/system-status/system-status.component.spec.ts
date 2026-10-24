@@ -1,10 +1,11 @@
-import { NEVER, of, Subject, throwError } from 'rxjs';
+import { EMPTY, NEVER, of, Subject, throwError } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { ComponentFixture, fakeAsync, TestBed, tick } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
-import { NzIconModule } from 'ng-zorro-antd/icon';
+import { NzIconModule, provideNzIcons } from 'ng-zorro-antd/icon';
+import { HAI_ICONS } from '../../hai-icons';
 import { ControlRoomModule } from '../../control-room/control-room.module';
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
 import { ISystemInfo, ISystemReadiness } from '../../models/system-status.model.interface';
@@ -19,6 +20,64 @@ const sampleSystemInfo: ISystemInfo = {
 };
 
 describe('SystemStatusComponent', () => {
+  it('recovers after an empty readiness response without losing the last good report', fakeAsync(() => {
+    spyOnProperty(document, 'hidden', 'get').and.returnValue(false);
+    const previous: ISystemReadiness = {
+      status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [],
+    };
+    const service = { readiness: jasmine.createSpy('readiness').and.returnValues(EMPTY, of(previous)) };
+    const component = new SystemStatusComponent(service as never,
+      { error: jasmine.createSpy('error') } as never, new ModuleViewPreferencesService(document));
+    component.readiness = previous;
+    const updated = new Date('2026-10-23T10:00:00Z');
+    component.lastUpdated = updated;
+    component.refresh();
+    expect(component.loading).toBeFalse();
+    expect(component.loadError).toBeTrue();
+    expect(component.readiness).toBe(previous);
+    expect(component.lastUpdated).toBe(updated);
+    tick(60000);
+    expect(service.readiness).toHaveBeenCalledTimes(2);
+    expect(component.loadError).toBeFalse();
+    component.ngOnDestroy();
+  }));
+
+  const malformedReports: { name: string; value: unknown }[] = [
+    { name: 'unknown status', value: { status: 'healthy', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [] } },
+    { name: 'negative count', value: { status: 'ready', service: 'backend', summary: { ok: -1, warn: 0, fail: 0 }, checks: [] } },
+    { name: 'missing summary', value: { status: 'ready', service: 'backend', checks: [] } },
+    { name: 'missing service', value: { status: 'ready', summary: { ok: 0, warn: 0, fail: 0 }, checks: [] } },
+    { name: 'invalid check', value: { status: 'ready', service: 'backend', summary: { ok: 1, warn: 0, fail: 0 }, checks: [{ name: 'database', severity: 'ok' }] } },
+    { name: 'inconsistent counts', value: { status: 'ready', service: 'backend', summary: { ok: 1, warn: 0, fail: 0 }, checks: [] } },
+    { name: 'ready with failed checks', value: { status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 1 }, checks: [{ name: 'database', severity: 'fail', detail: 'unavailable' }] } },
+    { name: 'null response', value: null },
+  ];
+  for (const report of malformedReports) {
+    it(`rejects ${report.name} without overwriting verified readiness`, () => {
+      const previous: ISystemReadiness = {
+        status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [],
+      };
+      const service = { readiness: () => of(report.value) };
+      const component = new SystemStatusComponent(service as never,
+        { error: jasmine.createSpy('error') } as never, new ModuleViewPreferencesService(document));
+      component.readiness = previous;
+      component.refresh();
+      expect(component.readiness).toBe(previous);
+      expect(component.lastUpdated).toBeUndefined();
+      expect(component.loading).toBeFalse();
+      expect(component.loadError).toBeTrue();
+      component.ngOnDestroy();
+    });
+  }
+
+  it('does not label a previous green report as currently ready after a failed refresh', () => {
+    const component = new SystemStatusComponent({} as never, {} as never, new ModuleViewPreferencesService(document));
+    component.readiness = { status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [] };
+    component.loadError = true;
+    expect(component.statusLabel()).toBe('Current status unverified');
+    expect(component.statusClass()).toBe('status-unknown');
+  });
+
   it('does not overlap scheduled readiness refreshes', () => {
     const response = new Subject<ISystemReadiness>();
     const service = { readiness: jasmine.createSpy('readiness').and.returnValue(response.asObservable()), info: jasmine.createSpy('info').and.returnValue(of(sampleSystemInfo)) };
@@ -71,8 +130,8 @@ describe('SystemStatusComponent', () => {
     const service = { readiness: jasmine.createSpy('readiness'), info: jasmine.createSpy('info').and.returnValue(of(sampleSystemInfo)) };
     service.readiness.and.returnValues(
       of({ status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [] }),
-      of({ status: 'degraded', service: 'backend', summary: { ok: 0, warn: 1, fail: 0 }, checks: [] }),
-      of({ status: 'not_ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 1 }, checks: [] }),
+      of({ status: 'degraded', service: 'backend', summary: { ok: 0, warn: 1, fail: 0 }, checks: [{ name: 'redis.connection', severity: 'warn', detail: 'slow' }] }),
+      of({ status: 'not_ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 1 }, checks: [{ name: 'database.connection', severity: 'fail', detail: 'unavailable' }] }),
       of({ status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [] })
     );
     const component = new SystemStatusComponent(
@@ -222,6 +281,7 @@ describe('SystemStatusComponent rendered layout and accessibility', () => {
       imports: [CommonModule, ControlRoomModule, NzButtonModule, NzCardModule, NzIconModule],
       schemas: [CUSTOM_ELEMENTS_SCHEMA],
       providers: [
+        provideNzIcons(HAI_ICONS),
         { provide: SYSTEM_STATUS_SERVICE_TOKEN, useValue: service },
         { provide: AuthSessionService, useValue: { session: () => of(undefined) } },
       ],
@@ -267,6 +327,23 @@ describe('SystemStatusComponent rendered layout and accessibility', () => {
     expect(buildInfo.getAttribute('aria-label')).toContain('go1.27.3');
     expect(buildInfo.getAttribute('tabindex')).toBe('0');
   });
+
+  it('renders a neutral, registered status icon after a previously ready report becomes stale', fakeAsync(() => {
+    service.readiness.and.returnValue(NEVER);
+    fixture.componentInstance.readiness = {
+      status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [],
+    };
+    fixture.componentInstance.loadError = true;
+    fixture.detectChanges();
+    tick(0);
+    const banner = (fixture.nativeElement as HTMLElement).querySelector('.status-banner')!;
+    expect(banner.classList.contains('status-unknown')).toBeTrue();
+    expect(banner.classList.contains('status-ok')).toBeFalse();
+    expect(banner.textContent).toContain('Current status unverified');
+    expect(banner.querySelector('.anticon-question-circle svg')).not.toBeNull();
+    expect(banner.querySelector('.anticon-check-circle')).toBeNull();
+    fixture.destroy();
+  }));
 
   it('renders textual severity and avoids horizontal overflow in a 320px container', () => {
     const readiness: ISystemReadiness = {

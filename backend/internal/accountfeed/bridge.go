@@ -58,8 +58,8 @@ type ConnectionStatus string
 const (
 	// ConnAvailable: a local provider whose reads work now (generic feed, folder).
 	ConnAvailable ConnectionStatus = "available"
-	// ConnCredentialsRequired remains for API-backed bridge implementations. The
-	// current account-feed registry does not implement any such provider reads.
+	// ConnCredentialsRequired reports missing setup for an opted-in API adapter.
+	// Presence alone does not verify its credentials or a successful read.
 	ConnCredentialsRequired ConnectionStatus = "credentials_required"
 	// ConnCredentialsPresentUnverified remains for API-backed bridge
 	// implementations after a credential is configured but before a real read.
@@ -88,10 +88,10 @@ type BridgeContract struct {
 }
 
 // ConnectionStatus describes this registry's capabilities, not the broader HAI
-// source connector catalog. Account feeds only ingest the bounded normalized
-// generic-feed format; they do not use provider credentials or make Gmail,
-// Google, GitHub, or Trello API calls. Provider-native status belongs to the
-// owner-scoped Connected Sources API.
+// source connector catalog. Gmail, Google Drive/Calendar, GitHub, and Trello
+// remain normalized-import contracts here; native health belongs to the
+// owner-scoped Connected Sources API. The opted-in Autoposter adapter can report
+// credential presence, never a verified read or execution authority.
 func (b BridgeContract) ConnectionStatus() ConnectionStatus {
 	switch b.Provider {
 	case ProviderGenericJSONFeed, ProviderLocalFolder:

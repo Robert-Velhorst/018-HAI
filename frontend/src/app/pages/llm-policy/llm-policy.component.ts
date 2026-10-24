@@ -836,19 +836,23 @@ export class LLMPolicyComponent implements OnInit, OnDestroy {
   }
 
   budgetText(provider: ILLMProvider): string {
+    if (provider.usageAccountingStatus === 'unavailable') {
+      return `Usage unavailable / max EUR ${this.formatMoney(provider.dailyBudgetEur)}`;
+    }
     return `EUR ${this.formatMoney(provider.budgetUsedEur)} / ${this.formatMoney(
       provider.dailyBudgetEur
     )}`;
   }
 
   budgetTooltip(provider: ILLMProvider): string {
+    const unavailable = provider.usageAccountingStatus === 'unavailable';
     return [
-      `Budget used: EUR ${this.formatMoney(provider.budgetUsedEur)}`,
+      `Budget used: ${unavailable ? 'unavailable' : `EUR ${this.formatMoney(provider.budgetUsedEur)}`}`,
       `Daily max: EUR ${this.formatMoney(provider.dailyBudgetEur)}`,
       `Accounting: ${this.usageAccountingLabel(provider.usageAccountingStatus)}`,
-      `Input tokens: ${this.formatNumber(provider.inputTokensUsed)}`,
-      `Output tokens: ${this.formatNumber(provider.outputTokensUsed)}`,
-      `Total tokens: ${this.formatNumber(this.totalTokens(provider))}`,
+      `Input tokens: ${unavailable ? 'unavailable' : this.formatNumber(provider.inputTokensUsed)}`,
+      `Output tokens: ${unavailable ? 'unavailable' : this.formatNumber(provider.outputTokensUsed)}`,
+      `Total tokens: ${unavailable ? 'unavailable' : this.formatNumber(this.totalTokens(provider))}`,
     ].join(' | ');
   }
 
@@ -862,14 +866,15 @@ export class LLMPolicyComponent implements OnInit, OnDestroy {
   }
 
   policyBudgetTooltip(policy: ILLMPolicy): string {
+    const unavailable = policy.usageAccountingStatus === 'unavailable';
     return [
-      `Daily budget used: EUR ${this.formatMoney(policy.dailyBudgetUsedEur)}`,
+      `Daily budget used: ${unavailable ? 'unavailable' : `EUR ${this.formatMoney(policy.dailyBudgetUsedEur)}`}`,
       `Daily budget max: EUR ${this.formatMoney(policy.dailyPaidBudgetEur)}`,
       `Accounting: ${this.usageAccountingLabel(policy.usageAccountingStatus)}`,
       ...(policy.usagePeriodStart ? [`Period starts: ${policy.usagePeriodStart} (${policy.usageTimezone || 'UTC'})`] : []),
-      `Input tokens: ${this.formatNumber(policy.inputTokensUsed)}`,
-      `Output tokens: ${this.formatNumber(policy.outputTokensUsed)}`,
-      `Total tokens: ${this.formatNumber(policy.inputTokensUsed + policy.outputTokensUsed)}`,
+      `Input tokens: ${unavailable ? 'unavailable' : this.formatNumber(policy.inputTokensUsed)}`,
+      `Output tokens: ${unavailable ? 'unavailable' : this.formatNumber(policy.outputTokensUsed)}`,
+      `Total tokens: ${unavailable ? 'unavailable' : this.formatNumber(policy.inputTokensUsed + policy.outputTokensUsed)}`,
     ].join(' | ');
   }
 
@@ -984,6 +989,7 @@ export class LLMPolicyComponent implements OnInit, OnDestroy {
   }
 
   tokenUsageText(policy: ILLMPolicy): string {
+    if (policy.usageAccountingStatus === 'unavailable') return 'Input/output tokens unavailable';
     return `${this.formatNumber(policy.inputTokensUsed)} in / ${this.formatNumber(
       policy.outputTokensUsed
     )} out`;
@@ -1026,6 +1032,9 @@ export class LLMPolicyComponent implements OnInit, OnDestroy {
       return 'latest probe is not live';
     }
     const ageSeconds = (Date.now() - new Date(probe.checkedAt).getTime()) / 1000;
+    if (!Number.isFinite(ageSeconds) || ageSeconds < 0) {
+      return 'latest live probe time is invalid or ahead of this device clock';
+    }
     if (ageSeconds > this.policy.providerProbeMaxAgeSeconds) {
       return 'latest live probe is stale';
     }

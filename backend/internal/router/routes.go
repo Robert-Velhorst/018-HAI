@@ -2033,18 +2033,19 @@ func initializePrivacyRoutes(apiVersion *gin.RouterGroup, handler *privacyfilter
 func initializeOpsControlRoutes(apiVersion *gin.RouterGroup, handler *opscontrol.Handler) {
 	bg := apiVersion.Group("/background")
 	bg.Use(requireAuthenticatedOwner())
+	installationOwner := requirePrincipal(phase2.ConfigFromEnv().OwnerUserID)
 	{
 		bg.GET("/status", requirePermission(rbac.PermRead), handler.Status)
 		// Global pause and resume affect the whole installation and are owner-only.
-		bg.POST("/pause", requirePermission(rbac.PermAdmin), requirePrincipal(phase2.ConfigFromEnv().OwnerUserID), handler.Pause)
-		bg.POST("/resume/approval", requirePermission(rbac.PermAdmin), handler.RequestResumeApproval)
-		bg.POST("/resume", requirePermission(rbac.PermAdmin), handler.Resume)
-		bg.POST("/resume-approval", requirePermission(rbac.PermAdmin), handler.RequestResumeApproval)
-		bg.POST("/resume-approval/:id/approve-and-resume", requirePermission(rbac.PermAdmin), handler.ApproveAndResume)
-		bg.POST("/control-approvals", requirePermission(rbac.PermAdmin), handler.PrepareControlApproval)
-		bg.POST("/control-approvals/:id/decision", requirePermission(rbac.PermAdmin), handler.DecideControlApproval)
-		bg.POST("/mode/approval", requirePermission(rbac.PermAdmin), handler.PrepareModeChange)
-		bg.PATCH("/mode", requirePermission(rbac.PermAdmin), handler.SetMode)
+		bg.POST("/pause", requirePermission(rbac.PermAdmin), installationOwner, handler.Pause)
+		bg.POST("/resume/approval", requirePermission(rbac.PermAdmin), installationOwner, handler.RequestResumeApproval)
+		bg.POST("/resume", requirePermission(rbac.PermAdmin), installationOwner, handler.Resume)
+		bg.POST("/resume-approval", requirePermission(rbac.PermAdmin), installationOwner, handler.RequestResumeApproval)
+		bg.POST("/resume-approval/:id/approve-and-resume", requirePermission(rbac.PermAdmin), installationOwner, handler.ApproveAndResume)
+		bg.POST("/control-approvals", requirePermission(rbac.PermAdmin), installationOwner, handler.PrepareControlApproval)
+		bg.POST("/control-approvals/:id/decision", requirePermission(rbac.PermAdmin), installationOwner, handler.DecideControlApproval)
+		bg.POST("/mode/approval", requirePermission(rbac.PermAdmin), installationOwner, handler.PrepareModeChange)
+		bg.PATCH("/mode", requirePermission(rbac.PermAdmin), installationOwner, handler.SetMode)
 	}
 	wr := apiVersion.Group("/windows-runtime")
 	wr.Use(requireAuthenticatedOwner())

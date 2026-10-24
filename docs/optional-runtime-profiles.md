@@ -77,19 +77,20 @@ remove volumes as part of this network change.
 
 ## Default Stack And Resource Ceiling
 
-The default local topology has exactly nine services: seven long-running core
+The default local topology has exactly ten services: seven long-running core
 services (`backend`, `idp`, `frontend`, `nginx`, both PostgreSQL services, and
-Redis) plus the one-shot `backend-migrate` and `backend-runtime-role` setup
+Redis) plus the one-shot `backend-migrate`, `backend-state-permissions`, and `backend-runtime-role` setup
 jobs. The setup jobs use `restart: "no"`; they exit after their respective
-operation and do not remain as idle workers. All 35 other service definitions
+operation and do not remain as idle workers. All 34 other service definitions
 are profile-gated. The source-contract test checks this exact boundary, unique
 container names, the absence of Compose replica/scale settings, and the distinct
 IDP/application database bindings.
 
 The `.env.example` limits sum to 2,688 MiB and 4.0 CPU across the seven
-long-running core services. Summing those with both one-shot jobs gives 3,264
-MiB and 5.1 CPU of per-service limits; the setup jobs run in sequence, so this
-sum is not a claim that all caps can be reached simultaneously. These are
+long-running core services. Summing those with all three one-shot jobs gives 3,328
+MiB and 5.2 CPU of per-service limits. Runtime-role setup waits for migration;
+the state-permissions job has a separate lifecycle. This aggregate is not a
+claim about simultaneous peak use. These are
 per-container upper limits, not reserved resources, measured idle use, or a
 performance baseline. `.env.local` can override them. The optional
 `patch-proposals` profile alone can add a 6 GiB Ollama memory ceiling, which is
@@ -206,27 +207,20 @@ rotation/revocation, then demonstrate source-aware independent verification of
 a bounded task. Until those checks and a fresh security review pass, the
 profile is not an activation path for DSH.
 
-For the canonical local model profile, set `OLLAMA_BASE_URL` to the exact
-Compose-internal service and list only reviewed model tags:
+### Separately managed local inference
 
-```text
-OLLAMA_BASE_URL=http://ollama-local:11434
-OLLAMA_MODEL_IDS=qwen2.5:0.5b
-LLM_REQUIRE_RECENT_LIVE_PROBE=true
-```
+`docker-compose.local.yml` defines neither a `local-model` profile nor an
+`ollama-local` service. Configure an already approved local provider through
+`OLLAMA_BASE_URL` and `OLLAMA_MODEL_IDS`; do not treat the private mini-SWE model
+service as a general-purpose HAI inference endpoint. Keep recent live probing
+enabled and use only reviewed directly local model tags as described above.
 
-```powershell
-docker compose --env-file .env.local -f docker-compose.local.yml `
-  --profile local-model up -d ollama-local backend
-docker compose --env-file .env.local -f docker-compose.local.yml `
-  --profile local-model exec ollama-local ollama pull qwen2.5:0.5b
-.\scripts\smoke-ollama-provider.ps1 -EnvFile .\.env.local
-```
-
-The acceptance script fails unless the provider is live, the router selects the
-exact local model, generation is bounded and costs EUR 0, token usage comes from
-the provider, redacted history contains the matching audit/telemetry record,
-and `/readyz` remains fully ready.
+After operator approval and configuration, `scripts/smoke-ollama-provider.ps1`
+can check the exact configured model against the running HAI API. It signs in,
+performs bounded generation and checks provider usage plus audit/telemetry and
+readiness. It is not a read-only configuration check and must not be run merely
+to inspect this document. A passing run would prove only its particular model,
+machine and configuration, not other providers or model tags.
 
 For a security snapshot named `review-snapshot`:
 
@@ -299,10 +293,10 @@ server or claim the bridge is live because its configuration fields exist.
 
 The repository contains the adapters, runner implementations, unit contracts,
 and this Compose topology. `docker compose config` proves only that the topology
-is syntactically resolvable. The canonical `local-model` profile has separate
-retained Windows evidence for one `qwen2.5:0.5b` route and generation; that does
-not prove other model tags, machines, scanners, planners, document extractors,
-or patch agents.
+is syntactically resolvable. It does not prove live model generation, image
+availability, scanners, planners, document extractors or patch agents. A local
+inference acceptance result must identify its actual provider, model, machine
+and configuration; it cannot establish an absent Compose profile.
 
 A profile becomes **live-proven** only after a bounded approved run on the
 target machine records:

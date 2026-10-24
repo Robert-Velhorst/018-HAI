@@ -6,6 +6,7 @@ import { IHireAICursor, IHireAIFilters, IHireAISearchResult, IHireAIStatus } fro
 @Injectable({ providedIn: 'root' })
 export class HireAIService {
   private readonly apiUrl = '/api/v1/hire-ai'
+  private readonly pageSize = 25
 
   constructor(private http: HttpClient) {}
 
@@ -16,7 +17,7 @@ export class HireAIService {
   search(filters: IHireAIFilters, cursor?: IHireAICursor): Observable<IHireAISearchResult> {
     return this.http.post<IHireAISearchResult>(`${this.apiUrl}/jobs/search`, {
       filters,
-      limit: 10,
+      limit: this.pageSize,
       ...(cursor ? { cursor } : {}),
     })
   }

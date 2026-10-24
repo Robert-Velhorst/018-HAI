@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,6 +41,24 @@ func TestBackgroundProcessingGateRequiresClearEmergencyStopAndRunnableMode(t *te
 	}
 }
 
+func TestBackgroundProcessingGateFailsClosedWhenEmergencyStopCannotBeRead(t *testing.T) {
+	for _, mode := range []autonomypolicy.Mode{
+		autonomypolicy.ModePaused, autonomypolicy.ModeReadOnly,
+		autonomypolicy.ModeDraftOnly, autonomypolicy.ModeApprovalRequired,
+		autonomypolicy.ModeAutonomousSafe, autonomypolicy.ModeEmergencyStopped,
+	} {
+		t.Run(string(mode), func(t *testing.T) {
+			restore := safety.SetEmergencyStopProvider(safety.EmergencyStopProviderFunc(func() (bool, string, error) {
+				return false, "", errors.New("synthetic stop-store read failure")
+			}))
+			t.Cleanup(restore)
+			if backgroundProcessingAllowed(mode) {
+				t.Fatal("an unreadable emergency stop must block background processing")
+			}
+		})
+	}
+}
+
 func (optimizerRouteRepository) Create(run *models.OptimizationProposalRun) (*models.OptimizationProposalRun, error) {
 	return run, nil
 }
@@ -48,9 +67,9 @@ func (optimizerRouteRepository) List(string, int) ([]models.OptimizationProposal
 	return nil, nil
 }
 
-// Mirrors the exact path set registered in initializeAutomationsRoutes to
-// confirm gin builds the route tree without panicking (static + param at the
-// same level) and resolves each new endpoint to the right handler.
+// Exercise a representative route tree with marker handlers. This checks Gin
+// path conflicts and dispatch, not parity with every production registration,
+// middleware authorization, or execution of the real handlers.
 func TestAutomationRoutesNoConflict(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -460,6 +479,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 		{"POST", "/api/v1/task/review-queue/abc/resolve", "taskReviewResolve"},
 		{"GET", "/api/v1/sources/connectors", "sourceConnectors"},
 		{"GET", "/api/v1/sources/", "sourceList"},
+		{"GET", "/api/v1/sources/overview", "sourceOverview"},
 		{"POST", "/api/v1/sources/", "sourceCreate"},
 		{"POST", "/api/v1/sources/search", "sourceSearch"},
 		{"POST", "/api/v1/sources/sync-due", "sourceSyncDue"},
@@ -492,6 +512,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 		{"POST", "/api/v1/framework-registry/constitution/drafts", "frameworkConstitutionDraft"},
 		{"POST", "/api/v1/framework-registry/constitution/custom-v2/activate", "frameworkConstitutionActivate"},
 		{"GET", "/api/v1/workflow/overview", "workflowOverview"},
+		{"GET", "/api/v1/background/overview", "backgroundOverview"},
 		{"GET", "/api/v1/workflow/approvals", "workflowApprovals"},
 		{"GET", "/api/v1/workflow/dashboard", "workflowDashboard"},
 		{"GET", "/api/v1/workflow/project-dossier?projectKey=Case-A", "workflowProjectDossier"},

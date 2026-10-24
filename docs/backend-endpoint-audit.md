@@ -75,12 +75,20 @@ under `/api/v1` requires `X-HAI-Backend-Key` when configured.
   `POST /pursuits/:id/candidate/accept` may activate one, and that route plus
   its handler require approval capability before it can create or unlock
   governed work.
-- Authenticated Pursuit, Source, Memory, conversation-archive, semantic-search,
+- Authenticated Pursuit, Source, conversation-archive, semantic-search,
   and Verification reads expose ownerless pre-identity data only to the single
   `HAI_LEGACY_DATA_OWNER_IDENTITY`. Unset configuration fails closed and every
   other operator remains exact-owner isolated. Authenticated mutation routes
   reject ownerless legacy records; empty-owner in-process workers retain the
   only supported path for controlled legacy maintenance.
+- **Memory source-level consistency gap, 24 October:** the paged memory query
+  applies that configured legacy-reader exception, but ordinary list, recent,
+  get and retrieval paths remain exact-owner scoped. They do not yet implement
+  one consistent read contract. Do not infer mutation permission from a visible
+  paged row: archive, restore, update and delete remain strict-owner operations.
+  Aligning the read paths awaits an explicit access-policy decision; no access
+  rule was changed by this documentation correction, and no live database or
+  browser acceptance is claimed.
 - **Follow-up:** adopt the `apierror` envelope uniformly across handlers (error
   shapes currently vary; frontend depends on the existing shapes — migrate both
   together).

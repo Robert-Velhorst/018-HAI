@@ -356,7 +356,7 @@
 
   <hai-progressive-section moduleId="brain-catalog" sectionId="capability-match" title="Match a capability need" summary="Find reviewed HAI profiles and review-first candidates. This is planning context only and never activates a project." [advancedOnly]="true">
     <div class="brain-catalog-page__capability-search">
-      <input #capabilityNeed type="text" maxlength="240" placeholder="Example: local model evaluation or read-only browser verification">
+      <input #capabilityNeed type="text" maxlength="240" aria-label="Capability need" placeholder="Example: local model evaluation or read-only browser verification">
       <button nz-button nzType="primary" (click)="recommendCapabilities(capabilityNeed.value)" [nzLoading]="recommendingCapabilities" [disabled]="recommendingCapabilities">Find capability</button>
     </div>
     <div class="brain-catalog-page__source-result" *ngIf="capabilityRecommendation as recommendation">

@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit, Optional } from '@angular/core';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
-import { catchError, defaultIfEmpty, finalize, forkJoin, Observable, of, Subscription, switchMap, take, timeout } from 'rxjs';
+import { catchError, defaultIfEmpty, finalize, forkJoin, map, Observable, of, Subscription, switchMap, take, throwIfEmpty, timeout } from 'rxjs';
 import { AuthSessionService } from '../../services/auth-session.service';
 import { IAuthSession } from '../../models/auth-session.model.interface';
 import {
@@ -151,8 +151,11 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
     this.readinessSubscription = this.systemStatusService.readiness().pipe(
       timeout(READINESS_TIMEOUT_MS),
       take(1),
+      throwIfEmpty(() => new Error('Readiness response was empty')),
+      map((readiness) => this.requireReadiness(readiness)),
       finalize(() => {
         this.refreshInFlight = false;
+        this.loading = false;
       })
     ).subscribe({
       next: (readiness) => {
@@ -176,6 +179,32 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
         }
       },
     });
+  }
+
+  private requireReadiness(readiness: ISystemReadiness): ISystemReadiness {
+    if (!readiness || readiness.service !== 'backend'
+      || !['ready', 'degraded', 'not_ready'].includes(readiness.status)
+      || !readiness.summary || !Array.isArray(readiness.checks)
+      || ![readiness.summary.ok, readiness.summary.warn, readiness.summary.fail]
+        .every((count) => Number.isSafeInteger(count) && count >= 0)) {
+      throw new Error('Invalid readiness report');
+    }
+    const counts = { ok: 0, warn: 0, fail: 0 };
+    for (const check of readiness.checks) {
+      if (!check || typeof check.name !== 'string' || !check.name.trim()
+        || typeof check.detail !== 'string' || !['ok', 'warn', 'fail'].includes(check.severity)) {
+        throw new Error('Invalid readiness check');
+      }
+      counts[check.severity]++;
+    }
+    // Mirror the authenticated backend's aggregate contract before publishing
+    // a new snapshot or advancing its freshness timestamp.
+    const status = counts.fail > 0 ? 'not_ready' : counts.warn > 0 ? 'degraded' : 'ready';
+    if (readiness.status !== status || (['ok', 'warn', 'fail'] as const)
+      .some((severity) => counts[severity] !== readiness.summary[severity])) {
+      throw new Error('Inconsistent readiness report');
+    }
+    return readiness;
   }
 
   onOperationsOpen(open: boolean): void {
@@ -306,6 +335,7 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
   }
 
   statusLabel(): string {
+    if (this.loadError) return 'Current status unverified';
     switch (this.readiness?.status) {
       case 'ready':
         return 'All systems ready';
@@ -319,6 +349,7 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
   }
 
   statusClass(): string {
+    if (this.loadError) return 'status-unknown';
     switch (this.readiness?.status) {
       case 'ready':
         return 'status-ok';

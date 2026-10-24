@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, NgZone, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, NgZone, OnDestroy, OnInit } from '@angular/core'
+import { Observable, Subject, take, takeUntil, throwIfEmpty, timeout } from 'rxjs'
 import { IAuthSession } from '../../models/auth-session.model.interface'
 import { ISkillGuidancePreview, ISkillInventoryEntry, ISkillSelectionInventory, ISkillSelectionState, MAX_SKILL_GUIDANCE_PREVIEW_BYTES } from '../../models/skills.model.interface'
 import { AuthSessionService } from '../../services/auth-session.service'
@@ -14,7 +15,7 @@ const SKILL_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
   styleUrls: ['./skills.component.scss'],
   standalone: false,
 })
-export class SkillsComponent implements OnInit {
+export class SkillsComponent implements OnInit, OnDestroy {
   inventory?: ISkillSelectionInventory
   session?: IAuthSession
   loading = false
@@ -33,6 +34,8 @@ export class SkillsComponent implements OnInit {
   private readonly verifiedGuidancePreviewHashes = new Map<string, string>()
   private readonly verifiedGuidancePreviewCatalogFingerprints = new Map<string, string>()
   private readonly guidancePreviewRequestIds = new Map<string, number>()
+  private readonly destroyedSignal = new Subject<void>()
+  private destroyed = false
 
   constructor(
     private skillsService: SkillsService,
@@ -42,8 +45,27 @@ export class SkillsComponent implements OnInit {
 
   ngOnInit(): void { this.refresh() }
 
+  ngOnDestroy(): void {
+    this.destroyed = true
+    this.destroyedSignal.next()
+    this.destroyedSignal.complete()
+    this.clearGuidancePreviews()
+    this.pendingSkillIds.clear()
+    this.session = undefined
+    this.loading = false
+    this.sessionLoading = false
+  }
+
+  private observeOnce<T>(request: Observable<T>): Observable<T> {
+    return request.pipe(
+      timeout(10000), take(1),
+      throwIfEmpty(() => new Error('Skills response was empty')),
+      takeUntil(this.destroyedSignal),
+    )
+  }
+
   refresh(preserveSelectionErrorFor?: string, selectionView: 'overview' | 'inventory' = 'overview'): void {
-    if (this.loading || this.sessionLoading || this.pendingSkillIds.size > 0) return
+    if (this.destroyed || this.loading || this.sessionLoading || this.pendingSkillIds.size > 0) return
     const recoveringFromUnavailable = this.unavailable
     this.approvalAccessDenied = false
     this.approvalAccessMessage = ''
@@ -51,7 +73,7 @@ export class SkillsComponent implements OnInit {
     this.loading = true
     this.unavailable = false
     this.clearGuidancePreviews()
-    this.skillsService.inventory().subscribe({
+    this.observeOnce(this.skillsService.inventory()).subscribe({
       next: (inventory) => {
         this.inventory = inventory
         this.selectionRequiresRefreshIds.clear()
@@ -88,7 +110,7 @@ export class SkillsComponent implements OnInit {
   }
 
   get canApprove(): boolean {
-    return !this.approvalAccessDenied && this.session?.authenticated === true && this.session.permissions.canApprove === true
+    return !this.destroyed && !this.approvalAccessDenied && this.session?.authenticated === true && this.session.permissions.canApprove === true
   }
 
   get accessMessage(): string {
@@ -158,7 +180,7 @@ export class SkillsComponent implements OnInit {
     this.guidancePreviewRequestIds.set(skill.id, requestId)
     this.guidancePreviewLoadingIds.add(skill.id)
     delete this.guidancePreviewErrors[skill.id]
-    this.skillsService.guidancePreview(skill.id).subscribe({
+    this.observeOnce(this.skillsService.guidancePreview(skill.id)).subscribe({
       next: (preview) => {
         void this.acceptGuidancePreview(preview, skill.id, requestId)
       },
@@ -194,7 +216,7 @@ export class SkillsComponent implements OnInit {
     const selectionRequest = enabled
       ? this.skillsService.setEnabled(skill.id, true, reviewedGuidanceSHA256, reviewedCatalogFingerprint)
       : this.skillsService.setEnabled(skill.id, false)
-    selectionRequest.subscribe({
+    this.observeOnce(selectionRequest).subscribe({
       next: (state) => {
         if (!isSkillSelectionState(state)) {
           this.pendingSkillIds.delete(skill.id)
@@ -226,7 +248,7 @@ export class SkillsComponent implements OnInit {
 
         // Older servers return only the selection flags. Read the inventory
         // once so the row never keeps audit metadata from the previous choice.
-        this.skillsService.inventory().subscribe({
+        this.observeOnce(this.skillsService.inventory()).subscribe({
           next: (inventory) => {
             const currentInventory = this.inventory
             const updatedRow = currentInventory?.skills.find((current) => current.id === skill.id)
@@ -320,7 +342,7 @@ export class SkillsComponent implements OnInit {
     this.session = undefined
     this.sessionUnavailable = false
     this.sessionLoading = true
-    this.authSessionService.session().subscribe({
+    this.observeOnce(this.authSessionService.session()).subscribe({
       next: (session) => {
         this.session = session
         this.sessionLoading = false
@@ -463,7 +485,7 @@ export class SkillsComponent implements OnInit {
   }
 
   private focusAfterRender(target: () => HTMLElement | null): void {
-    const focus = () => target()?.focus()
+    const focus = () => { if (!this.destroyed) target()?.focus() }
     const schedule = () => {
       if (typeof globalThis.requestAnimationFrame === 'function') globalThis.requestAnimationFrame(() => focus())
       else globalThis.setTimeout(focus, 0)

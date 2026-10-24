@@ -22,7 +22,7 @@ export class OnboardingComponent {
     {
       title: 'Welcome',
       description:
-        'HAI is your local-first Personal AI Operating System. Your data stays on your machine.',
+        'HAI is local-first. Enabled external providers and connectors may receive your data.',
     },
     {
       title: 'Remember',
@@ -32,7 +32,7 @@ export class OnboardingComponent {
     {
       title: 'Approve',
       description:
-        'Nothing with real side effects runs without your approval. You are always in control.',
+        'Actions follow your configured permissions and approval policy.',
     },
     {
       title: 'Stay safe',

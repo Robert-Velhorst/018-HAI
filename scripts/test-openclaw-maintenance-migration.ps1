@@ -31,19 +31,32 @@ function Invoke-HaiTestPowerShell {
     param(
         [Parameter(Mandatory = $true)][string]$Executable,
         [Parameter(Mandatory = $true)][string]$ScriptPath,
-        [Parameter(Mandatory = $true)][string]$Arguments
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Arguments,
+        [ValidateRange(1, 120)][int]$TimeoutSeconds = 60
     )
 
     $runId = [Guid]::NewGuid().ToString('N')
     $stdoutPath = Join-Path $temporaryRoot ("child-$runId.stdout")
     $stderrPath = Join-Path $temporaryRoot ("child-$runId.stderr")
     $argumentLine = '-NoProfile -ExecutionPolicy Bypass -File "{0}" {1}' -f $ScriptPath.Replace('"', '""'), $Arguments
-    $process = Start-Process -FilePath $Executable -ArgumentList $argumentLine -WindowStyle Hidden -Wait -PassThru `
+    $process = Start-Process -FilePath $Executable -ArgumentList $argumentLine -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
-    $output = @()
-    if (Test-Path -LiteralPath $stdoutPath -PathType Leaf) { $output += [IO.File]::ReadAllText($stdoutPath) }
-    if (Test-Path -LiteralPath $stderrPath -PathType Leaf) { $output += [IO.File]::ReadAllText($stderrPath) }
-    return [pscustomobject]@{ ExitCode = $process.ExitCode; Output = $output -join "`n" }
+    try {
+        # Retain the process handle so Windows PowerShell 5.1 keeps its exit code.
+        $null = $process.Handle
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            # Only terminate the exact fixture child created above, never a name/PID search.
+            if (-not $process.HasExited) { $process.Kill() }
+            if (-not $process.WaitForExit(5000)) { throw 'The timed-out migration fixture child could not be stopped.' }
+            throw "A migration test child process exceeded its $TimeoutSeconds-second deadline."
+        }
+        $output = @()
+        if (Test-Path -LiteralPath $stdoutPath -PathType Leaf) { $output += [IO.File]::ReadAllText($stdoutPath) }
+        if (Test-Path -LiteralPath $stderrPath -PathType Leaf) { $output += [IO.File]::ReadAllText($stderrPath) }
+        return [pscustomobject]@{ ExitCode = $process.ExitCode; Output = $output -join "`n" }
+    } finally {
+        $process.Dispose()
+    }
 }
 
 function New-HaiFixture {
@@ -248,10 +261,10 @@ try {
         $null = Wait-Job -Job $jobs -Timeout 45
         Assert-HaiTest (@($jobs | Where-Object { $_.State -ne 'Completed' }).Count -eq 0) 'Concurrent startup migrations did not both finish within the bounded test window.'
         $workerOutput = @(Receive-Job -Job $jobs 2>&1 | ForEach-Object { [string]$_ }) -join "`n"
-        Assert-HaiTest (-not $workerOutput.Contains($generatedToken)) 'Concurrent migration output exposed a maintenance token.'
         $concurrentContent = [IO.File]::ReadAllText($concurrentPath)
         $concurrentToken = Get-HaiFixtureValue -Content $concurrentContent -Name 'HAI_OPENCLAW_MAINTENANCE_TOKEN'
         Assert-HaiTest ($concurrentToken -match '\A[a-f0-9]{64}\z') 'Concurrent migrations did not leave one complete valid token.'
+        Assert-HaiTest (-not $workerOutput.Contains($concurrentToken)) 'Concurrent migration output exposed its maintenance token.'
         Assert-HaiTest (@(Get-ChildItem -LiteralPath $temporaryRoot -Filter '.hai-maintenance-*' -File).Count -eq 0) 'Concurrent migrations left a temporary config or backup file behind.'
     } finally {
         if ($ownsTestMutex) { $testMutex.ReleaseMutex() }

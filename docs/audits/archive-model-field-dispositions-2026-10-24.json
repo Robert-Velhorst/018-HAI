@@ -1,0 +1,457 @@
+{
+  "archivedSourceExecuted": false,
+  "deletionEligible": false,
+  "limitation": "AST field comparison, not database migration or API compatibility acceptance",
+  "main": "3b5afa697ebb0e72b01d59e3a04648a04317cd45",
+  "rows": [
+    {
+      "addedFields": [],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 11,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/ambient.go",
+      "reference": "b7bc57b3e13b",
+      "retainedFields": 11,
+      "type": "AmbientNeed"
+    },
+    {
+      "addedFields": [
+        "OwnerIdentity",
+        "ResolutionNote"
+      ],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 23,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/ambient.go",
+      "reference": "b7bc57b3e13b",
+      "retainedFields": 23,
+      "type": "AmbientOpportunity"
+    },
+    {
+      "addedFields": [
+        "OwnerIdentity",
+        "Advanced",
+        "Filtered",
+        "Skipped",
+        "DeduplicatedBytes"
+      ],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [
+        "Executed",
+        "RawBytesAvoided"
+      ],
+      "missingImportCount": 0,
+      "oldFieldCount": 17,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/ambient.go",
+      "reference": "b7bc57b3e13b",
+      "retainedFields": 15,
+      "type": "AmbientScan"
+    },
+    {
+      "addedFields": [
+        "OwnerIdentity",
+        "SyncTarget",
+        "DefaultProjectKey"
+      ],
+      "changedFields": [
+        {
+          "currentJSON": "cursor,omitempty",
+          "field": "Cursor",
+          "oldJSON": "cursor,omitempty",
+          "tagChanged": true,
+          "typeChanged": false
+        }
+      ],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 16,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/connected_source.go",
+      "reference": "54a511eada62",
+      "retainedFields": 16,
+      "type": "ConnectedSource"
+    },
+    {
+      "addedFields": [],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 5,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/connected_source.go",
+      "reference": "54a511eada62",
+      "retainedFields": 5,
+      "type": "SourceAuditLog"
+    },
+    {
+      "addedFields": [
+        "AdapterStatus",
+        "StatusReason"
+      ],
+      "changedFields": [
+        {
+          "currentJSON": "enabled",
+          "field": "Enabled",
+          "oldJSON": "enabled",
+          "tagChanged": true,
+          "typeChanged": false
+        }
+      ],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 10,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/connected_source.go",
+      "reference": "54a511eada62",
+      "retainedFields": 10,
+      "type": "SourceConnector"
+    },
+    {
+      "addedFields": [],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 21,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/connected_source.go",
+      "reference": "54a511eada62",
+      "retainedFields": 21,
+      "type": "SourceExtraction"
+    },
+    {
+      "addedFields": [
+        "Content"
+      ],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 12,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/connected_source.go",
+      "reference": "54a511eada62",
+      "retainedFields": 12,
+      "type": "SourceRawItem"
+    },
+    {
+      "addedFields": [
+        "OwnerIdentity",
+        "IdempotencyKeyHash",
+        "RequestHash",
+        "DurableJobID",
+        "ItemsFailed",
+        "ProgressPhase",
+        "ProgressPages",
+        "ProgressRecords",
+        "ProgressMessage"
+      ],
+      "changedFields": [
+        {
+          "currentJSON": "cursorBefore,omitempty",
+          "field": "CursorBefore",
+          "oldJSON": "cursorBefore,omitempty",
+          "tagChanged": true,
+          "typeChanged": false
+        },
+        {
+          "currentJSON": "cursorAfter,omitempty",
+          "field": "CursorAfter",
+          "oldJSON": "cursorAfter,omitempty",
+          "tagChanged": true,
+          "typeChanged": false
+        }
+      ],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 14,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/connected_source.go",
+      "reference": "54a511eada62",
+      "retainedFields": 14,
+      "type": "SourceSyncJob"
+    },
+    {
+      "addedFields": [
+        "OwnerIdentity",
+        "SourceExtractionID"
+      ],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 14,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/context_memory.go",
+      "reference": "acd59756c9cb",
+      "retainedFields": 14,
+      "type": "ContextMemory"
+    },
+    {
+      "addedFields": [
+        "OwnerIdentity"
+      ],
+      "changedFields": [
+        {
+          "currentJSON": "platform",
+          "field": "Platform",
+          "oldJSON": "platform",
+          "tagChanged": true,
+          "typeChanged": false
+        },
+        {
+          "currentJSON": "externalId",
+          "field": "ExternalID",
+          "oldJSON": "externalId",
+          "tagChanged": true,
+          "typeChanged": false
+        }
+      ],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 16,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/memory_engine.go",
+      "reference": "f65c0ec7a716",
+      "retainedFields": 16,
+      "type": "AIConversationArchive"
+    },
+    {
+      "addedFields": [
+        "OwnerIdentity"
+      ],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 16,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/memory_engine.go",
+      "reference": "f65c0ec7a716",
+      "retainedFields": 16,
+      "type": "AIMemoryInsight"
+    },
+    {
+      "addedFields": [
+        "WhyItMatters",
+        "MandateID",
+        "SuccessCriteria",
+        "StopConditions",
+        "Dependencies",
+        "ResourceLimits",
+        "TargetAt",
+        "ReviewCadenceDays"
+      ],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 23,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/pursuit.go",
+      "reference": "3529f26bccba",
+      "retainedFields": 23,
+      "type": "Pursuit"
+    },
+    {
+      "addedFields": [
+        "IdempotencyKey"
+      ],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 9,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/pursuit.go",
+      "reference": "3529f26bccba",
+      "retainedFields": 9,
+      "type": "PursuitActivity"
+    },
+    {
+      "addedFields": [],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 9,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/pursuit.go",
+      "reference": "3529f26bccba",
+      "retainedFields": 9,
+      "type": "PursuitLink"
+    },
+    {
+      "addedFields": [],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 5,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/verification.go",
+      "reference": "cade0dc0ad16",
+      "retainedFields": 5,
+      "type": "VerificationAuditLog"
+    },
+    {
+      "addedFields": [],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 11,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/verification.go",
+      "reference": "cade0dc0ad16",
+      "retainedFields": 11,
+      "type": "VerificationClaim"
+    },
+    {
+      "addedFields": [],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 15,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/verification.go",
+      "reference": "cade0dc0ad16",
+      "retainedFields": 15,
+      "type": "VerificationEvidence"
+    },
+    {
+      "addedFields": [
+        "OwnerIdentity"
+      ],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 13,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/verification.go",
+      "reference": "cade0dc0ad16",
+      "retainedFields": 13,
+      "type": "VerificationRun"
+    },
+    {
+      "addedFields": [
+        "DueAt",
+        "ReminderAt"
+      ],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 8,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/workflow.go",
+      "reference": "3022e50cebf2",
+      "retainedFields": 8,
+      "type": "WorkflowChecklistItem"
+    },
+    {
+      "addedFields": [],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 11,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/workflow.go",
+      "reference": "3022e50cebf2",
+      "retainedFields": 11,
+      "type": "WorkflowEvent"
+    },
+    {
+      "addedFields": [
+        "OwnerIdentity",
+        "SuccessCriteria",
+        "AutomationID",
+        "MandateID",
+        "CoordinationPlanID",
+        "CoordinationPlanRevision",
+        "CoordinationPlanDigest",
+        "CoordinationPlanNodeID",
+        "CoordinationDraftPlanID",
+        "CoordinationDraftRevision",
+        "CoordinationDraftDigest",
+        "CoordinationDraftNodeID",
+        "ApprovalStatus",
+        "SourceID",
+        "SourceRevision",
+        "RetryCount",
+        "MaxRetries",
+        "NextRunAt",
+        "LastRunAt",
+        "WorkerClaimID",
+        "WorkerLeaseUntil",
+        "CompletedAt",
+        "VerificationStatus",
+        "RecoveryStatus",
+        "RecoveryNote",
+        "LastTaskPlanID",
+        "LastWorkerError"
+      ],
+      "changedFields": [],
+      "currentStructExists": true,
+      "missingFields": [],
+      "missingImportCount": 0,
+      "oldFieldCount": 21,
+      "oldFieldOrderPreserved": true,
+      "path": "backend/internal/models/workflow.go",
+      "reference": "3022e50cebf2",
+      "retainedFields": 21,
+      "type": "WorkflowItem"
+    }
+  ],
+  "sourceVariants": 7,
+  "normalization": "Go AST type formatting and unquoted field tags; no archived code execution",
+  "remainingChecks": "Alias identity, type checking, migrations, handlers, comments and live data compatibility are separate gates",
+  "counts": {
+    "historicalStructs": 22,
+    "archivedFields": 300,
+    "retainedFieldNames": 298,
+    "addedFieldsWithinHistoricalStructs": 65,
+    "changedTypes": 0,
+    "changedTags": 6
+  },
+  "fieldReplacementReview": [
+    {
+      "type": "AmbientScan",
+      "archivedField": "Executed",
+      "currentField": "Advanced",
+      "disposition": "Follow-up triggers/resolutions plus completed workflow runs; narrower wording avoids implying all advancement is verified execution",
+      "legacyDatabaseBackfillVerified": false
+    },
+    {
+      "type": "AmbientScan",
+      "archivedField": "RawBytesAvoided",
+      "currentField": "DeduplicatedBytes",
+      "disposition": "Duplicate candidate text byte estimate; current formula also includes evidence manifest, not measured disk or network bandwidth savings",
+      "legacyDatabaseBackfillVerified": false
+    }
+  ],
+  "productBuildRun": false,
+  "productTestsRun": false,
+  "parserUtilityBuilt": true,
+  "parserUtilityCacheCleaned": true,
+  "publicationVerified": false,
+  "wholeFileIntegrationVerified": false,
+  "sourceDeletionEligible": false
+}
+

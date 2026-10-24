@@ -40,10 +40,11 @@ import (
 //   - Complete-or-fail pagination. Cards are read in descending Mongo-ID pages;
 //     comments are read separately from the board action endpoint, never nested
 //     on a large card request. Incomplete pages cannot produce a new cursor.
-//   - Reconciled full scan. Trello has no supported board-card change cursor
-//     for this adapter, so every sync reads the complete paginated board and
-//     comment history. The card cursor limits emitted active-card updates but
-//     does not reduce provider reads; closed cards are reconciled every scan.
+//   - Reconciled snapshots. Initial and non-quiet syncs read the complete
+//     paginated board and comment history. Subsequent syncs can skip that scan
+//     when a bounded action observation reports no card-affecting activity.
+//     The card cursor limits emitted active-card updates during full scans;
+//     closed/missing cards are reconciled only when a full scan takes place.
 //   - State reconciliation. Closed cards and cards missing from the configured
 //     board are emitted as lightweight tombstones even when their activity
 //     timestamp did not advance. The source service applies them only to
@@ -276,6 +277,7 @@ func fetchTrelloSourceSnapshot(ctx context.Context, source *models.ConnectedSour
 	if err != nil {
 		return nil, "", fmt.Errorf("verify trello board identity: %w", err)
 	}
+	reconciledActivityTime := cursorTime
 	if hasCursor && !cursorTime.IsZero() && (!reconcileExistingSnapshot || len(existingItems) > 0) {
 		quiet, nextCursor, err := trelloQuietBoardCursor(ctx, client, boardID, source.Cursor, cursorTime)
 		if err != nil {
@@ -283,6 +285,13 @@ func fetchTrelloSourceSnapshot(ctx context.Context, source *models.ConnectedSour
 		}
 		if quiet {
 			return []ImportItem{}, nextCursor, nil
+		}
+		if nextCursor != "" {
+			observed, _, valid, parseErr := parseTrelloCursor(nextCursor)
+			if parseErr != nil || !valid || observed.Before(cursorTime) {
+				return nil, "", errors.New("Trello activity cursor is invalid")
+			}
+			reconciledActivityTime = observed
 		}
 	}
 
@@ -333,7 +342,7 @@ func fetchTrelloSourceSnapshot(ctx context.Context, source *models.ConnectedSour
 	// compare each card's stable content hash as well, because a board can change
 	// while its ID-paginated pages are being read. This catches activity older
 	// than a cursor advanced by a later page without re-indexing unchanged cards.
-	latest := cursorTime
+	latest := reconciledActivityTime
 	items := make([]ImportItem, 0, len(cards))
 	for _, card := range cards {
 		activity, ok := parseTrelloTime(card.DateLastActivity)
@@ -397,8 +406,10 @@ func fetchTrelloSourceSnapshot(ctx context.Context, source *models.ConnectedSour
 }
 
 // trelloQuietBoardCursor avoids fetching every card and comment on scheduled
-// runs with no card-level activity. Any card-affecting, unknown, saturated, or
-// malformed action page falls back to the complete bounded reconciliation.
+// runs with no new relevant activity. New board metadata also needs a complete
+// bounded reconciliation because the board name is part of every card's context.
+// A cursor returned with quiet=false is proposed only; commit it after that
+// reconciliation succeeds. Unknown, saturated or malformed pages propose none.
 // A non-array response is a failed observation, not an empty activity page.
 func trelloQuietBoardCursor(ctx context.Context, client *trelloAPIClient, boardID, currentCursor string, cursorTime time.Time) (bool, string, error) {
 	query := url.Values{
@@ -439,7 +450,7 @@ func trelloQuietBoardCursor(ctx context.Context, client *trelloAPIClient, boardI
 	if err != nil {
 		return false, "", fmt.Errorf("encode quiet board cursor: %w", err)
 	}
-	return true, nextCursor, nil
+	return false, nextCursor, nil
 }
 
 type trelloAPIClient struct {
@@ -1556,10 +1567,10 @@ func parseTrelloActivityTime(value string) (time.Time, bool) {
 }
 
 func encodeTrelloCursor(activity time.Time, _ map[string]struct{}) (string, error) {
-	// A timestamp-only cursor is lossless for incremental processing because the
-	// full board is fetched each time: replay every card at the high-water time,
-	// then rely on stable external-ID upserts to avoid duplicate source records.
-	// Its size is independent of the number of cards sharing that timestamp.
+	// During full reconciliation, replay cards at the high-water time and rely
+	// on stable external-ID upserts to avoid duplicate records. Quiet activity
+	// observations may skip reconciliation; this cursor is not proof of a full
+	// snapshot. Its size is independent of cards sharing the timestamp.
 	cursor := trelloCursorV2Prefix
 	if !activity.IsZero() {
 		cursor += activity.UTC().Format(time.RFC3339Nano)

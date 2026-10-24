@@ -1,10 +1,10 @@
-import { ChangeDetectionStrategy, Component, Inject, OnInit, QueryList, ViewChildren } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit, QueryList, ViewChildren } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { NzModalService } from 'ng-zorro-antd/modal';
-import { forkJoin } from 'rxjs';
-import { timeout } from 'rxjs/operators';
+import { forkJoin, Subject } from 'rxjs';
+import { takeUntil, timeout } from 'rxjs/operators';
 import {
   ICompletionPlan,
 	IApprovedReviewReconciliationResult,
@@ -62,7 +62,10 @@ interface UncertainCommand {
     styleUrls: ['./task-blueprint.component.scss'],
     standalone: false
 })
-export class TaskBlueprintComponent implements OnInit {
+export class TaskBlueprintComponent implements OnInit, OnDestroy {
+	private readonly destroyed$ = new Subject<void>();
+  private destroyed = false;
+  private focusTimer?: number;
 	readonly moduleId = 'task-blueprint';
 	@ViewChildren(HaiProgressiveSectionComponent) private progressiveSections!: QueryList<HaiProgressiveSectionComponent>;
 	private readonly taskOperationRetryConfirmation = 'RETRY UNCERTAIN OPERATION';
@@ -198,7 +201,8 @@ export class TaskBlueprintComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.route.queryParamMap.subscribe((params) => {
+    if (this.destroyed) return;
+    this.route.queryParamMap.pipe(takeUntil(this.destroyed$)).subscribe((params) => {
       const pursuitId = params.has('pursuitId')
         ? params.get('pursuitId') || ''
         : this.planForm.value.pursuitId;
@@ -216,6 +220,24 @@ export class TaskBlueprintComponent implements OnInit {
     });
     this.loadLogs();
     this.loadReviewQueue();
+  }
+
+  ngOnDestroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    // End UI observation, not an assertion that a dispatched backend action stopped.
+    this.destroyed$.next();
+    this.destroyed$.complete();
+    if (this.focusTimer !== undefined) window.clearTimeout(this.focusTimer);
+    this.focusTimer = undefined;
+    this.logsRequestId++;
+    this.reviewQueueRequestId++;
+    this.loading = this.running = this.cycling = false;
+    this.historyLoading = this.reviewQueueLoading = false;
+    this.typedProposalLoading = this.crewProposalLoading = false;
+    this.retryCheckLoading = this.retryConfirmationOpen = false;
+    this.reconcilingReviews = this.recoveryConfirmationOpen = false;
+    this.resolvingReviewId = this.reviewConfirmationId = '';
   }
 
   createPlan(): void {
@@ -236,7 +258,7 @@ export class TaskBlueprintComponent implements OnInit {
     const blockedByClarification = this.plan?.riskAssessment?.actionResolution === 'clarify'
       || this.plan?.riskAssessment?.actionResolution === 'block';
     return Boolean(
-      this.plan
+      !this.destroyed && this.plan
       && hasPermittedStep
       && !blockedByClarification
       && !(this.plan.riskAssessment?.missingRequiredAgents || []).length
@@ -425,7 +447,7 @@ export class TaskBlueprintComponent implements OnInit {
 
   canRetryUncertainCommand(): boolean {
     const uncertain = this.uncertainCommand;
-    return Boolean(uncertain && !this.historyLoading && !this.logsUnavailable
+    return Boolean(!this.destroyed && uncertain && !this.historyLoading && !this.logsUnavailable
       && !this.executionSafetyPlan(uncertain.request) && !this.logs.some((plan) =>
       this.matchesUncertainRequest(plan, uncertain.request) && this.executionRetryBlocked(plan)
     ));
@@ -450,11 +472,11 @@ export class TaskBlueprintComponent implements OnInit {
 
   requestTypedProposal(): void {
     const request = this.singleLine(this.planForm.value.request);
-    if (!request || this.typedProposalLoading) {
+    if (this.destroyed || !request || this.typedProposalLoading) {
       return;
     }
     this.typedProposalLoading = true;
-    this.pydanticAIService.propose(request, this.criteria()).pipe(timeout(this.operationTimeoutMs)).subscribe({
+    this.pydanticAIService.propose(request, this.criteria()).pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$)).subscribe({
       next: (response) => {
         this.typedProposalLoading = false;
         this.typedProposal = response;
@@ -490,13 +512,13 @@ export class TaskBlueprintComponent implements OnInit {
 
   requestCrewProposal(): void {
     const request = this.singleLine(this.planForm.value.request);
-    if (!request || this.crewProposalLoading) {
+    if (this.destroyed || !request || this.crewProposalLoading) {
       return;
     }
     this.crewProposalLoading = true;
     this.crewAIService
       .propose(request, this.criteria())
-      .pipe(timeout(this.operationTimeoutMs))
+      .pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$))
       .subscribe({
         next: (response) => {
           this.crewProposalLoading = false;
@@ -537,7 +559,7 @@ export class TaskBlueprintComponent implements OnInit {
   }
 
   submitChat(intent: ChatIntent, confirmedRetry?: IAssistantCommandRequest): void {
-    if (this.commandInFlight) {
+    if (this.destroyed || this.commandInFlight) {
       return;
     }
     const safetyPlan = this.executionSafetyPlan(confirmedRetry || this.composerRequest());
@@ -624,7 +646,7 @@ export class TaskBlueprintComponent implements OnInit {
     }
 
     const timeoutMs = intent === 'plan' ? this.operationTimeoutMs : this.executionTimeoutMs;
-    this.assistantCommandService.command(request).pipe(timeout(timeoutMs)).subscribe({
+    this.assistantCommandService.command(request).pipe(timeout(timeoutMs), takeUntil(this.destroyed$)).subscribe({
       next: (command) => {
 		if (intent !== 'plan') this.uncertainCommand = undefined;
         this.lastCommand = command;
@@ -670,9 +692,10 @@ export class TaskBlueprintComponent implements OnInit {
   }
 
   loadLogs(): void {
+    if (this.destroyed) return;
     const requestId = ++this.logsRequestId;
     this.historyLoading = true;
-    this.taskPlanService.logs().pipe(timeout(this.loadTimeoutMs)).subscribe({
+    this.taskPlanService.logs().pipe(timeout(this.loadTimeoutMs), takeUntil(this.destroyed$)).subscribe({
       next: (logs) => {
         if (requestId !== this.logsRequestId) return;
         this.historyLoading = false;
@@ -694,9 +717,10 @@ export class TaskBlueprintComponent implements OnInit {
   }
 
   loadReviewQueue(): void {
+    if (this.destroyed) return;
     const requestId = ++this.reviewQueueRequestId;
     this.reviewQueueLoading = true;
-    this.taskPlanService.reviewQueue().pipe(timeout(this.loadTimeoutMs)).subscribe({
+    this.taskPlanService.reviewQueue().pipe(timeout(this.loadTimeoutMs), takeUntil(this.destroyed$)).subscribe({
       next: (items) => {
         if (requestId !== this.reviewQueueRequestId) return;
         if (!Array.isArray(items)) {
@@ -717,6 +741,7 @@ export class TaskBlueprintComponent implements OnInit {
   }
 
 	refreshHistoryBeforeUncertainRetry(): void {
+		if (this.destroyed) return;
 		const uncertain = this.uncertainCommand;
 		if (!uncertain || this.retryCheckLoading || this.retryConfirmationOpen || this.commandInFlight) return;
 		this.retryCheckLoading = true;
@@ -727,7 +752,7 @@ export class TaskBlueprintComponent implements OnInit {
 		forkJoin({
 			logs: this.taskPlanService.logs().pipe(timeout(this.loadTimeoutMs)),
 			reviewQueue: this.taskPlanService.reviewQueue().pipe(timeout(this.loadTimeoutMs)),
-		}).subscribe({
+		}).pipe(takeUntil(this.destroyed$)).subscribe({
 			next: ({ logs, reviewQueue }) => {
 				if (logsRequestId !== this.logsRequestId || queueRequestId !== this.reviewQueueRequestId) {
           if (logsRequestId === this.logsRequestId) {
@@ -764,6 +789,7 @@ export class TaskBlueprintComponent implements OnInit {
 					nzOkText: 'Create separate attempt',
 					nzCancelText: 'Keep paused',
 					nzOnOk: () => {
+						if (this.destroyed) return;
 						this.retryConfirmationOpen = false;
 						this.submitChat(uncertain.intent, uncertain.request);
 					},
@@ -801,6 +827,7 @@ export class TaskBlueprintComponent implements OnInit {
 				nzOkText: 'Create new attempt',
 				nzCancelText: 'Keep in review',
 				nzOnOk: () => {
+					if (this.destroyed) return;
 					this.reviewConfirmationId = '';
 					this.performReviewResolution(
 						item,
@@ -830,7 +857,7 @@ export class TaskBlueprintComponent implements OnInit {
 		note: string,
 		confirmation?: string,
 	): void {
-		if (this.resolvingReviewId) return;
+		if (this.destroyed || this.resolvingReviewId) return;
     if (approved && !this.canApproveReview(item)) return;
     this.resolvingReviewId = item.id;
     this.taskPlanService
@@ -839,7 +866,7 @@ export class TaskBlueprintComponent implements OnInit {
 			note,
 			confirmation,
       })
-      .pipe(timeout(this.executionTimeoutMs))
+      .pipe(timeout(this.executionTimeoutMs), takeUntil(this.destroyed$))
       .subscribe({
         next: (result) => {
           this.resolvingReviewId = '';
@@ -1103,7 +1130,7 @@ export class TaskBlueprintComponent implements OnInit {
 	}
 
 	applyApprovedReviewRecovery(): void {
-		if (this.recoveryConfirmationOpen) return;
+		if (this.destroyed || this.recoveryConfirmationOpen) return;
 		if (!this.canApplyApprovedReviewRecovery()) {
 			this.notification.warning('Preview required', 'Refresh the recovery preview and review its eligible items before applying it.');
 			return;
@@ -1115,6 +1142,7 @@ export class TaskBlueprintComponent implements OnInit {
 			nzOkText: 'Apply recovery',
 			nzCancelText: 'Keep preview only',
 			nzOnOk: () => {
+				if (this.destroyed) return;
 				this.recoveryConfirmationOpen = false;
 				this.runApprovedReviewReconciliation(true);
 			},
@@ -1124,7 +1152,7 @@ export class TaskBlueprintComponent implements OnInit {
 
 	canApplyApprovedReviewRecovery(): boolean {
 		return Boolean(
-			!this.reconcilingReviews && !this.recoveryConfirmationOpen &&
+			!this.destroyed && !this.reconcilingReviews && !this.recoveryConfirmationOpen &&
 			this.reconciliation?.dryRun === true &&
 			this.reconciliation.eligible > 0 &&
 			Date.now() - this.reconciliationPreviewAt < 5 * 60 * 1000
@@ -1132,7 +1160,7 @@ export class TaskBlueprintComponent implements OnInit {
 	}
 
 	private runApprovedReviewReconciliation(apply: boolean): void {
-		if (this.reconcilingReviews) return;
+		if (this.destroyed || this.reconcilingReviews) return;
 		if (apply && !this.canApplyApprovedReviewRecovery()) return;
 		this.reconciliation = undefined;
 		this.reconciliationPreviewAt = 0;
@@ -1142,7 +1170,7 @@ export class TaskBlueprintComponent implements OnInit {
 			confirmation: apply ? 'RECONCILE APPROVED TASKS' : undefined,
 			olderThanMinutes: 30,
 			limit: 50,
-		}).pipe(timeout(this.operationTimeoutMs)).subscribe({
+		}).pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$)).subscribe({
 			next: (result) => {
 				this.reconcilingReviews = false;
 				if (!result || result.dryRun !== !apply || typeof result.eligible !== 'number' || !Array.isArray(result.items)) {
@@ -1252,7 +1280,7 @@ export class TaskBlueprintComponent implements OnInit {
 
 	canResolveReview(item: IReviewQueueItem): boolean {
 		return Boolean(
-			!this.reviewQueueUnavailable &&
+			!this.destroyed && !this.reviewQueueUnavailable &&
 			!this.reviewQueueLoading &&
 			!this.resolvingReviewId &&
 			!this.reviewConfirmationId &&
@@ -1309,13 +1337,19 @@ export class TaskBlueprintComponent implements OnInit {
    * wrong call is worse than none.
    */
   mcpToolCallResult(call: IMcpToolCallTrace): IChatGPTLogsContextItem | undefined {
-    if (call.status !== 'completed') {
+    if (!call || call.status !== 'completed') {
       return undefined;
     }
     const calls = this.plan?.executionResult?.mcpToolCalls || [];
     const items = this.plan?.contextPlan?.chatgptLogsContext || [];
+    if (!Array.isArray(calls) || !Array.isArray(items)
+      || calls.filter((candidate) => candidate === call).length !== 1
+      || calls.filter((candidate) => candidate?.status === 'completed').length !== items.length) {
+      return undefined;
+    }
     let position = -1;
     for (const candidate of calls) {
+      if (!candidate || typeof candidate.status !== 'string') return undefined;
       if (candidate.status === 'completed') {
         position += 1;
       }
@@ -1324,7 +1358,7 @@ export class TaskBlueprintComponent implements OnInit {
       }
     }
     const item = position >= 0 ? items[position] : undefined;
-    return item && item.tool === call.tool ? item : undefined;
+    return item && item.tool === call.tool && typeof item.content === 'string' ? item : undefined;
   }
 
   mcpToolCallResultText(call: IMcpToolCallTrace): string {
@@ -1407,6 +1441,7 @@ export class TaskBlueprintComponent implements OnInit {
   }
 
   copyToolRuntimeEvidence(tool?: IToolExecutionResult): void {
+    if (this.destroyed) return;
     const uri = this.toolRuntimeEvidenceUri(tool);
     if (!uri) {
       this.notification.warning('Runtime evidence unavailable', 'This run did not return a launch-event id.');
@@ -1417,8 +1452,8 @@ export class TaskBlueprintComponent implements OnInit {
       return;
     }
     navigator.clipboard.writeText(uri).then(
-      () => this.notification.success('Runtime evidence copied', uri),
-      () => this.notification.info('Copy manually', uri)
+      () => { if (!this.destroyed) this.notification.success('Runtime evidence copied', uri); },
+      () => { if (!this.destroyed) this.notification.info('Copy manually', uri); }
     );
   }
 
@@ -1547,6 +1582,7 @@ export class TaskBlueprintComponent implements OnInit {
   }
 
   showInspector(mode: TaskBlueprintComponent['inspectorMode']): void {
+    if (this.destroyed) return;
     this.inspectorMode = mode;
     if (mode === 'plan' && this.canReviewCurrentPlan()) {
       this.reviewedPlanFingerprint = this.plannedRequestFingerprint;
@@ -1610,8 +1646,11 @@ export class TaskBlueprintComponent implements OnInit {
   }
 
   private focusProgressiveSection(sectionId: string): void {
-    if (typeof document === 'undefined') return;
-    window.setTimeout(() => {
+    if (this.destroyed || typeof document === 'undefined') return;
+    if (this.focusTimer !== undefined) window.clearTimeout(this.focusTimer);
+    this.focusTimer = window.setTimeout(() => {
+      this.focusTimer = undefined;
+      if (this.destroyed) return;
       const section = document.getElementById(sectionId);
       if (!section?.isConnected) return;
       section.scrollIntoView({ block: 'nearest' });

@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param()
 $ErrorActionPreference = 'Stop'
+& (Join-Path $PSScriptRoot 'test-openclaw-maintenance-pure.ps1')
 Import-Module ScheduledTasks -ErrorAction Stop
 $root = Split-Path -Parent $PSScriptRoot
 $support = Join-Path $root 'installer/windows/Hai-OpenClawMaintenance.ps1'

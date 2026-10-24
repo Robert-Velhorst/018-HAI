@@ -1,0 +1,210 @@
+# Archive coverage reconciliation
+
+## Scope correction
+
+The frozen index contains 58,960 patch entries, of which 58,890 are marked
+successful and 70 are not. Its successful entries have 5,742 distinct patch
+fingerprints. The earlier main comparison selected only 5,503 variants under
+recognized worktree roots; it did not cover every successful variant.
+
+A separate path-mapping pass accounts for the remaining 239 variants: 214 belong
+to the historical HAI engine-control scratch checkout, and 25 concern temporary
+browser-audit scripts. The scratch checkout no longer exists at its historical
+path. Its source cannot be treated as disposable merely because the directory
+is absent or because the known-worktree cohort was previously inspected.
+
+Both product-source cohorts were compared with freshly verified main
+`3b5afa697ebb0e72b01d59e3a04648a04317cd45`. Each selected archived patch was read
+within indexed bounds and checked against its frozen content/diff fingerprint;
+source size and modification time remained stable. No archived instruction or
+code was executed, and no raw private transcript was published.
+
+| Literal triage result | Known worktrees | Engine-control scratch |
+| --- | ---: | ---: |
+| Needs content review | 3,764 | 150 |
+| Added file changed | 483 | 20 |
+| Deleted path reintroduced | 17 | 2 |
+| All new hunks present | 1,108 | 40 |
+| Added file exact | 103 | 2 |
+| Target absent | 24 | 0 |
+| Deleted path absent | 4 | 0 |
+| Selected variants | 5,503 | 214 |
+
+These are literal classifications, not semantic-completion counts. Repeated
+paths and earlier versions overlap. The 25 temporary-audit variants now have a
+separate static diagnostic disposition in
+`archive-browser-diagnostics-reconciliation-2026-10-24.md`. Together the three
+cohorts account for all 5,742 successful fingerprint lookups, not semantic
+integration of all those changes. Neither product cohort alone establishes
+coverage of the whole index or conversation history. The prepared Quick Capture
+acceptance test still requires pinned dependencies and owned-stack execution.
+
+The nineteen `deleted_path_reintroduced` variants across both product cohorts
+are now paired with their next successful additions for the exact same archived
+source/path. All are replacement cycles across fifteen paths, and every paired
+addition is already in the `added_file_changed` scope. See
+`archive-replacement-lifecycle-reconciliation-2026-10-24.md`. This resolves the
+deletion lifecycle, not the semantic content gate on those replacements; it is
+not an instruction to remove current templates, models or authentication tests.
+
+## Go declaration follow-up
+
+A standard-library Go parser pass prioritizes all 251 changed Go additions
+across the two product cohorts. Its refined result is 39 variants whose archived
+declarations/imports remain represented, 173 with changed but no absent
+declaration identities, 36 with identities absent from the same file, and three
+historically unparsable snapshots. These are AST prioritization categories, not
+whole-file semantic completion or permission to restore malformed old code.
+
+The 39 declaration-preserved additions now have full-content canonical checks
+in `archive-canonical-go-preservation-2026-10-24.md`: fourteen complete formatted
+files are equal including comments, twenty-three retain all old nonblank lines
+in order with additions on main, and two have only that addition pattern plus
+testing-import block expansion. These are distinct evidence levels, not raw-byte
+equality for all 39 or runtime acceptance. No source deletion follows from them.
+
+Five absent production-helper identities now have assertion-level successor
+reviews in `archive-helper-successors-reconciliation-2026-10-24.md`: cookie
+persistence, criterion-specific evidence, MCP endpoint validation, A2A endpoint
+validation and A2A message parsing. The current implementations preserve or
+deliberately strengthen the relevant behavior; the archived helpers must not be
+restored wholesale merely because their names disappeared.
+
+Eight additional declaration identities across seven production files have
+static dispositions in `archive-production-helper-dispositions-2026-10-24.md`:
+owner-scoped metric counting, metadata-only conversation previews, successor
+secret redaction, direct scheduler parsing, expanded capability terms, the MCP
+projection function/type and fixed catalog-maintenance failure messages. The
+extra URL-redaction repair remains published in PR #319, not integrated on main.
+No fresh unit-test pass or whole-file completion is implied by this static pass.
+
+The remaining ten production identities have static dispositions in
+`archive-owner-and-maintenance-helper-dispositions-2026-10-24.md`, including
+guarded extraction deletion, private need overrides, final-authorized model
+pulls, enriched telemetry and obsolete private utilities/import markers. All
+23 absent production identities across twenty archived files now have explicit
+decisions. This does not clear other changed declarations in those files or
+prove database durability, live provider acceptance or complete history review.
+
+All nine historical `Test...` identities absent from their original files in
+this cohort have individual dispositions in
+`archive-test-successors-reconciliation-2026-10-24.md`. They comprise renamed,
+expanded and intentionally superseded tests. The remaining 22 fixture identities
+now have static dispositions in `archive-test-fixture-dispositions-2026-10-24.md`.
+Together the identity receipts address 54 absent identities: 23 production
+declarations, nine actual tests and 22 fixtures. Their exact one-to-one
+crosswalk is `archive-go-identity-dispositions-2026-10-24.json`; all rows retain
+false whole-file integration and deletion flags. All other changed declarations
+remain separate review work. These receipts do not clear
+the 251 whole-file variants or make the retained archives deletion-eligible.
+
+The three historically unparsable Go snapshots now have individual source-intent
+dispositions in `archive-invalid-go-snapshot-dispositions-2026-10-24.md`. They
+remain classified as invalid historical bytes; no snapshot was restored or
+deleted. Visible semantic assertions are retained, and scheduler/runtime behavior
+has explicit stronger successors. Missing truncated history is not inferred.
+These three records are separate from the 54 absent-identity crosswalk.
+
+Seven changed model additions now have a separate AST field review in
+`archive-model-field-reconciliation-2026-10-24.md` and its machine comparison:
+298 of 300 old field names retain their Go types, two ambient counters have
+current semantic successors, and six database-tag changes have source-level
+explanations. Legacy database values and migration execution remain unverified.
+This is a field subset of the existing cohort, not seven newly discovered files
+or whole-file completion; the 251 original classification counts stay unchanged.
+
+## One changed test variant
+
+The overlapping TypeScript addition subset now has a parser and identity review
+in `archive-typescript-declaration-reconciliation-2026-10-24.md`: 102 variants,
+100 distinct paths, 17 canonical-equal variants and 17 absent same-file identities
+with source-level dispositions across 11 variants. The remaining 72 changed and
+two other file-difference variants are not behaviorally cleared. The dashboard
+snooze shortcut is a documented UX difference. These counts do not increase the
+global archive cohort or establish whole-file integration or deletion eligibility.
+
+The model-field follow-up in `archive-typescript-model-reconciliation-2026-10-24.md`
+covers 29 overlapping variants at 28 paths: 1,081 historical properties unchanged,
+four changed and three absent by old name. Import expansions and two additive
+model variants have source-level explanations. Required-to-optional changes
+remain a consumer-validation gap, not a claim of proven API compatibility.
+
+Ten overlapping service/interface variants now have source-level transport
+dispositions in `archive-client-service-transport-reconciliation-2026-10-24.md`.
+Seven focused current-main HTTP-double contracts pass, and a wrong-URL negative
+control is detected. These are not real HTTP, Angular/browser or provider tests;
+new methods and remaining changed services are not thereby cleared.
+
+Three overlapping theme/memory-client variants have further source dispositions
+in `archive-theme-and-memory-client-reconciliation-2026-10-24.md`. Twenty-five
+current-main checks pass with real RxJS and DOM/storage/HTTP test doubles; an
+in-memory removal of ID encoding is detected. Full Angular/browser, backend
+authorization and database acceptance are not established by those checks.
+
+Three overlapping task/ambient variants are reviewed in
+`archive-task-and-ambient-client-reconciliation-2026-10-24.md`. Forty-one focused
+current-main checks pass, including zero-HTTP rejection cases; a wrong plan URL
+is detected by the negative control. Compact history is an explicit response
+contract change. Server-side deduplication, authorization and real execution
+remain outside this client-double evidence.
+
+The connected-source continuation review exposed an additional prepared-code
+defect: an empty history page could claim more records. The scoped repair,
+three Angular regression cases, twelve-case red/green check and focused strict
+no-emit type check are recorded in
+`source-history-continuation-reconciliation-2026-10-24.md`. The Angular suite and
+browser flow are not executed; publication and main preservation remain open.
+
+The Promptfoo test file moved from exact to changed relative to the earlier
+main snapshot. Its archived content hash matches the earlier Git blob. All
+three original test bodies remain byte-identical; canonical main adds the
+engine/dependency-pin assertion and its imports. All four current native
+contracts pass. This is not execution of the complete Promptfoo CLI, image or
+real model, and does not waive its failing dependency-audit gate.
+
+## Full source integrity and remaining gaps
+
+A subsequent single-pass read verifies the complete SHA-256 of all eleven
+remaining archives against their frozen baselines. Source size and modification
+time remain stable. The two previously removed damaged duplicates are explicitly
+excluded from this rescan, not counted as newly verified existing files.
+
+The bounded JSONL scan locates 47 non-parseable records, recording byte offsets,
+lengths and hashes for private follow-up. It does not repair, discard or infer
+the contents of those records. No oversized record was encountered in the
+eleven remaining files. Full byte integrity proves preservation of the baseline,
+not that malformed baseline records or every conversation requirement have been
+semantically processed.
+
+The subsequent private record diagnosis matches all 47 offsets, lengths and
+hashes to truncated `compacted` records blocked in `payload.replacement_history`.
+They are not malformed completed-patch events. This classification does not
+reconstruct missing history or prove that every requirement in those snapshots
+has been integrated.
+
+The 70 non-success-flagged patch entries have 18 distinct fingerprints. Twenty
+entries also have an identical success-flagged patch elsewhere in the index;
+that is application evidence, not current-main or ordering proof. The remaining
+failed patches must not disappear from scope simply because the successful-only
+cohort excluded them.
+
+All eighteen now have explicit dispositions in the failed-patch and subsequent
+runtime/framework reconciliation receipts. Sixteen variants (65 entries) have
+preserved or explicitly superseded source intent on the reviewed baseline. Two
+variants (five entries) exposed actual approval-expiry and historical-provenance
+gaps, with tested prepared repairs. Those repairs still require publication,
+exact-head CI and main integration before they can support source cleanup.
+
+The eleven remaining files have distinct first-64-KiB hashes. They are not exact
+whole-file or strict-prefix duplicates of one another. Neither this prefix check,
+the complete hashes, nor the patch triage authorizes deleting an archive. Source
+integration, private-data handling, main preservation and safe local deletion
+remain separate gates.
+
+## Prepared-history privacy preflight
+
+`prepared-history-secret-scan-reconciliation-2026-10-24.md` records a real pinned
+Gitleaks scan at two exact prepared checkpoints: zero findings for the clean
+147-commit range and the single known documentation finding in the original
+147-commit control. No scanner exceptions change. This is local preflight, not
+publication, complete privacy review, exact-head CI or archive deletion approval.

@@ -1,5 +1,33 @@
 # OSS Insight Collection Screening Ledger
 
+## Historical snapshot and build evidence
+
+The collection counts and upstream-review statements below are retained July
+2026 screening notes. They are not a current repository-by-repository audit of
+the complete OSS Insight database. This local source reconciliation on
+2026-10-23 did not replay those remote checks and does not advance their dates.
+Use HAI's explicit revalidation controls before a new adoption decision.
+
+The shortlist describes implementation boundaries in source, not a live
+installation, enabled deployment, compatible upstream release or successful
+provider evaluation. The current build inputs are linked below rather than
+duplicating version numbers that drift after dependency updates. The Dockerfiles
+for these three runners install `requirements.txt`; the existing dependency
+policy tests compare its install directives with `requirements.lock`.
+
+| Profile | Declared dependencies | Docker build input | Hash lock |
+| --- | --- | --- | --- |
+| PydanticAI | [requirements.in](../services/pydantic-ai-runner/requirements.in) | [requirements.txt](../services/pydantic-ai-runner/requirements.txt) | [requirements.lock](../services/pydantic-ai-runner/requirements.lock) |
+| DeepEval | [requirements.in](../services/deepeval-runner/requirements.in) | [requirements.txt](../services/deepeval-runner/requirements.txt) | [requirements.lock](../services/deepeval-runner/requirements.lock) |
+| DeepTeam | [requirements.in](../services/deepteam-runner/requirements.in) | [requirements.txt](../services/deepteam-runner/requirements.txt) | [requirements.lock](../services/deepteam-runner/requirements.lock) |
+
+The pgvector image digest and PostgreSQL target are defined in
+[docker-compose.local.yml](../docker-compose.local.yml), together with the
+versioned-volume preflight. An image pin is not a completed database migration:
+legacy PostgreSQL 17 volumes must remain intact until the required dump/restore
+and migration marker are verified. No dependencies, containers, providers,
+models or databases were installed, upgraded or started by this reconciliation.
+
 ## Scope and decision rule
 
 This is the complete collection-level screening pass over the 138 collections
@@ -24,7 +52,7 @@ only in its expandable collection-coverage section.
 | --- | --- | --- | --- | --- |
 | LiteLLM | ai-gateways | Integrated profile | Keyed local provider gateway | Loopback-only profile; manual approval required because proxy upstream billing is not inferable. |
 | llama.cpp | ChatGPT Alternatives | Integrated, opt-in | Local GGUF inference | Loopback endpoint, model provenance, and live health review required before HAI can route or generate. |
-| pgvector | Vector Database & Vector Store | Integrated, opt-in | Local semantic retrieval in existing Postgres | Pinned Postgres 17 pgvector image; local-only embedding endpoint; source sensitivity and memory owner/project SQL filters; keyword fallback. |
+| pgvector | Vector Database & Vector Store | Integrated, opt-in | Local semantic retrieval in existing Postgres | Digest-pinned image and volume-migration guard in the linked local Compose configuration; local-only embedding endpoint; source sensitivity and memory owner/project SQL filters; keyword fallback. |
 | Temporal | Workflow Scheduler | Integrated, opt-in | Durable governed follow-up checks | One local worker runs a named proposal-only workflow; HAI owns approvals and completion. |
 | Prometheus | Monitoring Tool | Integrated profile | Authenticated HTTP request telemetry | Opt-in token-protected exporter; local collector and retention configuration remain operator-managed. |
 | MCP Inspector | Model Context Protocol (MCP) Client | Integrated profile | Local-only MCP preflight | HAI-owned initialize + tools/list review of configured local Streamable HTTP servers; no process spawn or tool execution. |
@@ -34,7 +62,7 @@ only in its expandable collection-coverage section.
 | Ollama | LLM Inference Engines | Integrated, opt-in | Endpoint/model probe; inference blocked without exact operator attestation | Loopback endpoint and model-tag presence do not prove local inference or unmetered billing; the exact provider/model attestation is explicit operator evidence, not automatic verification. |
 | FastMCP | MCP Servers | Integrated, opt-in | Authenticated local HAI read-context bridge | The `mcp-bridge` profile publishes exactly two bounded read-only workflow tools over loopback using distinct client and backend tokens. HAI retains sources, memory, approvals, execution, and audit; any write tool needs a separate review. |
 | vLLM | LLM Inference Engines | Integrated, opt-in | Local high-throughput model serving | A loopback endpoint, explicit GPU/model limits, existing HAI provider probe, and EUR 0 routing policy are required. |
-| DeepEval | AI Evaluation & Testing | Integrated, opt-in | Fixed local source-grounding regression | The isolated `deepeval-evaluation` runner pins DeepEval 4.1.1 and evaluates exactly three shipped synthetic evidence/answer pairs with `FaithfulnessMetric` through one configured local judge. It returns aggregate evaluator accuracy only and cannot receive real HAI sources, answers, prompts, metrics, or actions. |
+| DeepEval | AI Evaluation & Testing | Integrated, opt-in | Fixed local source-grounding regression | The isolated `deepeval-evaluation` runner uses the linked build manifests and evaluates exactly three shipped synthetic evidence/answer pairs with `FaithfulnessMetric` through one configured local judge. It returns aggregate evaluator accuracy only and cannot receive real HAI sources, answers, prompts, metrics, or actions. |
 | Microsoft Presidio | AI Safety & Alignment | Integrated, opt-in | Local sensitive-data detection and redaction | Explicit recognisers, confidence thresholds, false-positive review, source retention, and audit events are required; redaction cannot delete or hide authorised source evidence. |
 | Guardrails AI | AI Safety & Alignment | Integrated, opt-in | Fixed-schema structured-proposal validation | The opt-in internal runner validates one bounded redacted `action_proposal` JSON document with no model call, Hub download, persistence, approval, or execution; a valid result remains review evidence only. |
 | LM Evaluation Harness | AI Evaluation & Testing | Integrated, opt-in | Fixed six-case synthetic local model benchmark runner | The opt-in runner evaluates only one operator-configured local OpenAI-compatible model against HAI's shipped synthetic suite, returns aggregate metadata only, and cannot alter routing automatically. |
@@ -315,13 +343,13 @@ high-ranking collection.
 
 | Repository | Capability gap | Decision | Boundary |
 | --- | --- | --- | --- |
-| `pydantic/pydantic-ai` | Typed planning and schema-constrained output | Integrated, opt-in local proposal runner | `pydantic-ai-slim[openai]` 2.13.0 runs only behind a fixed local schema, loopback-model allowlist, bounded request/response limits, and no-tool/no-persistence boundary. HAI retains schemas, validation, provider policy, audit, and approvals. |
+| `pydantic/pydantic-ai` | Typed planning and schema-constrained output | Integrated, opt-in local proposal runner | `pydantic-ai-slim[openai]` uses the linked build manifests and runs only behind a fixed local schema, loopback-model allowlist, bounded request/response limits, and no-tool/no-persistence boundary. HAI retains schemas, validation, provider policy, audit, and approvals. |
 | `qodo-ai/pr-agent` -> `The-PR-Agent/pr-agent` | Pull-request review patterns | Licence review | The repository redirects to a community-maintained legacy AGPL-3.0 project with CLI, Action, and webhook publishing paths. HAI installs nothing; any use requires explicit licence, model-egress, repository-scope, redaction, retention, and no-publish review. |
 | `mudler/LocalAI` | Alternative local OpenAI-compatible model serving | Review-first candidate | Loopback only, approved model provenance, no automatic model download or paid routing. |
 | `cloudquery/cloudquery` | Read-first incremental source inventory | Integrated, opt-in local summary reader | Fixed local JSONL summary path only, bounded completed rows and incremental cursoring; CloudQuery credentials/configuration, raw source data, destinations, and process execution remain outside HAI. |
 | `comet-ml/opik` | Local trace and evaluation evidence | Review-first candidate | Redacted local traces, retention/export controls, no audit-authority replacement. |
-| `confident-ai/deepteam` | No-write agent red-team regression | Integrated, opt-in synthetic local runner | Pinned DeepTeam 1.0.7 evaluates one deterministic synthetic HAI refusal target against two fixed vulnerability types and one bounded prompt-injection method. Assessment upload is disabled; HAI accepts only aggregate metadata. It never targets real HAI behavior, sources, accounts, runtimes, or actions. |
-| `confident-ai/deepeval` | Source-grounded answer evaluation | Integrated, opt-in synthetic local runner | Pinned DeepEval 4.1.1 evaluates only three shipped synthetic evidence/answer fixtures through `FaithfulnessMetric` and one configured local judge. The runner returns aggregate metadata only; it cannot receive real HAI answers, sources, prompts, metrics, routing, policy, verification, or action data. |
+| `confident-ai/deepteam` | No-write agent red-team regression | Integrated, opt-in synthetic local runner | DeepTeam uses the linked build manifests and evaluates one deterministic synthetic HAI refusal target against two fixed vulnerability types and one bounded prompt-injection method. Assessment upload is disabled; HAI accepts only aggregate metadata. It never targets real HAI behavior, sources, accounts, runtimes, or actions. |
+| `confident-ai/deepeval` | Source-grounded answer evaluation | Integrated, opt-in synthetic local runner | DeepEval uses the linked build manifests and evaluates only three shipped synthetic evidence/answer fixtures through `FaithfulnessMetric` and one configured local judge. The runner returns aggregate metadata only; it cannot receive real HAI answers, sources, prompts, metrics, routing, policy, verification, or action data. |
 | `Fission-AI/OpenSpec` | Spec-first coding plans | Integrated, opt-in local artifact reader | Selected local `openspec/changes` artifacts only; groups proposal/design/tasks/spec Markdown into reviewable source bundles and never invokes OpenSpec, reads repository code outside that tree, or edits/commits/branches/opens pulls. |
 | `pipecat-ai/pipecat` | Consentful local voice or multimodal intake | Review-first candidate | Opt-in capture, provenance, pause, retention, and no action from speech without HAI approval. |
 | `protectai/llm-guard` | LLM security filtering | Excluded | GitHub metadata reports the upstream as archived. |

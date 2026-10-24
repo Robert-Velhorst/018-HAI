@@ -706,4 +706,33 @@ describe('HAIOSComponent progressive control room', () => {
     expect(fixture.nativeElement.querySelector('.overview-updated time')).toBeNull()
     expect(fixture.nativeElement.querySelector('.overview-updated')?.textContent).toContain('Unavailable')
   })
+
+  for (const [sectionId, limit] of [['product-stack', 5], ['operating-planes', 8], ['real-world-readiness', 8]] as const) {
+    it(`renders only the selected page of ${sectionId} records`, async () => {
+      const data = overview()
+      const names = Array.from({ length: limit + 2 }, (_, index) => `Record ${index}`)
+      if (sectionId === 'product-stack') data.referenceStacks = names.map(name => ({ name, status: 'reviewed', use: 'Reference only' }))
+      if (sectionId === 'operating-planes') data.planes = names.map(name => ({ name, status: 'ready', description: 'Area', links: [] }))
+      if (sectionId === 'real-world-readiness') data.readinessGates = names.map(name => ({ name, status: 'pending', evidence: 'Not accepted', next: 'Review' }))
+      service.overview.and.returnValue(of(data))
+      const preferences = TestBed.inject(ModuleViewPreferencesService)
+      preferences.setMode('hai-os', 'advanced')
+      preferences.setSection('hai-os', sectionId, true)
+      createFixture()
+      await fixture.whenStable()
+      fixture.detectChanges()
+      const panel = fixture.nativeElement.querySelector(`hai-progressive-section[sectionid="${sectionId}"]`) as HTMLElement
+      expect(panel.querySelectorAll('tbody tr').length).toBe(limit)
+      expect(panel.querySelector('tbody')!.textContent).not.toContain(names[limit])
+      const next = panel.querySelector('.ant-pagination-next button, .ant-pagination-next a') as HTMLElement
+      expect(next).not.toBeNull()
+      next.click()
+      await fixture.whenStable()
+      fixture.detectChanges()
+      expect(panel.querySelectorAll('tbody tr').length).toBe(2)
+      expect(panel.querySelector('tbody')!.textContent).toContain(names[limit])
+      expect(panel.querySelector('tbody')!.textContent).not.toContain('Record 0')
+      expect(service.overview).toHaveBeenCalledTimes(1)
+    })
+  }
 })

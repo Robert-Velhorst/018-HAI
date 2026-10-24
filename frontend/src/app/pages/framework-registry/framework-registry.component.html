@@ -194,22 +194,23 @@
 
               <fieldset class="capability-grid" [disabled]="selectionBusy || !canRequestSelection">
                 <legend>Context and capability needs</legend>
-                <label nz-checkbox name="needsMemory" [(ngModel)]="selectionDraft.needsMemory">
+                <label nz-checkbox name="needsMemory" [(ngModel)]="selectionDraft.needsMemory" [nzDisabled]="selectionBusy || !canRequestSelection">
                   Memory
                 </label>
-                <label nz-checkbox name="needsTools" [(ngModel)]="selectionDraft.needsTools">
+                <label nz-checkbox name="needsTools" [(ngModel)]="selectionDraft.needsTools" [nzDisabled]="selectionBusy || !canRequestSelection">
                   Tools
                 </label>
-                <label nz-checkbox name="needsDocuments" [(ngModel)]="selectionDraft.needsDocuments">
+                <label nz-checkbox name="needsDocuments" [(ngModel)]="selectionDraft.needsDocuments" [nzDisabled]="selectionBusy || !canRequestSelection">
                   Documents
                 </label>
-                <label nz-checkbox name="needsWebAccess" [(ngModel)]="selectionDraft.needsWebAccess">
+                <label nz-checkbox name="needsWebAccess" [(ngModel)]="selectionDraft.needsWebAccess" [nzDisabled]="selectionBusy || !canRequestSelection">
                   Web access
                 </label>
                 <label
                   nz-checkbox
                   name="needsLocalExecution"
                   [(ngModel)]="selectionDraft.needsLocalExecution"
+                  [nzDisabled]="selectionBusy || !canRequestSelection"
                 >
                   Local execution
                 </label>
@@ -217,6 +218,7 @@
                   nz-checkbox
                   name="executeRequested"
                   [(ngModel)]="selectionDraft.executeRequested"
+                  [nzDisabled]="selectionBusy || !canRequestSelection"
                 >
                   Execution requested
                 </label>
@@ -618,13 +620,14 @@
       title="Selection history"
       [summary]="selections.length + ' owner-scoped recorded decisions'"
     >
-      <div class="empty-state" role="alert" *ngIf="loadErrors['selections']; else selectionHistoryContent">
+      <div class="empty-state" role="alert" *ngIf="loadErrors['selections']">
         <span nz-icon nzType="warning" aria-hidden="true"></span>
         <strong>Selection history unavailable</strong>
         <p>{{ loadErrors['selections'] }}</p>
+        <p *ngIf="selections.length">Previously loaded records remain visible. The latest history check failed.</p>
         <button nz-button type="button" (click)="refresh()">Retry</button>
       </div>
-      <ng-template #selectionHistoryContent>
+      <ng-container *ngIf="selections.length || !loadErrors['selections']">
         <nz-table
           #selectionTable
           [nzData]="selections"
@@ -669,7 +672,7 @@
             <p>Request a framework recommendation to create the first auditable selection.</p>
           </div>
         </ng-template>
-      </ng-template>
+      </ng-container>
     </hai-progressive-section>
 
     <hai-progressive-section

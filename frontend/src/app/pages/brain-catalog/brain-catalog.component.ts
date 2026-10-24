@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, OnInit, ViewChild } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, ViewChild } from '@angular/core'
+import { defer, EMPTY, finalize, Observable, Subject, take, takeUntil, throwIfEmpty, timeout } from 'rxjs'
 import { Router } from '@angular/router'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { HaiProgressiveSectionComponent } from '../../control-room/progressive-section.component'
@@ -73,7 +74,7 @@ interface BoundedCatalogStatus {
     styleUrls: ['./brain-catalog.component.scss'],
     standalone: false
 })
-export class BrainCatalogComponent implements OnInit {
+export class BrainCatalogComponent implements OnInit, OnDestroy {
   @ViewChild('catalogProfileSection') catalogProfileSection?: HaiProgressiveSectionComponent
 
   catalog?: IBrainCatalogResponse
@@ -157,6 +158,9 @@ export class BrainCatalogComponent implements OnInit {
   planningFrameworkMigration = false
   frameworkMigrationPlan?: IAgentFrameworkMigrationPlan
   private readonly requestedProfileStatuses = new Set<string>()
+  private readonly destroyed$ = new Subject<void>()
+  private readonly profileChanged$ = new Subject<void>()
+  private destroyed = false
   private collectionHistoryLoaded = false
   private collectionHistoryLoading = false
   private repositoryHistoryLoaded = false
@@ -202,16 +206,40 @@ export class BrainCatalogComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    if (this.destroyed) return
     this.refresh()
     if (this.viewPreferences.get('brain-catalog').openSections['agent-skills']) this.loadSkillInventory()
   }
 
+  ngOnDestroy(): void {
+    this.destroyed = true
+    this.destroyed$.next()
+    this.destroyed$.complete()
+    this.profileChanged$.complete()
+  }
+
+  // Bound client observation only: cancellation does not prove server-side rollback.
+  private observeRequest<T>(request: () => Observable<T>, release: () => void, deadline = 15000, profileScoped = false): Observable<T> {
+    if (this.destroyed) {
+      release()
+      return EMPTY
+    }
+    return defer(request).pipe(
+      timeout(deadline),
+      take(1),
+      throwIfEmpty(() => new Error('Catalog returned no response')),
+      takeUntil(this.destroyed$),
+      takeUntil(profileScoped ? this.profileChanged$ : EMPTY),
+      finalize(release),
+    )
+  }
+
   refresh(): void {
-    if (this.loading) return
+    if (this.destroyed || this.loading) return
     this.loading = true
     this.loadFailed = false
     this.loadErrorMessage = ''
-    this.service.overview().subscribe({
+    this.observeRequest(() => this.service.overview(), () => { this.loading = false }, 15000, false).subscribe({
       next: (catalog) => {
         this.catalog = catalog
         const firstEntry = this.integrated[0] ?? catalog.entries[0]
@@ -243,16 +271,17 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   openCatalogInventory(): void {
+    if (this.destroyed) return
     this.viewPreferences.setMode('brain-catalog', 'advanced')
     this.catalogProfileSection?.setOpen(true)
     this.router.navigate([], { queryParams: { mode: 'advanced' }, queryParamsHandling: 'merge' })
   }
 
   loadSkillInventory(): void {
-    if (this.loadingSkillInventory) return
+    if (this.destroyed || this.loadingSkillInventory) return
     this.loadingSkillInventory = true
     this.skillInventoryUnavailable = false
-    this.service.skillInventory().subscribe({
+    this.observeRequest(() => this.service.skillInventory(), () => { this.loadingSkillInventory = false }, 15000, false).subscribe({
       next: (inventory) => {
         this.skillInventory = inventory
         this.loadingSkillInventory = false
@@ -281,6 +310,8 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   select(entry: IBrainCatalogEntry): void {
+    if (this.destroyed || this.exportingLangfuse || this.exportingOpenLIT || this.planningFrameworkMigration) return
+    this.profileChanged$.next()
     this.selected = entry
     this.requestedProfileStatuses.clear()
     this.upstreamReview = undefined
@@ -340,9 +371,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadRAGFlowStatus(): void {
-    if (this.loadingRAGFlowStatus) return
+    if (this.destroyed || this.loadingRAGFlowStatus) return
     this.loadingRAGFlowStatus = true
-    this.ragflowService.status().subscribe({
+    this.ragflowStatusUnavailable = false
+    this.observeRequest(() => this.ragflowService.status(), () => { this.loadingRAGFlowStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingRAGFlowStatus = false
         this.ragflowStatus = status
@@ -355,9 +387,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadAnythingLLMStatus(): void {
-    if (this.loadingAnythingLLMStatus) return
+    if (this.destroyed || this.loadingAnythingLLMStatus) return
     this.loadingAnythingLLMStatus = true
-    this.anythingLLMService.status().subscribe({
+    this.anythingLLMStatusUnavailable = false
+    this.observeRequest(() => this.anythingLLMService.status(), () => { this.loadingAnythingLLMStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingAnythingLLMStatus = false
         this.anythingLLMStatus = status
@@ -370,9 +403,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadPresidioStatus(): void {
-    if (this.loadingPresidioStatus) return
+    if (this.destroyed || this.loadingPresidioStatus) return
     this.loadingPresidioStatus = true
-    this.presidioService.status().subscribe({
+    this.presidioStatusUnavailable = false
+    this.observeRequest(() => this.presidioService.status(), () => { this.loadingPresidioStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingPresidioStatus = false
         this.presidioStatus = status
@@ -385,9 +419,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadLangfuseStatus(): void {
-    if (this.loadingLangfuseStatus) return
+    if (this.destroyed || this.loadingLangfuseStatus) return
     this.loadingLangfuseStatus = true
-    this.langfuseService.status().subscribe({
+    this.langfuseStatusUnavailable = false
+    this.observeRequest(() => this.langfuseService.status(), () => { this.loadingLangfuseStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingLangfuseStatus = false
         this.langfuseStatus = status
@@ -400,9 +435,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadSerenaStatus(): void {
-    if (this.loadingSerenaStatus) return
+    if (this.destroyed || this.loadingSerenaStatus) return
     this.loadingSerenaStatus = true
-    this.serenaService.status().subscribe({
+    this.serenaStatusUnavailable = false
+    this.observeRequest(() => this.serenaService.status(), () => { this.loadingSerenaStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingSerenaStatus = false
         this.serenaStatus = status
@@ -415,9 +451,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadOpenLITStatus(): void {
-    if (this.loadingOpenLITStatus) return
+    if (this.destroyed || this.loadingOpenLITStatus) return
     this.loadingOpenLITStatus = true
-    this.openLITService.status().subscribe({
+    this.openLITStatusUnavailable = false
+    this.observeRequest(() => this.openLITService.status(), () => { this.loadingOpenLITStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingOpenLITStatus = false
         this.openLITStatus = status
@@ -430,9 +467,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadMLflowStatus(): void {
-    if (this.loadingMLflowStatus) return
+    if (this.destroyed || this.loadingMLflowStatus) return
     this.loadingMLflowStatus = true
-    this.mlflowService.status().subscribe({
+    this.mlflowStatusUnavailable = false
+    this.observeRequest(() => this.mlflowService.status(), () => { this.loadingMLflowStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingMLflowStatus = false
         this.mlflowStatus = status
@@ -445,9 +483,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadMiniSWEStatus(): void {
-    if (this.loadingMiniSWEStatus) return
+    if (this.destroyed || this.loadingMiniSWEStatus) return
     this.loadingMiniSWEStatus = true
-    this.miniSWEService.status().subscribe({
+    this.miniSWEStatusUnavailable = false
+    this.observeRequest(() => this.miniSWEService.status(), () => { this.loadingMiniSWEStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingMiniSWEStatus = false
         this.miniSWEStatus = status
@@ -460,9 +499,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadGitleaksStatus(): void {
-    if (this.loadingGitleaksStatus) return
+    if (this.destroyed || this.loadingGitleaksStatus) return
     this.loadingGitleaksStatus = true
-    this.gitleaksService.status().subscribe({
+    this.gitleaksStatusUnavailable = false
+    this.observeRequest(() => this.gitleaksService.status(), () => { this.loadingGitleaksStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingGitleaksStatus = false
         this.gitleaksStatus = status
@@ -475,9 +515,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadGosecStatus(): void {
-    if (this.loadingGosecStatus) return
+    if (this.destroyed || this.loadingGosecStatus) return
     this.loadingGosecStatus = true
-    this.gosecService.status().subscribe({
+    this.gosecStatusUnavailable = false
+    this.observeRequest(() => this.gosecService.status(), () => { this.loadingGosecStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingGosecStatus = false
         this.gosecStatus = status
@@ -490,9 +531,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadTrivyStatus(): void {
-    if (this.loadingTrivyStatus) return
+    if (this.destroyed || this.loadingTrivyStatus) return
     this.loadingTrivyStatus = true
-    this.trivyService.status().subscribe({
+    this.trivyStatusUnavailable = false
+    this.observeRequest(() => this.trivyService.status(), () => { this.loadingTrivyStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingTrivyStatus = false
         this.trivyStatus = status
@@ -505,9 +547,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadGrypeStatus(): void {
-    if (this.loadingGrypeStatus) return
+    if (this.destroyed || this.loadingGrypeStatus) return
     this.loadingGrypeStatus = true
-    this.grypeService.status().subscribe({
+    this.grypeStatusUnavailable = false
+    this.observeRequest(() => this.grypeService.status(), () => { this.loadingGrypeStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingGrypeStatus = false
         this.grypeStatus = status
@@ -520,9 +563,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadSyftStatus(): void {
-    if (this.loadingSyftStatus) return
+    if (this.destroyed || this.loadingSyftStatus) return
     this.loadingSyftStatus = true
-    this.syftService.status().subscribe({
+    this.syftStatusUnavailable = false
+    this.observeRequest(() => this.syftService.status(), () => { this.loadingSyftStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingSyftStatus = false
         this.syftStatus = status
@@ -535,9 +579,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadBrowserVerificationStatus(): void {
-    if (this.loadingBrowserVerificationStatus) return
+    if (this.destroyed || this.loadingBrowserVerificationStatus) return
     this.loadingBrowserVerificationStatus = true
-    this.browserVerificationService.status().subscribe({
+    this.browserVerificationStatusUnavailable = false
+    this.observeRequest(() => this.browserVerificationService.status(), () => { this.loadingBrowserVerificationStatus = false }, 6000, true).subscribe({
       next: (status) => {
         this.loadingBrowserVerificationStatus = false
         this.browserVerificationStatus = status
@@ -618,13 +663,22 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   probeLangfuse(): void {
-    if (this.probingLangfuse) return
+    if (this.destroyed || this.probingLangfuse) return
     this.probingLangfuse = true
     this.langfuseProbe = undefined
-    this.langfuseService.probe().subscribe({
+    this.observeRequest(() => this.langfuseService.probe(), () => { this.probingLangfuse = false }, 15000, true).subscribe({
       next: (result) => {
         this.probingLangfuse = false
+        if (!result || typeof result.healthy !== 'boolean' || typeof result.ready !== 'boolean' ||
+            !this.isRecordedTimestamp(result.checkedAt)) {
+          this.notification.error('Langfuse readiness unconfirmed', 'HAI received no valid dated readiness evidence. No trace was exported.')
+          return
+        }
         this.langfuseProbe = result
+        if (!result.healthy || !result.ready) {
+          this.notification.error('Langfuse not ready', 'The local bridge reported an unhealthy or not-ready endpoint. No trace was exported.')
+          return
+        }
         this.notification.success('Langfuse ready', 'HAI verified the configured local health and readiness endpoints. No trace was exported.')
       },
       error: () => {
@@ -635,29 +689,37 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   exportLangfuseSnapshot(): void {
-    if (this.exportingLangfuse) return
+    if (this.destroyed || this.exportingLangfuse) return
     this.exportingLangfuse = true
     this.langfuseExport = undefined
-    this.langfuseService.exportOperationalSnapshot().subscribe({
+    this.observeRequest(() => this.langfuseService.exportOperationalSnapshot(), () => { this.exportingLangfuse = false }, 30000, false).subscribe({
       next: (result) => {
         this.exportingLangfuse = false
+        if (!this.isExportAcknowledgement(result)) {
+          this.reportUnconfirmedExport()
+          return
+        }
         this.langfuseExport = result
         this.notification.success('Aggregate trace exported', "Langfuse accepted HAI's fixed aggregate operational snapshot. No prompts, sources, or workflow records were exported.")
       },
       error: () => {
         this.exportingLangfuse = false
-        this.notification.error('Trace export unavailable', 'Langfuse did not accept the aggregate operational snapshot. No HAI workflow or policy state changed.')
+        this.reportUnconfirmedExport()
       },
     })
   }
 
   exportOpenLITSnapshot(): void {
-    if (this.exportingOpenLIT) return
+    if (this.destroyed || this.exportingOpenLIT) return
     this.exportingOpenLIT = true
     this.openLITExport = undefined
-    this.openLITService.exportOperationalSnapshot().subscribe({
+    this.observeRequest(() => this.openLITService.exportOperationalSnapshot(), () => { this.exportingOpenLIT = false }, 30000, false).subscribe({
       next: (result) => {
         this.exportingOpenLIT = false
+        if (!this.isExportAcknowledgement(result)) {
+          this.reportUnconfirmedExport()
+          return
+        }
         this.openLITExport = result
         this.notification.success(
           'Aggregate trace exported',
@@ -666,20 +728,34 @@ export class BrainCatalogComponent implements OnInit {
       },
       error: () => {
         this.exportingOpenLIT = false
-        this.notification.error(
-          'Trace export unavailable',
-          'OpenLIT did not accept the aggregate operational snapshot. No HAI workflow or policy state changed.'
-        )
+        this.reportUnconfirmedExport()
       },
     })
   }
 
   openMCPToolboxRuntimeLab(): void {
+    if (this.destroyed) return
     this.router.navigate(['/runtime-lab'])
   }
 
+  private isRecordedTimestamp(value: unknown): value is string {
+    return typeof value === 'string' && value.includes('T') && Number.isFinite(Date.parse(value))
+  }
+
+  private isExportAcknowledgement(value: unknown): value is ILangfuseExportResult {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+    const result = value as Partial<ILangfuseExportResult>
+    return typeof result.traceId === 'string' && /^[a-f0-9]{32}$/i.test(result.traceId) && !/^0+$/.test(result.traceId) &&
+      typeof result.spanId === 'string' && /^[a-f0-9]{16}$/i.test(result.spanId) && !/^0+$/.test(result.spanId) &&
+      this.isRecordedTimestamp(result.exportedAt) && typeof result.scope === 'string' && result.scope.trim().length > 0
+  }
+
+  private reportUnconfirmedExport(): void {
+    this.notification.error('Trace export outcome unconfirmed', 'The aggregate snapshot may have been accepted. Inspect the provider trace records before exporting again.')
+  }
+
   prepareFrameworkMigration(input: string): void {
-    if (this.planningFrameworkMigration) return
+    if (this.destroyed || this.planningFrameworkMigration) return
     let parsed: { workloadId?: unknown; events?: unknown }
     try {
       parsed = JSON.parse(input)
@@ -691,7 +767,9 @@ export class BrainCatalogComponent implements OnInit {
       return
     }
     if (
+      !parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
       typeof parsed.workloadId !== 'string' ||
+      !parsed.workloadId.trim() ||
       !Array.isArray(parsed.events) ||
       parsed.events.length < 1 ||
       parsed.events.length > 100
@@ -704,12 +782,12 @@ export class BrainCatalogComponent implements OnInit {
     }
     this.planningFrameworkMigration = true
     this.frameworkMigrationPlan = undefined
-    this.autoGenCompatibilityService
+    const workloadId = parsed.workloadId
+    this.observeRequest(() => this.autoGenCompatibilityService
       .microsoftAgentFrameworkMigrationPlan(
-        parsed.workloadId,
+        workloadId,
         parsed.events as IAutoGenCompatibilityEvent[]
-      )
-      .subscribe({
+      ), () => { this.planningFrameworkMigration = false }, 30000, false).subscribe({
         next: (plan) => {
           this.planningFrameworkMigration = false
           this.frameworkMigrationPlan = plan
@@ -739,9 +817,9 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   loadAdoptionPlan(): void {
-    if (this.loadingAdoptionPlan || this.adoptionPlan) return
+    if (this.destroyed || this.loadingAdoptionPlan || this.adoptionPlan) return
     this.loadingAdoptionPlan = true
-    this.service.adoptionPlan().subscribe({
+    this.observeRequest(() => this.service.adoptionPlan(), () => { this.loadingAdoptionPlan = false }, 15000, false).subscribe({
       next: (plan) => {
         this.loadingAdoptionPlan = false
         this.adoptionPlan = plan
@@ -754,10 +832,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   revalidate(entry: IBrainCatalogEntry): void {
-    if (this.revalidatingId) return
+    if (this.destroyed || this.revalidatingId) return
     this.revalidatingId = entry.id
     this.upstreamReview = undefined
-    this.service.revalidate(entry.id).subscribe({
+    this.observeRequest(() => this.service.revalidate(entry.id), () => { this.revalidatingId = '' }, 15000, true).subscribe({
       next: (review) => {
         this.revalidatingId = ''
         this.upstreamReview = review
@@ -771,10 +849,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   revalidateOSSInsightCollections(): void {
-    if (this.checkingOSSInsight) return
+    if (this.destroyed || this.checkingOSSInsight) return
     this.checkingOSSInsight = true
     this.ossInsightReview = undefined
-    this.service.revalidateOSSInsightCollections().subscribe({
+    this.observeRequest(() => this.service.revalidateOSSInsightCollections(), () => { this.checkingOSSInsight = false }, 15000, false).subscribe({
       next: (review) => {
         this.checkingOSSInsight = false
         this.ossInsightReview = review
@@ -789,10 +867,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   runDueCatalogRevalidations(): void {
-    if (this.runningCatalogRevalidation) return
+    if (this.destroyed || this.runningCatalogRevalidation) return
     this.runningCatalogRevalidation = true
     this.catalogRevalidation = undefined
-    this.service.runDueRevalidations().subscribe({
+    this.observeRequest(() => this.service.runDueRevalidations(), () => { this.runningCatalogRevalidation = false }, 30000, false).subscribe({
       next: (run) => {
         this.runningCatalogRevalidation = false
         this.catalogRevalidation = run
@@ -825,10 +903,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   private loadCollectionMaintenanceHistory(force = false): void {
-    if (this.collectionHistoryLoading || (this.collectionHistoryLoaded && !force)) return
+    if (this.destroyed || this.collectionHistoryLoading || (this.collectionHistoryLoaded && !force)) return
     this.collectionHistoryLoading = true
     this.collectionMaintenanceHistoryUnavailable = false
-    this.service.collectionRevalidationHistory().subscribe({
+    this.observeRequest(() => this.service.collectionRevalidationHistory(), () => { this.collectionHistoryLoading = false }, 15000, false).subscribe({
       next: (history) => {
         this.collectionHistoryLoading = false
         this.collectionHistoryLoaded = true
@@ -842,10 +920,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   private loadRepositoryDiscoveryMaintenanceHistory(force = false): void {
-    if (this.repositoryHistoryLoading || (this.repositoryHistoryLoaded && !force)) return
+    if (this.destroyed || this.repositoryHistoryLoading || (this.repositoryHistoryLoaded && !force)) return
     this.repositoryHistoryLoading = true
     this.repositoryDiscoveryMaintenanceHistoryUnavailable = false
-    this.service.repositoryDiscoveryRevalidationHistory().subscribe({
+    this.observeRequest(() => this.service.repositoryDiscoveryRevalidationHistory(), () => { this.repositoryHistoryLoading = false }, 15000, false).subscribe({
       next: (history) => {
         this.repositoryHistoryLoading = false
         this.repositoryHistoryLoaded = true
@@ -859,10 +937,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   discoverOSSInsightRepositories(): void {
-    if (this.discoveringOSSInsight) return
+    if (this.destroyed || this.discoveringOSSInsight) return
     this.discoveringOSSInsight = true
     this.ossInsightDiscovery = undefined
-    this.service.discoverOSSInsightRepositories().subscribe({
+    this.observeRequest(() => this.service.discoverOSSInsightRepositories(), () => { this.discoveringOSSInsight = false }, 15000, false).subscribe({
       next: (report) => {
         this.discoveringOSSInsight = false
         this.ossInsightDiscovery = report
@@ -879,10 +957,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   discoverReviewableOSSInsightRepositories(): void {
-    if (this.discoveringOSSInsight) return
+    if (this.destroyed || this.discoveringOSSInsight) return
     this.discoveringOSSInsight = true
     this.ossInsightDiscovery = undefined
-    this.service.discoverReviewableOSSInsightRepositories().subscribe({
+    this.observeRequest(() => this.service.discoverReviewableOSSInsightRepositories(), () => { this.discoveringOSSInsight = false }, 15000, false).subscribe({
       next: (report) => {
         this.discoveringOSSInsight = false
         this.ossInsightDiscovery = report
@@ -899,9 +977,9 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   verifyDiscovery(discovery: IBrainCatalogOSSInsightDiscovery): void {
-    if (this.verifyingDiscoveryRepository) return
+    if (this.destroyed || this.verifyingDiscoveryRepository) return
     this.verifyingDiscoveryRepository = discovery.repository
-    this.service.revalidateOSSInsightDiscovery(discovery.repository, this.ossInsightDiscovery?.scope ?? 'candidate').subscribe({
+    this.observeRequest(() => this.service.revalidateOSSInsightDiscovery(discovery.repository, this.ossInsightDiscovery?.scope ?? 'candidate'), () => { this.verifyingDiscoveryRepository = '' }, 15000, false).subscribe({
       next: (review) => {
         this.verifyingDiscoveryRepository = ''
         this.discoveryReviews = { ...this.discoveryReviews, [discovery.repository]: review }
@@ -915,7 +993,7 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   recommendCapabilities(need: string): void {
-    if (this.recommendingCapabilities) return
+    if (this.destroyed || this.recommendingCapabilities) return
     const normalized = need.trim()
     if (!normalized) {
       this.notification.error('Describe the capability need', 'Use a concrete need such as local model evaluation or read-only browser verification.')
@@ -923,7 +1001,7 @@ export class BrainCatalogComponent implements OnInit {
     }
     this.recommendingCapabilities = true
     this.capabilityRecommendation = undefined
-    this.service.recommendCapabilities(normalized).subscribe({
+    this.observeRequest(() => this.service.recommendCapabilities(normalized), () => { this.recommendingCapabilities = false }, 15000, false).subscribe({
       next: (recommendation) => {
         this.recommendingCapabilities = false
         this.capabilityRecommendation = recommendation
@@ -936,7 +1014,7 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   queueDiscoveryReview(discovery: IBrainCatalogOSSInsightDiscovery): void {
-    if (this.reviewingDiscoveryRepository) return
+    if (this.destroyed || this.reviewingDiscoveryRepository) return
     if (discovery.reviewAllowed === false) {
       this.notification.info(
         'Discovery is not an adapter candidate',
@@ -961,7 +1039,7 @@ export class BrainCatalogComponent implements OnInit {
       return
     }
     this.reviewingDiscoveryRepository = discovery.repository
-    this.pursuitService.create({
+    this.observeRequest(() => this.pursuitService.create({
       title: `Screen ${discovery.repository} for a HAI adapter`,
       description: `Review discovered repository ${discovery.repository} from OSS Insight collection ${discovery.collection}. Source: ${discovery.sourceUrl}. This discovery record does not install, configure, credential, or execute the project.`,
       whyItMatters: discovery.rationale,
@@ -976,7 +1054,7 @@ export class BrainCatalogComponent implements OnInit {
       sourceOfCreation: `ossinsight_discovery:${discovery.repository}`,
       nextRecommendedAction: 'Verify the fixed upstream repository metadata and licence, then define a local-only adapter and no-op validation plan before considering implementation.',
       completionDefinition: 'A human-approved acceptance or rejection record exists. Creating this pursuit must not install, enable, credential, or execute the discovered repository.',
-    }).subscribe({
+    }), () => { this.reviewingDiscoveryRepository = '' }, 30000, false).subscribe({
       next: (pursuit) => {
         this.reviewingDiscoveryRepository = ''
         this.notification.success('Discovery review created', `${discovery.repository} remains unconfigured. HAI created a manual review record.`)
@@ -984,7 +1062,7 @@ export class BrainCatalogComponent implements OnInit {
       },
       error: () => {
         this.reviewingDiscoveryRepository = ''
-        this.notification.error('Could not create discovery review', 'No repository was added to the catalog or activated. Check the local pursuit service and try again.')
+        this.notification.error('Discovery review outcome unconfirmed', 'No repository was activated. A manual review may already exist; inspect pursuits before creating another.')
       },
     })
   }
@@ -1012,10 +1090,10 @@ export class BrainCatalogComponent implements OnInit {
   }
 
   startAdapterReview(entry: IBrainCatalogEntry): void {
-    if (!this.canStartReview(entry) || this.reviewingCandidateId) return
+    if (this.destroyed || !this.canStartReview(entry) || this.reviewingCandidateId) return
     this.reviewingCandidateId = entry.id
     const riskLevel = entry.requiresApproval ? 'high' : 'medium'
-    this.pursuitService.create({
+    this.observeRequest(() => this.pursuitService.create({
       title: `Review ${entry.name} adapter boundary`,
       description: `Review the HAI adapter proposal for ${entry.name}. Upstream: ${entry.upstreamUrl}. Discovery source: ${entry.sourceCatalogUrl}. HAI must not install, enable, or execute ${entry.name} during this review.`,
       whyItMatters: entry.rationale,
@@ -1030,7 +1108,7 @@ export class BrainCatalogComponent implements OnInit {
       sourceOfCreation: `brain_catalog:${entry.id}`,
       nextRecommendedAction: 'Review license, deployment model, workspace and network boundaries, allowed tools, health probe, audit trail, rollback, and the no-op validation path before implementation.',
       completionDefinition: 'A human-approved adapter design and validation plan exists, or the candidate is explicitly rejected. No third-party software is installed or activated by creating this pursuit.',
-    }).subscribe({
+    }), () => { this.reviewingCandidateId = '' }, 30000, false).subscribe({
       next: (pursuit) => {
         this.reviewingCandidateId = ''
         this.notification.success('Adapter review created', `${entry.name} remains disabled. HAI created a review record instead of activating the project.`)
@@ -1038,7 +1116,7 @@ export class BrainCatalogComponent implements OnInit {
       },
       error: () => {
         this.reviewingCandidateId = ''
-        this.notification.error('Could not create adapter review', 'No project was installed, configured, or activated. Try again after checking the local pursuit service.')
+        this.notification.error('Adapter review outcome unconfirmed', 'No project was activated. A manual review may already exist; inspect pursuits before creating another.')
       },
     })
   }

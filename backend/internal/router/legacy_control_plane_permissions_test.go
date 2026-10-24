@@ -194,7 +194,7 @@ func TestLegacyControlPlaneOwnerCanReachAdministrativeHandlers(t *testing.T) {
 		{method: http.MethodPatch, path: "/api/v1/background/mode", body: `{}`},
 		{method: http.MethodGet, path: "/api/v1/system/support-bundle"},
 	} {
-		recorder := performLegacyControlPlaneRequest(engine, test.method, test.path, test.body, "owner")
+		recorder := performLegacyControlPlaneIdentityRequestWithScope(engine, test.method, test.path, test.body, "first-run-admin-uuid", "owner", "configured-owner")
 		if recorder.Code == http.StatusUnauthorized || recorder.Code == http.StatusForbidden {
 			t.Errorf("owner %s %s stopped at auth boundary with %d: %s", test.method, test.path, recorder.Code, recorder.Body.String())
 		}
@@ -228,6 +228,29 @@ func TestGlobalBackgroundPauseRequiresConfiguredInstallationOwner(t *testing.T) 
 	installationOwner := performLegacyControlPlaneIdentityRequest(engine, http.MethodPost, "/api/v1/background/pause", `{}`, "configured-owner", "owner")
 	if installationOwner.Code != http.StatusMultiStatus {
 		t.Fatalf("installation owner pause status = %d, want %d (owner reached pause handler): %s", installationOwner.Code, http.StatusMultiStatus, installationOwner.Body.String())
+	}
+}
+
+func TestGlobalBackgroundMutationsRejectOtherOwnerAccounts(t *testing.T) {
+	engine := newLegacyControlPlanePermissionEngine(t)
+	for _, route := range []struct{ method, path string }{
+		{http.MethodPost, "/pause"},
+		{http.MethodPost, "/resume/approval"},
+		{http.MethodPost, "/resume"},
+		{http.MethodPost, "/resume-approval"},
+		{http.MethodPost, "/resume-approval/review/approve-and-resume"},
+		{http.MethodPost, "/control-approvals"},
+		{http.MethodPost, "/control-approvals/review/decision"},
+		{http.MethodPost, "/mode/approval"},
+		{http.MethodPatch, "/mode"},
+	} {
+		t.Run(route.method+route.path, func(t *testing.T) {
+			response := performLegacyControlPlaneIdentityRequestWithScope(engine,
+				route.method, "/api/v1/background"+route.path, `{}`, "another-owner-uuid", "owner", "")
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("other owner reached global mutation: %d %s", response.Code, response.Body.String())
+			}
+		})
 	}
 }
 

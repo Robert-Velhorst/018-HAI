@@ -1042,6 +1042,37 @@ describe('WorkflowEngineComponent', () => {
       'Confirm that the prior execution has ended and its outcome was checked, and add a source URI.'
     );
   });
+
+  for (const decision of ['retry', 'confirm_completed']) {
+    for (const missing of ['reconciliation', 'evidence']) {
+      it(`refuses interrupted ${decision} when only ${missing} is missing`, () => {
+        const { component, workflowService, notification } = createComponent();
+        component.dataLoaded = true;
+        const interrupted = workflowRecord([]);
+        interrupted.item.currentState = 'blocked';
+        interrupted.item.recoveryStatus = 'needs_review';
+        component.applyWorkflowRecord(interrupted);
+        component.interruptionForm.setValue({
+          decision,
+          note: 'Review the prior execution before allowing another attempt.',
+          evidenceUri: missing === 'evidence' ? '' : 'local://recovery/source',
+          evidenceLabel: 'Recovery evidence',
+          priorExecutionReconciled: missing !== 'reconciliation',
+        });
+        expect(component.interruptionForm.valid).toBeTrue();
+
+        component.resolveInterruptedExecution();
+
+        expect(workflowService.resolveInterruptedExecution).not.toHaveBeenCalled();
+        expect(component.selected).toBe(interrupted);
+        expect(component.saving).toBeFalse();
+        expect(notification.error).toHaveBeenCalledOnceWith(
+          'Reconciliation required',
+          'Confirm that the prior execution has ended and its outcome was checked, and add a source URI.'
+        );
+      });
+    }
+  }
 });
 
 describe('WorkflowEngineComponent progressive disclosure', () => {
@@ -1583,6 +1614,7 @@ describe('WorkflowEngineComponent progressive disclosure', () => {
     fixture = TestBed.createComponent(WorkflowEngineComponent);
     spyOn(fixture.componentInstance, 'refresh');
     const component = fixture.componentInstance;
+    component.overview = validOverview();
     const record = selectedWorkflowWithProposal();
     record.checklist = [{
       id: checklistItemId, workflowId: record.item.id, label: 'Verify source', status: 'open', position: 0,
@@ -1613,6 +1645,13 @@ describe('WorkflowEngineComponent progressive disclosure', () => {
     expect(component.checklistAction).toBeUndefined();
     expect(page.querySelector('.checklist-error')?.getAttribute('role')).toBe('alert');
     expect(page.querySelector('.checklist-error')?.textContent).toContain('Update failed');
+    expect(done.disabled).toBeTrue();
+    expect(component.transitionReviewId).toBe(record.item.id);
+
+    workflowService.get.and.returnValue(of(record));
+    component.reviewTransition();
+    fixture.detectChanges();
+    expect(component.transitionReviewId).toBeUndefined();
     expect(done.disabled).toBeFalse();
 
     const confirmed: IWorkflowRecord = { ...record, checklist: [{ ...record.checklist[0], status: 'done' }] };

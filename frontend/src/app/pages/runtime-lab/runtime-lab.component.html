@@ -85,7 +85,7 @@
       <p class="rl__desc">{{ r.info.description }}</p>
 
       <p *ngIf="latestProbes[r.info.id]?.evidencePersistenceStatus === 'failed'" class="rl__warning" role="alert">
-        Protocol discovery completed, but durable evidence was not saved. Runtime execution remains blocked; retry the probe or inspect the operation ledger.
+        Protocol discovery completed, but durable evidence was not saved. Discovery alone does not authorize runtime execution; retry the probe or inspect the operation ledger.
       </p>
 
       <section *ngIf="r.info.id === 'deepseek-harness'" class="rl__deepseek-policy" aria-labelledby="deepseek-policy-title">
@@ -123,10 +123,6 @@
           {{ c }}
         </nz-tag>
       </div>
-
-      <p *ngIf="latestProbes[r.info.id]?.evidencePersistenceStatus === 'failed'" class="rl__warning" role="alert">
-        Protocol discovery completed, but durable evidence was not saved. Runtime execution remains blocked; retry the probe or inspect the operation ledger.
-      </p>
 
       <div class="rl__setup" *ngIf="r.info.id !== 'deepseek-harness' && r.setupRequirements?.length">
         <div class="rl__label">Setup required</div>

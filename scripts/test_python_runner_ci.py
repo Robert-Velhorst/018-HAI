@@ -18,7 +18,41 @@ def _pip_effective_lines(path: Path) -> tuple[str, ...]:
     )
 
 
+def _pinned_requirement_key(requirement: str) -> tuple[str, tuple[str, ...], str] | None:
+    """Identify the simple exact pins used by runner manifests, not resolve PEP 508."""
+    match = re.match(
+        r"([A-Za-z0-9_.-]+)(?:\[([A-Za-z0-9_., -]*)\])?\s*==\s*([^;\s]+)",
+        requirement.strip(),
+    )
+    if not match:
+        return None
+    def canonical(value: str) -> str:
+        return re.sub(r"[-_.]+", "-", value.strip()).lower()
+
+    extras = tuple(sorted({
+        canonical(extra) for extra in (match.group(2) or "").split(",") if extra.strip()
+    }))
+    return (canonical(match.group(1)), extras, match.group(3).lower())
+
+
 class PythonRunnerCIPolicyTest(unittest.TestCase):
+    def test_pinned_extras_cannot_disappear_from_dependency_policy_checks(self):
+        self.assertEqual(
+            _pinned_requirement_key("pydantic-ai-slim[openai]==2.56.0"),
+            ("pydantic-ai-slim", ("openai",), "2.56.0"),
+        )
+
+    def test_pinned_extra_identity_is_canonical_but_not_optional(self):
+        self.assertEqual(
+            _pinned_requirement_key("Demo_Package[B_extra, a-extra]==1.2.3 ; python_version >= '3.12'"),
+            ("demo-package", ("a-extra", "b-extra"), "1.2.3"),
+        )
+        self.assertNotEqual(
+            _pinned_requirement_key("demo-package[openai]==1.2.3"),
+            _pinned_requirement_key("demo-package==1.2.3"),
+        )
+        self.assertIsNone(_pinned_requirement_key("demo-package>=1.2.3"))
+
     def test_docling_pillow_security_cohort_matches_runtime_and_ci(self):
         service = ROOT / "services/docling-runner"
         source = (service / "requirements.in").read_text(encoding="utf-8")
@@ -112,13 +146,11 @@ class PythonRunnerCIPolicyTest(unittest.TestCase):
                     requirement = requirement.strip()
                     if not requirement or requirement.startswith(("#", "--")):
                         continue
-                    match = re.match(r"([A-Za-z0-9_.-]+)==([^;\s]+)", requirement)
-                    if match:
-                        package = re.sub(r"[-_.]+", "-", match.group(1)).lower()
-                        version = match.group(2).lower()
+                    pin = _pinned_requirement_key(requirement)
+                    if pin:
                         self.assertTrue(
-                            any(line.startswith(f"{package}=={version} ") for line in lines),
-                            f"{package}=={version} is absent from {lock.relative_to(ROOT)}",
+                            any(_pinned_requirement_key(line) == pin for line in lines),
+                            f"{requirement} is absent from {lock.relative_to(ROOT)}",
                         )
 
     def test_docling_lock_uses_official_cpu_index_without_implicit_index_priority(self):
