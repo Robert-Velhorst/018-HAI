@@ -122,3 +122,25 @@ imports need new-source hosted qualification; old-source success is separate.
 
 Official release and image recipe: https://gcc.gnu.org/ and
 https://github.com/docker-library/gcc/blob/master/16/Dockerfile.
+
+## Current crate dependency ports
+
+FastUUID 0.14.0+hai.py315.2 adds explicit source-bound UUID
+1.29.0+hai.md5.1 and Getrandom 0.4.3+hai.refi7.1 ports. UUID's two manifests
+select MD5 0.11.0, preserving its actual MD5-based UUID algorithm. Getrandom's
+two manifests select r-efi 7.1.0 for its original UEFI RNG backend. Cargo's
+explicit path patches select those honestly versioned modified sources, with
+their complete original/result file manifests retained. Every Rust source,
+existing upstream case, target-selection rule and license remains unchanged.
+
+The prior old MD5 graph accounts for five of the six stable gaps; the old
+r-efi contract accounts for the sixth. New-source resolution/build/import and
+the actual complete generated Cargo graph require hosted proof; the older
+44-crate audit is historical evidence. Linux SDK qualification cannot prove
+the UEFI path. Static source review verifies nine referenced UEFI declarations
+or modules unchanged between r-efi 6 and 7, including the entire RNG protocol
+module, BootServices layout and LocateHandle/OpenProtocol signatures. Actual
+UEFI cross-compilation and execution are still unqualified. No backend is
+removed or replaced with an unsupported fallback, and no compiler/version
+guard is bypassed. Existing upstream vector/functional cases are preserved;
+their execution and full image/application acceptance remain required.

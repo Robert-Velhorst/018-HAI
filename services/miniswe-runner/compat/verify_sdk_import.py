@@ -24,7 +24,7 @@ def main():
     sys.path.insert(0, str(args.site_packages))
     expected = {"mini-swe-agent": "2.4.6", "litellm": "1.106.3+hai.py315.2",
                 "filelock": "4.2.4", "openai": "3.37.0", "huggingface-hub": "2.3.0",
-                "importlib-metadata": "10.1.0", "fastuuid": "0.14.0+hai.py315.1"}
+                "importlib-metadata": "10.1.0", "fastuuid": "0.14.0+hai.py315.2"}
     observed = {name: version(name) for name in expected}
     if observed != expected:
         raise ValueError("Installed SDK identities differ from the reviewed candidate")

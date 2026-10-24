@@ -144,6 +144,10 @@ cp Cargo.lock HAI_SOURCE_PORT.json /exports/
         'rust_sdk':spec['rust']['image'],'python_sdk':spec['python_sdk'],
         'compiler_sdk':spec['compiler']['sdk_image'],'C_and_CXX_version_asserted':'16.2.0',
         'Rust_Cargo_linker':'/usr/local/bin/gcc','SDK_prefixes_mounted_readonly':True,
+        'ported_crates':[{k:c[k] for k in ['name','upstream_version','local_version','source_sha256']}
+                         for c in spec['crate_ports']],
+        'crate_Rust_sources_and_existing_cases_preserved':True,
+        'UEFI_cross_compilation_or_runtime_qualified':False,
         'maturin_wheel_sha256':wheel['digests']['sha256'],
         'non_root_uid':10001,'operator_sdk_installed':False,'application_cases_run':False,
         'runtime_qualified':False,'private_source_or_credentials_mounted':False}

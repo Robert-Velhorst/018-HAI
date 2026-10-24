@@ -1,18 +1,18 @@
 {
   "schema_version": 1,
   "upstream_version": "0.14.0",
-  "local_version": "0.14.0+hai.py315.1",
+  "local_version": "0.14.0+hai.py315.2",
   "source_url": "https://files.pythonhosted.org/packages/c3/7d/d9daedf0f2ebcacd20d599928f8913e9d2aea1d56d2d355a93bfa2b611d7/fastuuid-0.14.0.tar.gz",
   "source_sha256": "178947fc2f995b38497a74172adee64fdeb8b7ec18f2a5934d037641ba265d26",
   "source_bytes": 18232,
   "patches": {
     "Cargo.toml": {
       "original_sha256": "8687826bcd8f2e88db30f6e476cde238c79102d89c6efcb0fecd4086b0685e3f",
-      "patched_sha256": "722a1348f02f19909e85399f7ccca5f185501a8c26aedcc43da6901b97ea4a4b",
+      "patched_sha256": "8c7061cc57351de200fc67d1ab7578998a6acf08ea11699081258d221b7c3517",
       "edits": [
         {
           "old": "version = \"0.14.0\"",
-          "new": "version = \"0.14.0+hai.py315.1\""
+          "new": "version = \"0.14.0+hai.py315.2\""
         },
         {
           "old": "rand = \"0.8\"",
@@ -25,6 +25,10 @@
         {
           "old": "version = \"1\"",
           "new": "version = \"=1.29.0\""
+        },
+        {
+          "old": "opt-level = 3\n",
+          "new": "opt-level = 3\n\n[patch.crates-io]\nuuid = { path = \"vendor/uuid\" }\ngetrandom = { path = \"vendor/getrandom\" }\n"
         }
       ]
     },
@@ -151,5 +155,83 @@
     "compiler_build_or_image_qualified": false,
     "official_Dockerfile_url": "https://raw.githubusercontent.com/docker-library/gcc/master/16/Dockerfile",
     "official_Dockerfile_sha256": "a6c98c00cc2da0092f4e518b1e5cb1b8e766d498d92a5f1f3d5372b70b144959"
-  }
+  },
+  "crate_ports": [
+    {
+      "name": "uuid",
+      "upstream_version": "1.29.0",
+      "local_version": "1.29.0+hai.md5.1",
+      "source_url": "https://static.crates.io/crates/uuid/uuid-1.29.0.crate",
+      "source_sha256": "4a0e2d11620c50695fe12bbbfde96b3477fe606e7284c22d505c12ce51214514",
+      "source_bytes": 67939,
+      "patches": {
+        "Cargo.toml": {
+          "original_sha256": "01614e314e5191de7e535dfe17074116a1ad8f2cb8145de84417a6538c57bf99",
+          "patched_sha256": "93cc2b571630609b7a4a11c0a9638f01a2bc2c4cb89d8ee14c3be0b0010830f5",
+          "edits": [
+            {
+              "old": "name = \"uuid\"\nversion = \"1.29.0\"",
+              "new": "name = \"uuid\"\nversion = \"1.29.0+hai.md5.1\""
+            },
+            {
+              "old": "[dependencies.md-5]\nversion = \"0.10\"",
+              "new": "[dependencies.md-5]\nversion = \"=0.11.0\""
+            }
+          ]
+        },
+        "Cargo.toml.orig": {
+          "original_sha256": "38410d2bdc650b5a33022a67f20c823bdfb761e68eddb9c7e808059a969b8dab",
+          "patched_sha256": "65619011df4160763dfdec5c047791db861071829ac2291c22d2c0e2991f34a5",
+          "edits": [
+            {
+              "old": "version = \"1.29.0\" # remember to update html_root_url in lib.rs",
+              "new": "version = \"1.29.0+hai.md5.1\" # remember to update html_root_url in lib.rs"
+            },
+            {
+              "old": "[dependencies.md-5]\ndefault-features = false\noptional = true\nversion = \"0.10\"",
+              "new": "[dependencies.md-5]\ndefault-features = false\noptional = true\nversion = \"=0.11.0\""
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "getrandom",
+      "upstream_version": "0.4.3",
+      "local_version": "0.4.3+hai.refi7.1",
+      "source_url": "https://static.crates.io/crates/getrandom/getrandom-0.4.3.crate",
+      "source_sha256": "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099",
+      "source_bytes": 52437,
+      "patches": {
+        "Cargo.toml": {
+          "original_sha256": "4f107fe4ceacee71d0068cfbbc69554b3d8523a1fcbb99b17e9fa0d008961ff9",
+          "patched_sha256": "70503715ea07e3b62e4d9c7911c56474494da4f56e988cbd2a29e5b0be4af39d",
+          "edits": [
+            {
+              "old": "name = \"getrandom\"\nversion = \"0.4.3\"",
+              "new": "name = \"getrandom\"\nversion = \"0.4.3+hai.refi7.1\""
+            },
+            {
+              "old": "dependencies.r-efi]\nversion = \"6\"",
+              "new": "dependencies.r-efi]\nversion = \"=7.1.0\""
+            }
+          ]
+        },
+        "Cargo.toml.orig": {
+          "original_sha256": "eebe7c6d086d3f40c2fa79f8784b00c36dc501e49b2757a1caa97e7fa4dbacf7",
+          "patched_sha256": "8b033652f7b4120c6613a43526f2eabb10d7b1871a2b99f0fb765c2881586d9b",
+          "edits": [
+            {
+              "old": "name = \"getrandom\"\nversion = \"0.4.3\"",
+              "new": "name = \"getrandom\"\nversion = \"0.4.3+hai.refi7.1\""
+            },
+            {
+              "old": "r-efi = { version = \"6\", default-features = false }",
+              "new": "r-efi = { version = \"=7.1.0\", default-features = false }"
+            }
+          ]
+        }
+      }
+    }
+  ]
 }

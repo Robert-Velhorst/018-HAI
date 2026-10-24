@@ -7,6 +7,8 @@ import json
 import tarfile
 import urllib.request
 
+from prepare_crate_ports import prepare_components
+
 
 def prepare(output, archive=None):
     spec = json.loads(Path(__file__).with_name('fastuuid-port-spec.json').read_text())
@@ -60,6 +62,7 @@ def prepare(output, archive=None):
                'vendor_code_imported_or_executed': False,
                'upstream_cases_preserved': all(row['original_sha256'] == row['ported_sha256']
                                                for row in manifest if row['path'].startswith('tests/'))}
+    receipt['crate_ports'] = prepare_components(output/'vendor',spec['crate_ports'])
     (output / 'HAI_SOURCE_PORT.json').write_text(json.dumps(receipt, indent=2) + '\n')
     return receipt
 
