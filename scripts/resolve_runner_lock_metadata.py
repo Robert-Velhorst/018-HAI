@@ -189,6 +189,17 @@ def main():
                "public_build_backend_metadata_execution_possible": True,
                "private_application_source_or_credentials_mounted": False,
                "application_tests_run": False, "host_sdk_installed": False}
+    if args.runner == "lm-eval-runner" and process.returncode == 0:
+        qualified = subprocess.run([sys.executable,
+            str(root/"services/lm-eval-runner/compat/qualify_public_sdk.py"),
+            "--output",str(output),"--sdk",sdk],capture_output=True,check=False,timeout=600)
+        (output/"public-sdk-qualification.log").write_bytes(qualified.stdout+qualified.stderr)
+        receipt["public_sdk_qualification_returncode"]=qualified.returncode
+        receipt["public_sdk_import_qualified"]=qualified.returncode==0
+        if qualified.returncode:
+            (output/"receipt.json").write_text(json.dumps(receipt,indent=2)+"\n",encoding="utf-8")
+            print((qualified.stdout+qualified.stderr).decode("utf-8",errors="replace")[-16000:])
+            raise SystemExit(qualified.returncode)
     if args.runner == "miniswe-runner" and process.returncode == 0:
         qualified = subprocess.run([sys.executable,
             str(root/"services/miniswe-runner/compat/qualify_public_sdk.py"),

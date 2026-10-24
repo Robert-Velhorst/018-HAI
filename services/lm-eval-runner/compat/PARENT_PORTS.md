@@ -24,3 +24,14 @@ model/data/privacy acceptance remain unqualified. No resolver override,
 advisory exception, validation stub or compiler/interpreter guard bypass is
 introduced. Optional upstream feature declarations remain unchanged; their
 graphs/behavior require separate qualification before use.
+
+The hosted job now installs the actual hash-locked candidate in an owned
+disposable SDK, then mounts packages read-only and imports real interfaces
+with network disabled. It checks all 70 distribution versions, all 751 engine
+and 274 parent Python source files, preserved CLI entrypoints and prohibited
+SqliteDict absence. Imports include the actual CLI, LocalChatCompletion class,
+table formatter, decoder, detector, filesystem and datetime parser. No model
+or evaluator is instantiated. Public-only writable outputs and timeout cleanup
+remain bound to the job's own container IDs/labels; operator SDK execution is
+refused. New-source SDK results and unchanged vendor functional cases remain
+required before runtime integration or any claim of behavioral acceptance.
