@@ -3,9 +3,12 @@ USER 0:0
 # Original permission fixtures use Bash shopt through their fixed /bin/sh.
 RUN ln -sfn /bin/bash /bin/sh
 COPY inputs/qualify_installed_packages.py /review/qualify_installed_packages.py
+COPY inputs/library_abi.py /review/library_abi.py
 COPY outputs/qualification.json /review/build-qualification.json
 COPY outputs/*.deb /candidates/
-RUN python -I /review/qualify_installed_packages.py --verify-package-inputs \
-    && dpkg -i /candidates/libacl1_2.4.0-1_amd64.deb /candidates/acl_2.4.0-1_amd64.deb
+RUN python -I /review/library_abi.py record /review/library-before.json \
+    && python -I /review/qualify_installed_packages.py --verify-package-inputs \
+    && dpkg -i /candidates/libacl1_2.4.0-1_amd64.deb /candidates/acl_2.4.0-1_amd64.deb \
+    && python -I /review/library_abi.py compare /review/library-before.json /review/library-abi.json
 ENV HAI_DISPOSABLE_ACL_INSTALLED_SDK=1
 ENTRYPOINT ["python", "-I", "/review/qualify_installed_packages.py"]

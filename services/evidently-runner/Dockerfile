@@ -49,6 +49,13 @@ COPY app.py ./
 COPY test_app.py ./
 RUN groupadd --gid 10001 hai \
     && useradd --uid 10001 --gid hai --no-create-home --shell /usr/sbin/nologin hai
+# Install the same-run source-qualified ACL candidate after all other package work.
+RUN --mount=type=bind,from=hai-native-acl,source=/,target=/tmp/hai-acl,readonly \
+    python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl \
+    && dpkg -i /tmp/hai-acl/libacl1_2.4.0-1_amd64.deb \
+    && python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl --installed \
+    && mkdir -p /usr/share/doc/hai-acl \
+    && cp /tmp/hai-acl/qualification.json /usr/share/doc/hai-acl/qualification.json
 USER 10001:10001
 RUN --network=none python -m unittest discover -v -s . -p 'test_app.py'
 

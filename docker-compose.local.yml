@@ -873,6 +873,8 @@ services:
   gitleaks-runner:
     build:
       context: ./services/gitleaks-runner
+      additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
     profiles: ["security-scanning"]
     restart: unless-stopped
     environment:
@@ -927,6 +929,8 @@ services:
   syft-runner:
     build:
       context: ./services/syft-runner
+      additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
     profiles: ["security-scanning"]
     restart: unless-stopped
     environment:
@@ -954,6 +958,8 @@ services:
   grype-runner:
     build:
       context: ./services/grype-runner
+      additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
     profiles: ["security-scanning"]
     restart: unless-stopped
     environment:
@@ -1035,6 +1041,8 @@ services:
   agent-framework-runner:
     build:
       context: ./services/agent-framework-runner
+      additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
     profiles: ["agent-framework-planning"]
     restart: unless-stopped
     environment:
@@ -1062,6 +1070,8 @@ services:
   crewai-runner:
     build:
       context: ./services/crewai-runner
+      additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
     profiles: ["crewai-planning"]
     restart: unless-stopped
     environment:
@@ -1090,6 +1100,7 @@ services:
     build:
       context: ./services/docling-runner
       additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
         hai-native-source: ./services/native-python-runtime
     profiles: ["local-document-extraction"]
     restart: unless-stopped
@@ -1121,6 +1132,7 @@ services:
     build:
       context: ./services/miniswe-runner
       additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
         hai-native-source: ./services/native-python-runtime
         hai-miniswe-wheels: ${HAI_MINISWE_WHEEL_CONTEXT:-./.build/miniswe-runtime/inputs}
     profiles: ["patch-proposals"]
@@ -1323,6 +1335,7 @@ services:
     build:
       context: ./services/ortools-solver
       additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
         hai-native-source: ./services/native-python-runtime
     profiles: ["optimization"]
     restart: unless-stopped
@@ -1353,6 +1366,7 @@ services:
     build:
       context: ./services/evidently-runner
       additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
         hai-native-source: ./services/native-python-runtime
     profiles: ["evaluation"]
     restart: unless-stopped
@@ -1381,6 +1395,7 @@ services:
     build:
       context: ./services/guardrails-runner
       additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
         hai-native-source: ./services/native-python-runtime
     profiles: ["validation"]
     restart: unless-stopped
@@ -1408,6 +1423,8 @@ services:
   pydantic-ai-runner:
     build:
       context: ./services/pydantic-ai-runner
+      additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
     profiles: ["typed-planning"]
     restart: unless-stopped
     environment:
@@ -1444,6 +1461,7 @@ services:
     build:
       context: ./services/fastmcp-bridge
       additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
         hai-native-source: ./services/native-python-runtime
     profiles: ["mcp-bridge"]
     restart: unless-stopped
@@ -1480,6 +1498,7 @@ services:
     build:
       context: ./services/lm-eval-runner
       additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
         hai-native-source: ./services/native-python-runtime
     profiles: ["model-evaluation"]
     restart: unless-stopped
@@ -1543,6 +1562,8 @@ services:
   deepteam-runner:
     build:
       context: ./services/deepteam-runner
+      additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
     profiles: ["deepteam-evaluation"]
     restart: unless-stopped
     environment:
@@ -1584,6 +1605,7 @@ services:
     build:
       context: ./services/deepeval-runner
       additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
         hai-native-source: ./services/native-python-runtime
     profiles: ["deepeval-evaluation"]
     restart: unless-stopped
@@ -1629,6 +1651,7 @@ services:
     build:
       context: ./services/garak-runner
       additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
         hai-native-source: ./services/native-python-runtime
     profiles: ["garak-evaluation"]
     restart: unless-stopped
@@ -1670,6 +1693,8 @@ services:
   whispercpp-runner:
     build:
       context: ./services/whispercpp-runner
+      additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
     profiles: ["local-transcription"]
     restart: unless-stopped
     environment:
@@ -1705,6 +1730,8 @@ services:
   wasi-runner:
     build:
       context: ./services/wasi-runner
+      additional_contexts:
+        hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
     profiles: ["wasi"]
     restart: unless-stopped
     environment:

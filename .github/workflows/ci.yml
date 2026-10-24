@@ -9,8 +9,15 @@ permissions:
   contents: read
 
 jobs:
+  native-acl-candidate:
+    name: Qualified ACL source and installed-case profile
+    uses: ./.github/workflows/native-acl-source.yml
+    permissions:
+      contents: read
+
   python-runners:
     name: Python runner contracts (${{ matrix.name }})
+    needs: native-acl-candidate
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.name == 'ortools-solver' && 100 || 60 }}
     strategy:
@@ -90,6 +97,11 @@ jobs:
             services/*/requirements.lock
             services/*/requirements.txt
             services/*/requirements.in
+      - name: Download current-run qualified ACL candidate
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-acl-fixed-package-candidate
+          path: ${{ runner.temp }}/hai-acl-candidate
       - name: Install hash-locked Python build metadata tools
         if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner","agent-framework-runner"]'), matrix.name) || matrix.name == 'evidently-runner'
         run: |
@@ -183,11 +195,11 @@ jobs:
         working-directory: services/${{ matrix.name }}
         run: |
           if [ "${{ matrix.name }}" = miniswe-runner ]; then
-            docker build --build-context hai-native-source=../native-python-runtime --build-context "hai-miniswe-wheels=${{ runner.temp }}/hai-miniswe-runtime/inputs" --file Dockerfile --tag "hai-${{ matrix.name }}:ci" .
+            docker build --build-context "hai-native-acl=${{ runner.temp }}/hai-acl-candidate/runtime-candidate" --build-context hai-native-source=../native-python-runtime --build-context "hai-miniswe-wheels=${{ runner.temp }}/hai-miniswe-runtime/inputs" --file Dockerfile --tag "hai-${{ matrix.name }}:ci" .
           elif [ -f native-runtime.profile.json ]; then
-            docker build --build-context hai-native-source=../native-python-runtime --file Dockerfile --tag "hai-${{ matrix.name }}:ci" .
+            docker build --build-context "hai-native-acl=${{ runner.temp }}/hai-acl-candidate/runtime-candidate" --build-context hai-native-source=../native-python-runtime --file Dockerfile --tag "hai-${{ matrix.name }}:ci" .
           else
-            docker build --file Dockerfile --tag "hai-${{ matrix.name }}:ci" .
+            docker build --build-context "hai-native-acl=${{ runner.temp }}/hai-acl-candidate/runtime-candidate" --file Dockerfile --tag "hai-${{ matrix.name }}:ci" .
           fi
       - name: Record exact public scanner and WASI image versions
         if: contains(fromJSON('["gitleaks-runner","grype-runner","syft-runner","wasi-runner","gosec-runner","whispercpp-runner"]'), matrix.name)

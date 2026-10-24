@@ -55,6 +55,13 @@ COPY app.py test_app.py ./
 RUN groupadd --gid 10001 hai \
     && useradd --uid 10001 --gid hai --no-create-home --shell /usr/sbin/nologin hai \
     && mkdir /qualification && chown 10001:10001 /qualification
+# Install the same-run source-qualified ACL candidate after all other package work.
+RUN --mount=type=bind,from=hai-native-acl,source=/,target=/tmp/hai-acl,readonly \
+    python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl \
+    && dpkg -i /tmp/hai-acl/libacl1_2.4.0-1_amd64.deb \
+    && python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl --installed \
+    && mkdir -p /usr/share/doc/hai-acl \
+    && cp /tmp/hai-acl/qualification.json /usr/share/doc/hai-acl/qualification.json
 USER 10001:10001
 # Read-only package view uses the exact bytes copied into the final runtime.
 RUN --network=none --mount=type=bind,from=packages,source=/usr/local/lib/python3.15/site-packages,target=/installed,readonly --mount=type=bind,from=hai-miniswe-wheels,target=/inputs,readonly \

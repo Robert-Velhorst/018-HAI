@@ -16,6 +16,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 WORKDIR /app
 COPY server.py ./
 RUN useradd --system --uid 10001 wasi
+# Install the same-run source-qualified ACL candidate after all other package work.
+RUN --mount=type=bind,from=hai-native-acl,source=/,target=/tmp/hai-acl,readonly \
+    python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl \
+    && dpkg -i /tmp/hai-acl/libacl1_2.4.0-1_amd64.deb \
+    && python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl --installed \
+    && mkdir -p /usr/share/doc/hai-acl \
+    && cp /tmp/hai-acl/qualification.json /usr/share/doc/hai-acl/qualification.json
 USER wasi
 EXPOSE 8080
 CMD ["python", "server.py"]

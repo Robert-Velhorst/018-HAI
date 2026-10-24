@@ -78,8 +78,10 @@ def main():
                 digest=sha(tar.extractfile(item).read())
                 if sha(path.read_bytes())!=digest:raise ValueError('Installed candidate file differs: '+str(path))
                 installed_files[str(path)]=digest
+    abi=json.loads(Path('/review/library-abi.json').read_text())
+    if not abi['all_baseline_public_symbol_versions_preserved']:raise ValueError('Public library symbol versions differ from baseline')
     results=[]
-    report={'SDK_shell':'/bin/bash','SDK_effective_capabilities':caphex,'fixture_block_major_91_confirmed_unregistered':True,'installed_packages':installed,'installed_files_sha256':installed_files,'case_profile':'All 16 original Linux cases against exact installed ACL candidates','publisher_expected_failure_cases':sorted(expected_failures),'new_case_exclusions_or_application_cases':False,'runtime_or_operator_installation':False,'full_application_image_or_security_acceptance':False}
+    report={'ABI_symbol_proof':abi,'SDK_shell':'/bin/bash','SDK_effective_capabilities':caphex,'fixture_block_major_91_confirmed_unregistered':True,'installed_packages':installed,'installed_files_sha256':installed_files,'case_profile':'All 16 original Linux cases against exact installed ACL candidates','publisher_expected_failure_cases':sorted(expected_failures),'new_case_exclusions_or_application_cases':False,'runtime_or_operator_installation':False,'full_application_image_or_security_acceptance':False}
     try:
         for name in sorted(selected):
             log=output/(name.replace('/','__')+'.log')

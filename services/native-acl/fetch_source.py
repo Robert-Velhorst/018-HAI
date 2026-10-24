@@ -23,5 +23,5 @@ def main():
             public_url(response.url);raw=response.read(4*1024*1024+1)
         if len(raw)!=item['bytes'] or hashlib.sha256(raw).hexdigest()!=item['sha256']:raise ValueError('Public source input identity differs')
         with (output/item['name']).open('xb') as handle:handle.write(raw)
-    for name in ['sources.json','build_packages.py','qualify_installed_packages.py']:shutil.copyfile(folder/name,output/name)
+    for name in ['sources.json','build_packages.py','qualify_installed_packages.py','library_abi.py','export_runtime_candidate.py','verify_runtime_candidate.py']:shutil.copyfile(folder/name,output/name)
 if __name__=='__main__':main()

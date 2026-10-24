@@ -63,6 +63,9 @@ def main():
                 version = str(package['Epoch']) + ':' + version
             installed.setdefault(normalized(package['Name']), set()).add(version)
     require(counts['os'], 'OS package coverage is incomplete')
+    if os_info['Family'] == 'debian':
+        require(installed.get('libacl1') == {'2.4.0-1'},
+                'Source-qualified ACL package is missing from the actual image inventory')
     require(not installed.get('pip'), 'Package installer remains in the runtime image')
     stdlib_wrappers = {'trivy-runner', 'gosec-runner', 'gitleaks-runner', 'grype-runner',
                        'syft-runner', 'wasi-runner', 'whispercpp-runner'}
