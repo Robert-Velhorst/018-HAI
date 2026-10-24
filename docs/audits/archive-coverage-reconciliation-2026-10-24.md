@@ -141,6 +141,13 @@ current-main checks pass with real RxJS and DOM/storage/HTTP test doubles; an
 in-memory removal of ID encoding is detected. Full Angular/browser, backend
 authorization and database acceptance are not established by those checks.
 
+Three overlapping task/ambient variants are reviewed in
+`archive-task-and-ambient-client-reconciliation-2026-10-24.md`. Forty-one focused
+current-main checks pass, including zero-HTTP rejection cases; a wrong plan URL
+is detected by the negative control. Compact history is an explicit response
+contract change. Server-side deduplication, authorization and real execution
+remain outside this client-double evidence.
+
 The Promptfoo test file moved from exact to changed relative to the earlier
 main snapshot. Its archived content hash matches the earlier Git blob. All
 three original test bodies remain byte-identical; canonical main adds the
