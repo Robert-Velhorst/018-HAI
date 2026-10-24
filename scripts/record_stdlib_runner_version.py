@@ -56,7 +56,8 @@ def main():
                 raise ValueError("Unexpected upstream case path")
             if hashlib.sha256((fixtures / item["file"]).read_bytes()).hexdigest() != item["sha256"]:
                 raise ValueError("An original Wasmtime fixture changed")
-        control = {"PATH": "/usr/local/bin:/usr/bin:/bin", "WASMTIME_WASI_PREVIEW0": "true",
+        control = {"PATH": "/usr/local/bin:/usr/bin:/bin", "XDG_CACHE_HOME": "/tmp/cache",
+                   "WASMTIME_WASI_PREVIEW0": "true",
                    "WASMTIME_WASI_INHERIT_ENV": "false"}
         def original_case(filename, env):
             value = subprocess.run(["timeout", "5s", "/usr/local/bin/wasmtime", "run", str(fixtures / filename)],
@@ -65,7 +66,8 @@ def main():
             if len(value.stdout) > 65536 or len(value.stderr) > 65536:
                 raise ValueError("Unexpected original-case output size")
             return value
-        baseline = original_case("hello_wasi_snapshot0.wat", {"PATH": control["PATH"]})
+        baseline = original_case("hello_wasi_snapshot0.wat", {"PATH": control["PATH"],
+                                                               "XDG_CACHE_HOME": control["XDG_CACHE_HOME"]})
         if baseline.returncode == 0 or "unknown import: `wasi_unstable::proc_exit`" not in baseline.stderr:
             raise ValueError("The original Wasmtime preview0 default-failure assertion differs: "
                              + repr((baseline.returncode, baseline.stdout, baseline.stderr)))
