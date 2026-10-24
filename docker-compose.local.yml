@@ -1089,6 +1089,8 @@ services:
   docling-runner:
     build:
       context: ./services/docling-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["local-document-extraction"]
     restart: unless-stopped
     environment:
@@ -1434,6 +1436,8 @@ services:
   fastmcp-bridge:
     build:
       context: ./services/fastmcp-bridge
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["mcp-bridge"]
     restart: unless-stopped
     depends_on:
@@ -1468,6 +1472,8 @@ services:
   lm-eval-runner:
     build:
       context: ./services/lm-eval-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["model-evaluation"]
     restart: unless-stopped
     environment:
@@ -1570,6 +1576,8 @@ services:
   deepeval-runner:
     build:
       context: ./services/deepeval-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["deepeval-evaluation"]
     restart: unless-stopped
     environment:
