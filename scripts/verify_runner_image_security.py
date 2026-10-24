@@ -47,7 +47,12 @@ def main():
         if result.get('Type') == 'gobinary':
             counts['gobinary'] += len(result['Packages'])
         for package in result['Packages']:
-            installed.setdefault(normalized(package['Name']), set()).add(package['Version'])
+            version = str(package['Version'])
+            if package.get('Release'):
+                version += '-' + str(package['Release'])
+            if package.get('Epoch') not in {None, 0, '0'}:
+                version = str(package['Epoch']) + ':' + version
+            installed.setdefault(normalized(package['Name']), set()).add(version)
     require(counts['os'] and counts['python'], 'OS/Python package coverage is incomplete')
     if service_path.name == 'trivy-runner':
         require(counts['gobinary'], 'Scanner binary module inventory is missing')
