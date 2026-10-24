@@ -63,7 +63,7 @@
         },
         "ortools/base/python-swig.h": {
           "original_sha256": "85ae88c265fdb6940ec0fde3ef944d4be9c5c0c61389b1908231f3a5abaf35b0",
-          "patched_sha256": "b4b6fe96e13310685b83e51239e52a5095c039f0c3ac26bf34d8313d32db8499",
+          "patched_sha256": "1fe3c92512153ca23ff0826b097be27582bbeab350c617691d6df25147edc3b2",
           "edits": [
             {
               "old": "long i = PyInt_AsLong(py);        // NOLINT",
@@ -72,18 +72,52 @@
             {
               "old": "long i = PyInt_AsLong(py);                      // NOLINT",
               "new": "long i = PyLong_AsLong(py);                      // NOLINT"
+            },
+            {
+              "old": "/* SWIG 2's own C preprocessor macro for this is too strict.\n * It requires a (x) parameter which doesn't work for the case where the\n * function is being passed by & as a converter into a helper such as\n * vector_output_helper above. */\n#undef PyInt_FromLong\n#define PyInt_FromLong PyLong_FromLong\n",
+              "new": ""
             }
           ]
         },
         "ortools/constraint_solver/python/routing_types.swig": {
           "original_sha256": "547dda226cd953bba2139acea6a1cbb5c90e420833e85223ce714224ad7430ba",
-          "patched_sha256": "e99def4669cf367b424177b3c6b269461b09611036bf22e4bb939577c1d12ea2",
+          "patched_sha256": "9b0d16c2d511fb03eb73b366a20e105f164f7b7b2e74d74ab400349c923bace5",
           "edits": [
             {
               "old": "  $1 = IndexT(PyInt_AsLong($input));",
               "new": "  $1 = IndexT(PyLong_AsLong($input));"
+            },
+            {
+              "old": "  return PyInt_FromLong(i.value());",
+              "new": "  return PyLong_FromLong(i.value());"
+            },
+            {
+              "old": "  $result = PyInt_FromLong($1.value());",
+              "new": "  $result = PyLong_FromLong($1.value());"
+            },
+            {
+              "old": "PY_LIST_INPUT_OUTPUT_TYPEMAP(IndexT, PyInt_Check, PyInt_FromIndexT<IndexT>);",
+              "new": "PY_LIST_INPUT_OUTPUT_TYPEMAP(IndexT, PyLong_Check, PyInt_FromIndexT<IndexT>);"
+            },
+            {
+              "old": "PY_LIST_LIST_INPUT_TYPEMAP(IndexT, PyInt_Check);",
+              "new": "PY_LIST_LIST_INPUT_TYPEMAP(IndexT, PyLong_Check);"
             }
           ]
+        },
+        "ortools/util/python/vector.swig": {
+          "original_sha256": "eae33734ed9af7b495b823748329f7236e69366e23bd873af9804e6e34405898",
+          "edits": [
+            {
+              "old": "PY_LIST_INPUT_OUTPUT_TYPEMAP(int, PyInt_Check, PyInt_FromLong);",
+              "new": "PY_LIST_INPUT_OUTPUT_TYPEMAP(int, PyLong_Check, PyLong_FromLong);"
+            },
+            {
+              "old": "PY_LIST_LIST_INPUT_TYPEMAP(int, PyInt_Check);",
+              "new": "PY_LIST_LIST_INPUT_TYPEMAP(int, PyLong_Check);"
+            }
+          ],
+          "patched_sha256": "1194219c49206e2059abeb095801329c1cb9fd103d3ec570b3d7ad8173630eac"
         }
       }
     },

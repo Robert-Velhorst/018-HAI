@@ -96,3 +96,15 @@ search found this site and the two already ported python-swig.h sites; the
 modified source contains no remaining PyInt_AsLong calls. All nine modified
 source files across three components verify against their original archives.
 Native compilation, existing cases and strict scans still require hosted proof.
+
+## Remaining public Python integer APIs
+
+The d1f6bfe build progressed past the AsLong errors, then failed because
+routing/vector typemaps still used PyInt_Check. The three complete upstream
+integer API source files now use public PyLong_Check, PyLong_AsLong and
+PyLong_FromLong directly. The obsolete SWIG-2 FromLong macro alias is removed;
+OR-Tools' own FromIndexT helper and generated wrappers are unchanged. Conversion,
+signed/unsigned range checks, solver semantics and existing cases are retained.
+All ten changed files across three components verify against original/resulting
+hashes. This is a source port, not a compatibility guard or warning suppression.
+New-source compilation and runtime/image qualification remain required.
