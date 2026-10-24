@@ -54,3 +54,21 @@ migration and makes no current hosted-success claim for the native upgrade.
 Primary records: [OpenSSL releases](https://openssl-library.org/source/),
 [SQLite source/checksums](https://www.sqlite.org/download.html), and
 [official Python image definitions](https://github.com/docker-library/python).
+
+## OpenSSL 4 binding and CA policy
+
+The exact CPython 3.14.9 source lacks the OpenSSL 4 removed-method guards
+present in upstream CPython 3.15.1. The 3.14 build uses that same set of
+preprocessor guards, so the removed deprecated version-specific SSL/TLS
+constructors are unavailable. Modern TLS client/server contexts remain the
+supported interface; no removed API is re-enabled. The upstream release
+source stays unchanged and the selected compiler flags are recorded.
+
+SDK probe and runtime explicitly use Debian's CA bundle and certificate
+directory. This avoids depending on a prefix's missing `cert.pem` symlink.
+The bounded build guard still requires a nonempty trust store and the exact
+OpenSSL/SQLite versions. A diagnostic prints only its runtime provenance.
+Fresh hosted qualification of these changes remains required.
+
+Primary binding sources: CPython's tagged `v3.14.9` and `v3.15.1`
+`Modules/_ssl.c`, and the [OpenSSL migration guide](https://docs.openssl.org/master/man7/ossl-guide-migration/).

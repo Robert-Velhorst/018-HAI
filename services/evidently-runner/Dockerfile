@@ -17,7 +17,9 @@ FROM python:3.14.9-slim-trixie@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a482
 
 WORKDIR /app
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-ENV LD_LIBRARY_PATH=/opt/hai-native/lib
+ENV LD_LIBRARY_PATH=/opt/hai-native/lib \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_DIR=/etc/ssl/certs
 RUN --mount=type=bind,from=native-build,source=/native-build/out,target=/tmp/hai-native,readonly \
     dpkg -i /tmp/hai-native/hai-openssl4.deb /tmp/hai-native/hai-sqlite3.deb
 COPY --chown=0:0 --from=native-build /native-build/out/lib-dynload/ /usr/local/lib/python3.14/lib-dynload/

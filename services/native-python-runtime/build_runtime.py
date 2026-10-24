@@ -153,6 +153,14 @@ def rebuild_python(spec, source):
         raise RuntimeError("Unexpected disposable SDK extension directory")
     export = OUTPUT / "lib-dynload"
     export.mkdir()
+    # CPython 3.15 has these upstream OpenSSL 4 guards; 3.14 does not.
+    # Apply the same guards only to the exact 3.14 profile, without altering
+    # either release source or enabling removed legacy version constructors.
+    compatibility_flags = (["-D" + name + "=1" for name in [
+        "OPENSSL_NO_SSL3", "OPENSSL_NO_TLS1", "OPENSSL_NO_TLS1_1", "OPENSSL_NO_TLS1_2",
+        "OPENSSL_NO_SSL3_METHOD", "OPENSSL_NO_TLS1_METHOD",
+        "OPENSSL_NO_TLS1_1_METHOD", "OPENSSL_NO_TLS1_2_METHOD"]]
+        if spec["version"] == "3.14.9" else [])
     result = {}
     for module, filename, libraries in [("_ssl", "_ssl.c", ["ssl", "crypto"]), ("_hashlib", "_hashopenssl.c", ["crypto"])]:
         original = installed / (module + suffix)
@@ -163,7 +171,7 @@ def rebuild_python(spec, source):
         includes = [Path(sysconfig.get_path("include")), source / "Include", source / "Include/internal",
                     source / "Modules", source / "Modules/_ssl", SDK_PREFIX / "include"]
         command(["cc", "-shared", "-fPIC", "-O2", "-DNDEBUG", "-DPy_BUILD_CORE_MODULE=1",
-                 *["-I" + str(p) for p in includes], str(source / "Modules" / filename),
+                 *compatibility_flags, *["-I" + str(p) for p in includes], str(source / "Modules" / filename),
                  "-L" + str(SDK_PREFIX / "lib"), "-Wl,-rpath," + str(PREFIX / "lib"),
                  *["-l" + name for name in libraries], "-o", str(output)], source, timeout=300)
         # The SDK's original interpreter is read-only to this build user.
@@ -171,7 +179,7 @@ def rebuild_python(spec, source):
         result[original.name] = {"original_sha256": original_hash,
                                  "sha256": hashlib.sha256(output.read_bytes()).hexdigest()}
     copy_regular(source / "LICENSE", OUTPUT / "CPython-LICENSE")
-    return {"source": spec, "modules": result,
+    return {"source": spec, "modules": result, "compatibility_cppflags": compatibility_flags,
             "headers_sha256": hashlib.sha256(Path(sysconfig.get_config_h_filename()).read_bytes()).hexdigest()}
 
 
@@ -200,15 +208,17 @@ def main():
         ssl_result = build_openssl(manifest["openssl"], ssl, folder, architecture)
         sqlite_result = build_sqlite(manifest["sqlite"], sqlite, folder, architecture)
         python_result = rebuild_python(manifest["cpython"][python], cpython)
-    env = {**os.environ, "LD_LIBRARY_PATH": str(SDK_PREFIX / "lib"), "OPENSSL_MODULES": str(SDK_PREFIX / "lib/ossl-modules")}
+    env = {**os.environ, "LD_LIBRARY_PATH": str(SDK_PREFIX / "lib"), "OPENSSL_MODULES": str(SDK_PREFIX / "lib/ossl-modules"),
+           "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt", "SSL_CERT_DIR": "/etc/ssl/certs"}
     probe = json.loads(subprocess.check_output([sys.executable, "-I", "-c",
         "import sys; sys.path.insert(0,'/native-build/out/lib-dynload'); "
         "import hashlib,json,platform,sqlite3,ssl; c=ssl.create_default_context(); "
         "db=sqlite3.connect(':memory:'); print(json.dumps({'python':platform.python_version(),"
-        "'openssl':ssl.OPENSSL_VERSION,'ca_roots':len(c.get_ca_certs()),'sqlite':sqlite3.sqlite_version,"
+        "'openssl':ssl.OPENSSL_VERSION,'ca_roots':len(c.get_ca_certs()),'ca_file':ssl.get_default_verify_paths().cafile,'sqlite':sqlite3.sqlite_version,"
         "'sqlite_query':db.execute('select sqlite_version()').fetchone()[0],"
         "'sha256':hashlib.sha256(b'hai-native-runtime').hexdigest()}))"],
         env=env, text=True, timeout=30))
+    print(json.dumps({"native_runtime_probe": probe}), flush=True)
     if (probe["python"] != python or not probe["openssl"].startswith("OpenSSL " + manifest["openssl"]["version"] + " ")
             or probe["sqlite"] != manifest["sqlite"]["version"] or probe["sqlite_query"] != probe["sqlite"]
             or probe["ca_roots"] < 1 or probe["sha256"] != hashlib.sha256(b"hai-native-runtime").hexdigest()):
