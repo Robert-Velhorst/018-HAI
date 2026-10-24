@@ -62,3 +62,22 @@ action references from 7.0.0 to the newer public stable 7.1.0 (released October
 reviewed-action policy assertion follows that exact pin; its cases are retained.
 Fresh CI is required for the follow-up head. No application code or dependency
 lock changes in this follow-up, no new cases and no local suite run.
+
+## Existing pool-case observation race
+
+The action-refresh source 2084816 failed the existing backend case
+`TestPostgresPoolIdleLifetimeIsApplied` after about one second. Its three-second
+deadline had not expired. The case stopped polling when the SQL counter
+advanced, then immediately also required the fake driver's close callback.
+Go 1.27.3 increments that counter under its pool lock and closes the selected
+driver connections after releasing the lock, so the two observations need not
+become visible at the same instant. This explains a possible early assertion
+race; the failure log does not prove that runtime pool configuration is wrong.
+
+The existing case now waits for both observations within its unchanged
+three-second deadline. Both final completion assertions, the fake driver and
+all 12 existing case names are retained. No runtime code, dependency lock,
+new case or local application suite changes/runs accompany this correction.
+Fresh hosted CI remains required for the resulting source.
+
+Source: [Go 1.27.3 database/sql cleaner](https://github.com/golang/go/blob/go1.27.3/src/database/sql/sql.go#L1054-L1091).
