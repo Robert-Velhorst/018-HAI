@@ -1,0 +1,41 @@
+{
+  "upstream_commit": "ebe5e8df1f4e12c5fc2f5954926881d8d61367d8",
+  "release": "v50.0.0",
+  "files": [
+    {
+      "upstream_path": "tests/all/cli_tests/hello_wasi_snapshot0.wat",
+      "file": "hello_wasi_snapshot0.wat",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasmtime/ebe5e8df1f4e12c5fc2f5954926881d8d61367d8/tests/all/cli_tests/hello_wasi_snapshot0.wat",
+      "sha256": "9673d212383610f0de34dbbb83fa20d9621fb2f52bcb858d58343680339d6919"
+    },
+    {
+      "upstream_path": "tests/all/cli_tests/hello_wasi_snapshot1.wat",
+      "file": "hello_wasi_snapshot1.wat",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasmtime/ebe5e8df1f4e12c5fc2f5954926881d8d61367d8/tests/all/cli_tests/hello_wasi_snapshot1.wat",
+      "sha256": "86a3163046a33dec0b8f0625242d07e8edb7cfee40411f86106dfad4b9c22fc6"
+    },
+    {
+      "upstream_path": "tests/all/cli_tests/print_env.wat",
+      "file": "print_env.wat",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasmtime/ebe5e8df1f4e12c5fc2f5954926881d8d61367d8/tests/all/cli_tests/print_env.wat",
+      "sha256": "c4601778ebd0d660a91e44234e49bf4a50bcbca5d81dcf06c13480c5a299562d"
+    },
+    {
+      "upstream_path": "LICENSE",
+      "file": "LICENSE",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasmtime/ebe5e8df1f4e12c5fc2f5954926881d8d61367d8/LICENSE",
+      "sha256": "268872b9816f90fd8e85db5a28d33f8150ebb8dd016653fb39ef1f94f2686bc5"
+    }
+  ],
+  "upstream_case_functions": [
+    "hello_wasi_snapshot0",
+    "hello_wasi_snapshot1",
+    "specify_env (default no-inheritance assertion)"
+  ],
+  "execution_configuration": "fixed WASMTIME_WASI_PREVIEW0=true and WASMTIME_WASI_INHERIT_ENV=false controls; no guest flags/arguments/preopens",
+  "upstream_fixture_bytes_modified": false,
+  "original_Rust_test_source_modified": false,
+  "Rust_test_functions_executed_directly": false,
+  "assertion_values_preserved": true,
+  "qualification_harness": "Replay four existing assertion paths using the same original WAT bytes and supported fixed environment configuration"
+}
