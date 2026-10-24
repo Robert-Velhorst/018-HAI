@@ -592,6 +592,55 @@ func TestEndpointValidationRejectsCredentialOrQueryData(t *testing.T) {
 	}
 }
 
+func TestEndpointValidationRejectsEmptyURLSuffixes(t *testing.T) {
+	for _, suffix := range []string{"?", "#", "?#"} {
+		t.Run(suffix, func(t *testing.T) {
+			if err := validateEndpointURL("http://localhost:8080/v1" + suffix); err == nil {
+				t.Fatal("endpoint accepted a suffix that would capture appended API paths")
+			}
+		})
+	}
+}
+
+func TestEndpointValidationPreservesEncodedPathDelimiters(t *testing.T) {
+	for _, raw := range []string{
+		"http://localhost:8080/v1",
+		"http://localhost:8080/v1%3Ftenant%23model",
+		"http://host.docker.internal:8080/api%23local",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			if err := validateEndpointURL(raw); err != nil {
+				t.Fatalf("valid endpoint path was rejected: %v", err)
+			}
+		})
+	}
+}
+
+func TestLocalAIEmptyURLSuffixesNeverReachHTTP(t *testing.T) {
+	for _, suffix := range []string{"?", "#", "?#"} {
+		t.Run(suffix, func(t *testing.T) {
+			requests := make(chan string, 8)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests <- r.URL.RequestURI()
+				_, _ = w.Write([]byte(`{"data":[{"id":"endpoint-fixture"}]}`))
+			}))
+			defer server.Close()
+			t.Setenv("LOCALAI_BASE_URL", server.URL+suffix)
+			t.Setenv("LOCALAI_MODEL_ID", "endpoint-fixture")
+			provider, ok := NewRegistryFromEnv().provider("localai")
+			if !ok {
+				t.Fatal("LocalAI provider missing")
+			}
+			if probe := provider.Probe(context.Background(), time.Now().UTC()); probe.Status != ProviderNotConfigured {
+				t.Errorf("invalid endpoint status = %s, want not configured", probe.Status)
+			}
+			if len(requests) != 0 {
+				t.Error("invalid endpoint caused an HTTP request")
+			}
+		})
+	}
+}
+
 func TestLocalAIRegistryRequiresLoopbackEndpointAndUsesConfiguredModel(t *testing.T) {
 	t.Setenv("LOCALAI_BASE_URL", "https://models.example.test")
 	registry := NewRegistryFromEnv()

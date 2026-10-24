@@ -38,7 +38,8 @@ func validateEndpointURL(raw string) error {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return fmt.Errorf("URL scheme must be http/https, got %q", u.Scheme)
 	}
-	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+	// Empty delimiters also capture API paths appended to the configured base.
+	if u.User != nil || u.ForceQuery || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(raw, "#") {
 		return fmt.Errorf("URL must not contain credentials, query parameters, or fragments")
 	}
 	host := u.Hostname()
