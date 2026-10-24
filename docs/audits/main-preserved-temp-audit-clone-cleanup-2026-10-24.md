@@ -45,3 +45,29 @@ The primary dirty checkout, integration checkout, eleven conversation archives,
 unmerged source snapshot, installed toolchains and running applications remain
 untouched by these two removals. This is bounded cleanup of fully preserved
 copies, not completion of the whole-device integration/removal objective.
+
+## Follow-up standalone clone
+
+The separate `codex-vercel-audit/018-HAI` temporary clone was subsequently
+verified against the same remote main and preserved snapshot. All 3,244 tracked
+files pass the same byte/line-ending recovery check; refs and reflogs contain
+only the preserved snapshot, fsck is clean, and no ignored or untracked files or
+shared worktrees are present. Hook samples were additionally compared byte for
+byte with the installed Git templates; the exclusion file and repository
+description contain no custom configuration.
+
+After the native removal preflight rechecked remote preservation, ownership,
+metadata, active consumers and working-tree state, only this explicit clone
+directory was removed. Its parent directory was left intact. The removed target
+contained 3,273 files and 48,168,530 logical bytes. Its absence was confirmed
+afterward. C-drive free space increased from 6,196,875,264 to 6,252,978,176 bytes
+during the operation; this observation is not a deduplicated allocation claim
+or an attribution of all concurrent free-space changes to this removal.
+
+A second candidate was excluded before any removal because it has 3,200
+skip-worktree index entries. Its clean status is insufficient proof of local
+file preservation. The earlier runtime-audit candidate also remains intact
+because GitHub reports a commit outside main's ancestry.
+
+Detailed follow-up receipts are retained separately from the original two-clone
+receipts. These checks do not clear any other checkout, archive or database.
