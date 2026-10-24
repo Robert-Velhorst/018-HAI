@@ -39,6 +39,14 @@ integration of all those changes. Neither product cohort alone establishes
 coverage of the whole index or conversation history. The prepared Quick Capture
 acceptance test still requires pinned dependencies and owned-stack execution.
 
+The nineteen `deleted_path_reintroduced` variants across both product cohorts
+are now paired with their next successful additions for the exact same archived
+source/path. All are replacement cycles across fifteen paths, and every paired
+addition is already in the `added_file_changed` scope. See
+`archive-replacement-lifecycle-reconciliation-2026-10-24.md`. This resolves the
+deletion lifecycle, not the semantic content gate on those replacements; it is
+not an instruction to remove current templates, models or authentication tests.
+
 ## One changed test variant
 
 The Promptfoo test file moved from exact to changed relative to the earlier
