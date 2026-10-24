@@ -1,5 +1,32 @@
 # Main-preserved temporary audit clone cleanup
 
+## Consolidation workspace: native cache only
+
+The older consolidation workspace at
+`8e9faa6975ea1150651c4dc0bf9660928b5ae3af` has unchanged tracked source but
+still contains ignored Angular cache, build output and installed dependencies.
+It is not cleared for complete source or repository removal by a clean tracked
+status. The previously blocked sibling worktree was outside this cleanup scope.
+
+The installed Angular CLI 22.2.2 cache-clean implementation and cache-path
+resolver were read before execution. The resolved target was exactly the
+selected frontend's `.angular/cache`, not another workspace or a parent
+directory. Reparse and active-consumer/mount checks passed. The native
+`ng cache clean` command removed three rebuildable cache files containing
+3,621,648 logical bytes. Its exit code was zero and the cache path was absent
+afterward. Angular configuration, package manifest and dependency lock hashes
+remained unchanged. Analytics and Node compile caching were disabled for this
+operation; no dependency installation, application, browser or test stack ran.
+Observed free space changed from 8,553,594,880 to 8,556,892,160 bytes; this is
+not an exclusive attribution of concurrent free-space changes.
+
+The retained build-output directory contains 933 files and 5,456,255 logical
+bytes, based on a metadata-only inventory. The installed dependency tree lacks
+the hidden installed-package lock used by the attempted provenance comparison.
+That missing metadata is not an empty dependency tree or a successful package
+comparison. The dependency tree and all build/test output remain intact and
+are not cleared for deletion by this cache cleanup.
+
 ## Linked PostgreSQL audit working files: shared history retained
 
 The linked PostgreSQL audit snapshot
