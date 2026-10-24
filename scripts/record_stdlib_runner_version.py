@@ -67,14 +67,17 @@ def main():
             return value
         baseline = original_case("hello_wasi_snapshot0.wat", {"PATH": control["PATH"]})
         if baseline.returncode == 0 or "unknown import: `wasi_unstable::proc_exit`" not in baseline.stderr:
-            raise ValueError("The original Wasmtime preview0 default-failure assertion differs")
+            raise ValueError("The original Wasmtime preview0 default-failure assertion differs: "
+                             + repr((baseline.returncode, baseline.stdout, baseline.stderr)))
         for filename in ["hello_wasi_snapshot0.wat", "hello_wasi_snapshot1.wat"]:
             value = original_case(filename, control)
             if value.returncode != 0 or value.stdout != "Hello, world!\n":
-                raise ValueError("The original Wasmtime hello-world assertion differs: " + filename)
+                raise ValueError("The original Wasmtime hello-world assertion differs: " + filename
+                                 + " " + repr((value.returncode, value.stdout, value.stderr)))
         privacy = original_case("print_env.wat", {**control, "THIS_WILL_NOT": "show up in the output"})
         if privacy.returncode != 0 or privacy.stdout != "":
-            raise ValueError("The original no-inherited-guest-environment assertion differs")
+            raise ValueError("The original no-inherited-guest-environment assertion differs: "
+                             + repr((privacy.returncode, privacy.stdout, privacy.stderr)))
         extra["original_WASI_CLI_case_qualification"] = {
             "source_commit": manifest["upstream_commit"], "fixture_files_unchanged": True,
             "original_case_assertion_paths_executed": 4,
