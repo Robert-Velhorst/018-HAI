@@ -105,6 +105,14 @@ deleted. Visible semantic assertions are retained, and scheduler/runtime behavio
 has explicit stronger successors. Missing truncated history is not inferred.
 These three records are separate from the 54 absent-identity crosswalk.
 
+Seven changed model additions now have a separate AST field review in
+`archive-model-field-reconciliation-2026-10-24.md` and its machine comparison:
+298 of 300 old field names retain their Go types, two ambient counters have
+current semantic successors, and six database-tag changes have source-level
+explanations. Legacy database values and migration execution remain unverified.
+This is a field subset of the existing cohort, not seven newly discovered files
+or whole-file completion; the 251 original classification counts stay unchanged.
+
 ## One changed test variant
 
 The Promptfoo test file moved from exact to changed relative to the earlier
