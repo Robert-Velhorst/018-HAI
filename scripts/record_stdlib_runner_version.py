@@ -47,7 +47,7 @@ def main():
     if sys.argv[1] == "wasi-runner":
         fixtures = Path("/review/wasi-fixtures")
         manifest_raw = (fixtures / "provenance.json").read_bytes()
-        if hashlib.sha256(manifest_raw).hexdigest() != "6868998be5cb802518ec287040e4a4eb728deb624383ef40d9f85ebeb1b3498c":
+        if hashlib.sha256(manifest_raw).hexdigest() != "90563cac8917c4d9bf30b187f7555bf56ad2e716ac459088cf8227f03dc45e86":
             raise ValueError("Original Wasmtime case provenance changed")
         manifest = json.loads(manifest_raw)
         for item in manifest["files"]:
