@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import subprocess
 import unittest
 
@@ -13,7 +14,10 @@ LEGACY_COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 
 
 def location_block(marker: str, config: str = NGINX_TEMPLATE) -> str:
-    start = config.index(marker)
+    match = re.search(r"(?m)^[ \t]*" + re.escape(marker) + r"(?=[ \t]*(?:\{|$))", config)
+    if match is None:
+        raise ValueError(f"missing nginx block: {marker}")
+    start = match.start()
     brace = config.index("{", start)
     depth = 0
     for index in range(brace, len(config)):
@@ -40,6 +44,24 @@ def compose_service_block(name: str) -> str:
         len(lines),
     )
     return "\n".join(lines[start:end])
+
+
+class GatewayBlockSelectionTest(unittest.TestCase):
+    def test_root_location_does_not_select_api_prefix(self) -> None:
+        config = "location /api/v1 {\n    return 403;\n}\nlocation / {\n    return 200;\n}\n"
+        block = location_block("location /", config)
+        self.assertIn("return 200;", block)
+        self.assertNotIn("return 403;", block)
+
+    def test_missing_root_is_not_satisfied_by_api_location(self) -> None:
+        with self.assertRaises(ValueError):
+            location_block("location /", "location /api/v1 {\n    return 403;\n}\n")
+
+    def test_comment_and_longer_prefix_do_not_satisfy_route(self) -> None:
+        config = "# location /api/v1 {\nlocation /api/v10 {\n    return 410;\n}\nlocation /api/v1 {\n    return 200;\n}\n"
+        block = location_block("location /api/v1", config)
+        self.assertIn("return 200;", block)
+        self.assertNotIn("return 410;", block)
 
 
 class GatewayAuthContractTest(unittest.TestCase):
