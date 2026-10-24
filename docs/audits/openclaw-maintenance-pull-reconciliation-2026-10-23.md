@@ -102,3 +102,15 @@ mandatory in CI, not claimed as executed by local package runs without a DSN.
   actual PostgreSQL lifecycle and cleanup execution remain CI acceptance gates.
 - Original worktrees and transcripts remain intact. These source reviews and
   publication do not by themselves establish main preservation or deletion safety.
+# 24 October integration follow-up
+
+Reconciliation with main retained its two maintenance overview PostgreSQL
+checks. Their inherited workflow command selected `hai_migration_runner_test`,
+which this proposal's exact dedicated-database guard correctly rejected.
+The command now selects the already-created loopback-only
+`hai_openclaw_maintenance_test` fixture. The destructive-test opt-in, exact
+database guard, race checking, required pass markers and both existing cases
+remain. The existing CI contract assertion follows that dedicated target;
+no new case was authored and no local application suite ran. Fresh hosted
+results must qualify this combined source. The unrelated inherited Promptfoo
+dependency audit remains failing until its separate security fix is approved.
