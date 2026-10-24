@@ -518,6 +518,55 @@ describe('FrameworkRegistryService', () => {
     request.flush(history);
   });
 
+  describe('Constitution history page contract', () => {
+    const entry = (id: string, version = 2, createdAt = '2026-07-30T10:00:00Z'): IConstitutionHistoryPage['history'][number] => ({
+      id, version, baseVersion: 0, status: 'draft', changeSummary: 'History fixture',
+      createdAt, digest: 'd'.repeat(64),
+    });
+    const invalid: { name: string; limit: number; page: IConstitutionHistoryPage }[] = [
+      { name: 'oversized pages', limit: 1, page: { history: [entry('a'), entry('b', 1)], limit: 1, truncated: false } },
+      { name: 'a different response limit', limit: 1, page: { history: [entry('a')], limit: 50, truncated: false } },
+      { name: 'empty truncated pages', limit: 1, page: { history: [], limit: 1, truncated: true } },
+      { name: 'short truncated pages', limit: 2, page: { history: [entry('a')], limit: 2, truncated: true } },
+      { name: 'duplicate identities', limit: 2, page: { history: [entry('a'), entry('a', 1)], limit: 2, truncated: false } },
+      { name: 'ascending versions', limit: 2, page: { history: [entry('a', 1), entry('b', 2)], limit: 2, truncated: false } },
+      { name: 'ascending creation times', limit: 2, page: { history: [entry('a', 2, '2026-07-30T09:00:00Z'), entry('b')], limit: 2, truncated: false } },
+      { name: 'descending IDs at an equal timestamp', limit: 2, page: { history: [entry('b'), entry('a')], limit: 2, truncated: false } },
+      { name: 'ascending nanosecond timestamps', limit: 2, page: { history: [entry('a', 2, '2026-07-30T10:00:00.000000001Z'), entry('b', 2, '2026-07-30T10:00:00.000000002Z')], limit: 2, truncated: false } },
+    ];
+    for (const scenario of invalid) {
+      it(`rejects ${scenario.name}`, () => {
+        let rejected = false;
+        service.constitutionHistory(scenario.limit).subscribe({
+          next: () => fail('Malformed Constitution history must not be presented as loaded.'),
+          error: () => { rejected = true; },
+        });
+        http.expectOne(request => request.url.endsWith('/constitution/history') &&
+          request.params.get('limit') === String(scenario.limit)).flush(scenario.page);
+        expect(rejected).toBeTrue();
+      });
+    }
+    const valid: { name: string; limit: number; page: IConstitutionHistoryPage }[] = [
+      { name: 'empty terminal pages', limit: 2, page: { history: [], limit: 2, truncated: false } },
+      { name: 'full truncated pages', limit: 1, page: { history: [entry('a')], limit: 1, truncated: true } },
+      { name: 'descending versions', limit: 2, page: { history: [entry('a', 2), entry('b', 1)], limit: 2, truncated: false } },
+      { name: 'ascending IDs at equal timestamps', limit: 2, page: { history: [entry('a'), entry('b')], limit: 2, truncated: false } },
+      { name: 'nanosecond precision before ID ordering', limit: 2, page: { history: [entry('b', 2, '2026-07-30T10:00:00.000000002Z'), entry('a', 2, '2026-07-30T10:00:00.000000001Z')], limit: 2, truncated: false } },
+      { name: 'timezone-equivalent timestamp ties', limit: 2, page: { history: [entry('a', 2, '2026-07-30T12:00:00.000000001+02:00'), entry('b', 2, '2026-07-30T10:00:00.000000001Z')], limit: 2, truncated: false } },
+      { name: 'the default limit for an invalid request limit', limit: 0, page: { history: [], limit: 50, truncated: false } },
+    ];
+    for (const scenario of valid) {
+      it(`accepts ${scenario.name}`, () => {
+        service.constitutionHistory(scenario.limit).subscribe({
+          next: result => expect(result).toEqual(scenario.page),
+          error: error => fail(`Valid Constitution history rejected: ${error}`),
+        });
+        http.expectOne(request => request.url.endsWith('/constitution/history') &&
+          request.params.get('limit') === String(scenario.limit || 50)).flush(scenario.page);
+      });
+    }
+  });
+
   it('creates an inactive Constitution draft', () => {
     const body = {
       baseVersion: 1,
