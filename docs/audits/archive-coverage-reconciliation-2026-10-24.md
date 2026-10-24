@@ -115,6 +115,14 @@ or whole-file completion; the 251 original classification counts stay unchanged.
 
 ## One changed test variant
 
+The overlapping TypeScript addition subset now has a parser and identity review
+in `archive-typescript-declaration-reconciliation-2026-10-24.md`: 102 variants,
+100 distinct paths, 17 canonical-equal variants and 17 absent same-file identities
+with source-level dispositions across 11 variants. The remaining 72 changed and
+two other file-difference variants are not behaviorally cleared. The dashboard
+snooze shortcut is a documented UX difference. These counts do not increase the
+global archive cohort or establish whole-file integration or deletion eligibility.
+
 The Promptfoo test file moved from exact to changed relative to the earlier
 main snapshot. Its archived content hash matches the earlier Git blob. All
 three original test bodies remain byte-identical; canonical main adds the
