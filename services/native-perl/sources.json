@@ -1,0 +1,21 @@
+{
+  "version": "5.44.0",
+  "archive_root": "perl-5.44.0",
+  "inputs": [
+    {
+      "name": "perl-5.44.0.tar.xz",
+      "url": "https://www.cpan.org/src/5.0/perl-5.44.0.tar.xz",
+      "sha256": "505cf43912e9480495c344c70260452e32aa2a73c546a026b3f100053b23ce91",
+      "bytes": 14919940
+    }
+  ],
+  "publisher_release_index": "https://www.cpan.org/src/",
+  "Debian_original_archive_same_SHA256": "https://deb.debian.org/debian/pool/main/p/perl/perl_5.44.0.orig.tar.xz",
+  "bundled_Archive_Tar": {
+    "version": "3.12",
+    "source_sha256": "f452cf3c396819f4d999dac230ffd2bcdafec897486bcdf7124f14489acf6530",
+    "path": "perl-5.44.0/cpan/Archive-Tar/lib/Archive/Tar.pm"
+  },
+  "source_case_helper_file_count": 3823,
+  "PGP_signature_verified": false
+}
