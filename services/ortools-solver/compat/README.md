@@ -76,3 +76,12 @@ in one hash-bound bridge file leave all other bridge code unchanged. Its source
 receipt is exported beside the OR-Tools and Protobuf receipts. This fixes the
 observed interface mismatch; successful compilation and existing cases still
 require hosted CI proof. No application cases or scanner exceptions are added.
+
+## Python integer conversion adaptation
+
+The current SWIG/Python build also exposed two obsolete PyInt_AsLong calls in
+OR-Tools' python-swig.h. Use Python 3's public PyLong_AsLong API directly at both
+call sites. Preserve the existing error, signed/unsigned range and cast checks.
+Two exact hash-bound source edits fix the observed missing symbols without
+restoring an obsolete compatibility macro or downgrading SWIG/Python. Compilation
+and the unchanged scheduling cases still require hosted qualification.
