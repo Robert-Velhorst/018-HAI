@@ -140,7 +140,7 @@ export class FrameworkRegistryService {
     return this.http.get<IConstitutionHistoryPage>(
       `${this.apiUrl}/constitution/history`,
       { params: new HttpParams().set('limit', boundedLimit) }
-    ).pipe(map((response) => this.normalizeConstitutionHistory(response)));
+    ).pipe(map((response) => this.normalizeConstitutionHistory(response, boundedLimit)));
   }
 
   createConstitutionDraft(request: IConstitutionDraftRequest): Observable<IConstitution> {
@@ -1121,26 +1121,51 @@ export class FrameworkRegistryService {
     return result;
   }
 
-  private normalizeConstitutionHistory(value: unknown): IConstitutionHistoryPage {
+  private normalizeConstitutionHistory(value: unknown, expectedLimit: number): IConstitutionHistoryPage {
     const record = this.requireRecord(
       this.sanitizeInbound(value),
       'Constitution history'
     );
-    const history = this.requireArray(
+    const entries = this.requireArray(
       record,
       'history',
       'Constitution history'
-    ).map((entry, index) =>
+    );
+    const limit = this.requireInteger(record, 'limit', 'Constitution history', 1, 100);
+    const truncated = this.requireBoolean(record, 'truncated', 'Constitution history');
+    if (limit !== expectedLimit || entries.length > limit || (truncated && entries.length !== limit)) {
+      throw this.contractError('Constitution history');
+    }
+    const history = entries.map((entry, index) =>
       this.normalizeConstitutionHistoryEntry(
         entry,
         `Constitution history item ${index + 1}`
       )
     );
-    return {
-      history,
-      limit: this.requireInteger(record, 'limit', 'Constitution history', 1, 100),
-      truncated: this.requireBoolean(record, 'truncated', 'Constitution history'),
-    };
+    const seen = new Set<string>();
+    let previous: IConstitutionHistoryEntry | undefined;
+    let previousTime = 0n;
+    for (const entry of history) {
+      const createdAt = this.constitutionHistoryTimestamp(entry.createdAt);
+      if (seen.has(entry.id) || (previous && (
+        entry.version > previous.version || (entry.version === previous.version && (
+          createdAt > previousTime || (createdAt === previousTime && entry.id < previous.id)
+        ))
+      ))) {
+        throw this.contractError('Constitution history');
+      }
+      seen.add(entry.id);
+      previous = entry;
+      previousTime = createdAt;
+    }
+    return { history, limit, truncated };
+  }
+
+  private constitutionHistoryTimestamp(value: string): bigint {
+    const fraction = /\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/i.exec(value)?.[1] || '';
+    if (fraction.length > 9) throw this.contractError('Constitution history');
+    // Go timestamps retain nanoseconds; Date.parse alone loses their tie-breaking precision.
+    return BigInt(Date.parse(value)) * 1_000_000n + BigInt(fraction.padEnd(9, '0').slice(3));
   }
 
   private normalizeConstitutionHistoryEntry(
