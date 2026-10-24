@@ -36,8 +36,18 @@ def main():
         gpg = ['gpg', '--batch', '--no-options', '--homedir', str(home),
                '--no-default-keyring', '--keyring', str(keyring)]
 
-        def command(arguments):
-            result = subprocess.run(gpg+arguments, capture_output=True, timeout=120)
+        def command(arguments, timeout=120):
+            print('SDK public keyring operation:', ' '.join(arguments), flush=True)
+            started = time.monotonic()
+            try:
+                result = subprocess.run(gpg+arguments, capture_output=True, timeout=timeout)
+            except subprocess.TimeoutExpired as error:
+                # Retain public-tool diagnostics even if SDK construction stops
+                # before a runnable image or normal output mount exists.
+                for label, value in [('stdout', error.stdout), ('stderr', error.stderr)]:
+                    print(label+':', (value or b'')[-65536:].decode('utf-8', errors='replace'), flush=True)
+                raise
+            print('SDK public keyring operation seconds:', round(time.monotonic()-started, 2), flush=True)
             if result.returncode:
                 raise RuntimeError('Normal public certificate operation failed: '
                                    +result.stderr.decode('utf-8', errors='replace'))
@@ -62,7 +72,9 @@ def main():
             raise ValueError('Renewal is not the exact existing official primary key')
         # Merge into the full existing bundle. Normal import preserves existing
         # revocations and never changes ownertrust or signature/time policy.
-        command(['--import', str(certificate)])
+        # This updates a complete official bundle, rather than the isolated
+        # single-certificate store used by the preceding hosted experiment.
+        command(['--import', str(certificate)], timeout=600)
         after = primaries(command(['--with-colons', '--list-keys']))
         if before != after:
             raise ValueError('SDK keyring primary identities changed')
