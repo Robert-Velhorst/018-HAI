@@ -1,0 +1,10 @@
+FROM hai-perl-package-sdk:ci
+
+# Only this disposable testbed installs the candidate packages. The package
+# build remains non-root; autopkgtest runs its published cases as source-build.
+USER root
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    autopkgtest db-util gdbmtool libapt-pkg-perl libdpkg-perl pkg-perl-autopkgtest \
+    && install -d -o 10001 -g 10001 /home/source-build
+ENV HAI_DISPOSABLE_PERL_INSTALLED_TESTBED=1
+ENTRYPOINT ["python", "-I", "/inputs/qualify_installed.py"]
