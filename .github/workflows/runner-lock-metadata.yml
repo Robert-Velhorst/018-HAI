@@ -8,6 +8,9 @@ on:
       - services/guardrails-runner/requirements-port.in
       - services/guardrails-runner/compat/**
       - services/pydantic-ai-runner/requirements.in
+      - services/crewai-runner/requirements.in
+      - services/ortools-solver/requirements.runtime.in
+      - services/ortools-solver/requirements.build.in
       - services/garak-runner/requirements.in
       - services/evidently-runner/requirements.in
       - services/evidently-runner/requirements-port.in
@@ -26,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [garak-runner, evidently-runner, agent-framework-runner, guardrails-runner, pydantic-ai-runner]
+        runner: [garak-runner, evidently-runner, agent-framework-runner, guardrails-runner, pydantic-ai-runner, crewai-runner, ortools-runtime, ortools-build]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

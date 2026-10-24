@@ -15,11 +15,20 @@ import urllib.request
 import zipfile
 
 SDKS = {
+    "crewai-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
+    "ortools-runtime": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
+    "ortools-build": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "agent-framework-runner": ("3.15.1", "python:3.15.1-slim-bookworm@sha256:575f8bc12ec26542e0678bc6b60e385218248019d433157ec327264a78c3a853"),
     "guardrails-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "pydantic-ai-runner": ("3.15.1", "python:3.15.1-slim-bookworm@sha256:575f8bc12ec26542e0678bc6b60e385218248019d433157ec327264a78c3a853"),
     "garak-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "evidently-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
+}
+
+
+INPUTS = {
+    "ortools-runtime": ("ortools-solver", "requirements.runtime.in"),
+    "ortools-build": ("ortools-solver", "requirements.build.in"),
 }
 
 
@@ -37,8 +46,10 @@ def main():
     # Linux container UID 10001 can write only these disposable public paths.
     for name in ["outputs", "cache"]:
         (output / name).chmod(0o777)
-    input_filename = "requirements-port.in" if args.runner in {"evidently-runner", "guardrails-runner"} else "requirements.in"
-    source = (root / "services" / args.runner / input_filename).read_bytes()
+    service, input_filename = INPUTS.get(args.runner, (args.runner,
+        "requirements-port.in" if args.runner in {"evidently-runner", "guardrails-runner"} else "requirements.in"))
+    input_path = Path("services") / service / input_filename
+    source = (root / input_path).read_bytes()
     (output / "inputs/requirements.in").write_bytes(source)
     port_build = None
     evidently_port_build = None
@@ -108,7 +119,7 @@ def main():
     log = process.stdout + process.stderr
     (output / "resolution.log").write_bytes(log)
     lock = output / "outputs/requirements.lock"
-    receipt = {"runner": args.runner, "python": version, "sdk": sdk,
+    receipt = {"runner": args.runner, "input_path": input_path.as_posix(), "python": version, "sdk": sdk,
                "returncode": process.returncode, "input_filename": input_filename, "local_port_wheel": port_build,
                "local_evidently_wheel": evidently_port_build, "input_sha256": hashlib.sha256(source).hexdigest(),
                "uv_wheel_sha256": hashlib.sha256(raw).hexdigest(),
