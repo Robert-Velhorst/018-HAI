@@ -5,6 +5,8 @@ on:
     paths:
       - services/agent-framework-runner/requirements.in
       - services/guardrails-runner/requirements.in
+      - services/guardrails-runner/requirements-port.in
+      - services/guardrails-runner/compat/**
       - services/pydantic-ai-runner/requirements.in
       - services/garak-runner/requirements.in
       - services/evidently-runner/requirements.in
@@ -42,6 +44,9 @@ jobs:
           name: public-runner-metadata-${{ matrix.runner }}
           path: |
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/outputs/requirements.lock
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/guardrails_ai-*.whl
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/receipt.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/resolution.log
           if-no-files-found: error
