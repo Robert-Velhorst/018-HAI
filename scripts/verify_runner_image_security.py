@@ -53,9 +53,14 @@ def main():
             if package.get('Epoch') not in {None, 0, '0'}:
                 version = str(package['Epoch']) + ':' + version
             installed.setdefault(normalized(package['Name']), set()).add(version)
-    require(counts['os'] and counts['python'], 'OS/Python package coverage is incomplete')
+    require(counts['os'], 'OS package coverage is incomplete')
+    require(not installed.get('pip'), 'Package installer remains in the runtime image')
     if service_path.name == 'trivy-runner':
+        # This wrapper uses only the Python standard library and the Go binary.
+        require(not counts['python'], 'Unexpected third-party Python package remains in the scanner runtime')
         require(counts['gobinary'], 'Scanner binary module inventory is missing')
+    else:
+        require(counts['python'], 'Application Python package coverage is incomplete')
     selected = {}
     for filename in ['requirements.lock', 'requirements-engine.lock']:
         path = service_path/filename

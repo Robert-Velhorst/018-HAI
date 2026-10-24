@@ -44,6 +44,10 @@ RUN apt-get update \
     && groupadd --gid 10001 hai \
     && useradd --uid 10001 --gid hai --no-create-home --shell /usr/sbin/nologin hai
 
+# Install dependencies while building; the immutable runtime has no package installer.
+RUN python -m pip uninstall --yes pip
+RUN ["python", "-I", "-c", "import importlib.util,json,pathlib,sysconfig; bundled=pathlib.Path(sysconfig.get_path(\"stdlib\"))/\"ensurepip\"/\"_bundled\"; wheels=list(bundled.glob(\"pip-*.whl\")); [p.unlink() for p in wheels]; assert importlib.util.find_spec(\"pip\") is None; assert not list(bundled.glob(\"*.whl\")); print(json.dumps({\"package_installer\":\"absent\",\"bootstrap_wheels\":0,\"removed_bootstrap_wheels\":len(wheels)}))"]
+
 COPY app.py /app/app.py
 
 USER 10001:10001

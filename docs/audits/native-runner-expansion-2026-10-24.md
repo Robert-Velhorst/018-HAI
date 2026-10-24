@@ -41,3 +41,28 @@ provider, deployment, billing or operator database change is performed.
 Primary records: [OpenSSL](https://openssl-library.org/source/),
 [SQLite](https://www.sqlite.org/download.html), and
 [Trivy 0.76.1](https://github.com/aquasecurity/trivy/releases/tag/v0.76.1).
+
+## Installed package tooling
+
+The official pip 26.2.2 wheel includes msgpack 1.1.2, urllib3 2.7.0 and
+pkg_resources from setuptools 70.3.0. Its vendor.txt, CycloneDX records and
+module paths match the SBOM-derived scanner package versions. They are
+bundled code, not cleared merely because top-level application locks are current.
+All seven immutable runtime images now uninstall pip after dependency setup
+and remove ensurepip's bundled pip wheel. SDK build stages keep their original
+installer; no local/operator toolchain is changed. Top-level locked setuptools
+and every declared application/engine package remain installed. Existing
+application source, cases, locks, runtime commands and native SDK are unchanged.
+
+An isolated stdlib build step asserts pip cannot be found and no bootstrap
+wheel remains, logging the result before image startup. The scan verifier
+rejects a remaining pip package and still enforces all locked versions and every
+raw finding. The Trivy wrapper has no third-party Python requirements, so its
+post-change Python package inventory must be empty while OS and Go inventories
+remain mandatory. Other six images require application Python inventories.
+No scanner/SBOM field is deleted or advisory waived. Fresh builds, existing
+cases, health checks and exact-image scans must verify the result. Remaining
+Debian/native/Go findings are not resolved by retiring an installer.
+
+Primary evidence: [pip vendoring policy](https://pip.pypa.io/en/stable/development/vendoring-policy/)
+and [pip 26.2.2 release metadata](https://pypi.org/pypi/pip/26.2.2/json).
