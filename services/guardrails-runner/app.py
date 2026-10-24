@@ -35,8 +35,13 @@ class ActionProposal(BaseModel):
     sourceRefs: list[str] = Field(default_factory=list, max_length=10)
 
 
-ACTION_GUARD = Guard.for_pydantic(output_class=ActionProposal)
-ACTION_GUARD.configure(allow_metrics_collection=False)
+def new_action_guard():
+    # Guardrails retains call inputs in instance history. Keep it request-local.
+    guard = Guard.for_pydantic(output_class=ActionProposal)
+    guard.configure(num_reasks=0, allow_metrics_collection=False)
+    return guard
+
+
 ENGINE = f"guardrails-ai {version('guardrails-ai')}"
 
 
@@ -51,7 +56,8 @@ def validate(payload: dict) -> dict:
 
     # Guardrails provides the Pydantic schema validation. Opaque source IDs are
     # constrained separately because source records must never be placed here.
-    outcome = ACTION_GUARD.validate(proposal)
+    guard = new_action_guard()
+    outcome = guard.validate(proposal, num_reasks=0)
     validated = outcome.validated_output
     if isinstance(validated, dict):
         for source_ref in validated.get("sourceRefs", []):
