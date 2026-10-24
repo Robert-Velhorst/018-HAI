@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "upstream_name": "dynaconf",
+  "upstream_version": "3.3.5",
+  "local_version": "3.3.5+hai.evidently.1",
+  "upstream_url": "https://files.pythonhosted.org/packages/95/41/b38501c34c40c3261868a2af8ed5fffe3e6d889c680638708de27eb57788/dynaconf-3.3.5-py3-none-any.whl",
+  "upstream_wheel_sha256": "b3b4a753d5c866fc85466b65fc58d4954f6ed7dc8aa67f2b15bcbfd85d184687",
+  "requires_python": ">=3.15,<3.16",
+  "profile": "HAI bounded Evidently report settings; current external vendor libraries and safe YAML API. Optional provider/CLI and unsafe loader modes are outside qualification.",
+  "external_requirements": [
+    "python-box==7.4.1",
+    "click==8.5.0",
+    "python-dotenv==1.2.4",
+    "toml==0.10.2",
+    "tomli==2.5.0",
+    "tomli-w==1.2.0",
+    "ruamel.yaml==0.19.1"
+  ],
+  "external_current_release_evidence": [
+    {
+      "name": "python-box",
+      "version": "7.4.1",
+      "requires_python": ">=3.9",
+      "metadata_sha256": "5ee4b4ed65d04970401a76f76dfaf27fd0af1ad9115c1d310d15e52a6964a57b"
+    },
+    {
+      "name": "click",
+      "version": "8.5.0",
+      "requires_python": ">=3.10",
+      "metadata_sha256": "b10ffc8a5a9025eefe4fd243cd90c54724f6c372d9eface5b4648577bc479039"
+    },
+    {
+      "name": "python-dotenv",
+      "version": "1.2.4",
+      "requires_python": ">=3.10",
+      "metadata_sha256": "81740143492657824fa7802bdc67e966220bb18461c997ebc264778c65582359"
+    },
+    {
+      "name": "toml",
+      "version": "0.10.2",
+      "requires_python": ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*",
+      "metadata_sha256": "798c995590bf6097e26cb22268f64001a302871c671b8325b0c4529240d3b7cb"
+    },
+    {
+      "name": "tomli",
+      "version": "2.5.0",
+      "requires_python": ">=3.8",
+      "metadata_sha256": "9d21d688cc7675457f015e2b4f6f8d1e53adad04a26335c6cd45ef584f0a17cd"
+    },
+    {
+      "name": "tomli-w",
+      "version": "1.2.0",
+      "requires_python": ">=3.9",
+      "metadata_sha256": "c8305f215c7fc0f93f870a5005348d74ac7887f1fea8bd8ee37691eed337209e"
+    },
+    {
+      "name": "ruamel.yaml",
+      "version": "0.19.1",
+      "requires_python": ">=3.9",
+      "metadata_sha256": "656c99298b890c967f0ebbe0cb8b1ddbeedda17a5ede1d806fd67ab694eb0184"
+    }
+  ],
+  "retired_vendor_files": {
+    "dynaconf/vendor/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "dynaconf/vendor/box/__init__.py": "6c2e889b2f77c1a4681311cb7da2db1e68add030dcfa65c3a424b61f0dad3168",
+    "dynaconf/vendor/box/box.py": "b181bf131c72f95faaceb751b21a19f26ee3a79dba7a6186e2c9c0935efd761d",
+    "dynaconf/vendor/box/box_list.py": "ebdd62570d966155286f1bde93b557703c0e91990d097157a9f9439dfbc301df",
+    "dynaconf/vendor/box/config_box.py": "943a98b82011a9c4a712b4a105b98aba9377fe048fa9bc56100cdd59321cf20f",
+    "dynaconf/vendor/box/converters.py": "0acc74512e7b1def053d874902edb55d38fba06dd050e85d3409e036a856ed08",
+    "dynaconf/vendor/box/exceptions.py": "8d0f62b0d77507b6b5de98593c9b0ced5d546b90e07c96304f121dda6bc02ece",
+    "dynaconf/vendor/box/from_file.py": "c8e24e9e1a28c91af3d88214f8168abc82dfa49d0e52936b7f5ad5d8f16dc637",
+    "dynaconf/vendor/box/shorthand_box.py": "62e41024e45a8d4ce63da2fe2141b96eab1d490c62a70346c191f7121971099c",
+    "dynaconf/vendor/click/__init__.py": "3c3862f47c9ede3b4a1929d7cdf7ccb8ce84ad2ae6e17cc511e12b40fcd2458a",
+    "dynaconf/vendor/click/_bashcomplete.py": "4a7c1a63b6f2c3b0ccf1dc802b99f8caa41036af584448432a5c3ef81fd791ca",
+    "dynaconf/vendor/click/_compat.py": "7ce1c07aef52ad33be9018f27f24d5acdbad34105630fd6547552996a177093f",
+    "dynaconf/vendor/click/_termui_impl.py": "b3918c22325e9ea358e7ffe54e54d24be1ba7c70000d0931ee680e6b961fd2fb",
+    "dynaconf/vendor/click/_textwrap.py": "7b92522c64a4331fac56d259a05ab11d0f060c807b1f62eed67594f4751c3776",
+    "dynaconf/vendor/click/_unicodefun.py": "b8f37c7fb4a506f2a77709e75e4e84706d55e2203c8830482b325f605fa70721",
+    "dynaconf/vendor/click/_winconsole.py": "0dc3061c4828313a3fd51be57db46a677f6d05c0b627d54000362178e42ebcce",
+    "dynaconf/vendor/click/core.py": "41dc00d31aa3225cc6026ff949f9fefa84881003af4e3b876718b9b64aabcd1a",
+    "dynaconf/vendor/click/decorators.py": "304e410df90b364bea3acfd142f3c2bbf929cc1b51910379a7da53c9ca9698e8",
+    "dynaconf/vendor/click/exceptions.py": "5923989f1aa09c558626bf427b55f128b79b20c977824ea62abcdd13d191d45d",
+    "dynaconf/vendor/click/formatting.py": "ea1297e11ea7f5a5d88a57ab6f8a536be8b37f00ab1ba9ab8a34711a987d1a24",
+    "dynaconf/vendor/click/globals.py": "d3e310189a5c9aaf7344395fef38f215835bbb9eb37726385352564e7a122696",
+    "dynaconf/vendor/click/parser.py": "ed4bc3dbe7aa93822425e624dafd7c52a230d6305e6803d8f184e4974a0e641e",
+    "dynaconf/vendor/click/termui.py": "0a1e4da1a355740ebbfb025bf99d98b9d0f13bd7c08fbed9a5147fa401c27c9b",
+    "dynaconf/vendor/click/testing.py": "da5243f3704db91869e760f8b0283d42124f09d22d0bcce77d178759e7002b63",
+    "dynaconf/vendor/click/types.py": "de6054e6293bcefb07bcb84d8f4860c4555f2f484c2c5b881279b67dce249cb3",
+    "dynaconf/vendor/click/utils.py": "24eba936cfc64ebb465d00792b044a37756fea66178766df7cd314f1b4007b79",
+    "dynaconf/vendor/dotenv/__init__.py": "9e0c34ccb2a3454ab2246d2528b3e1331176ea60dd0f5149c4f6f9f786b7751e",
+    "dynaconf/vendor/dotenv/cli.py": "69b8a41c10f800ed075add50abcf21a1213faf3f355278a708ce9ad1c751c5f4",
+    "dynaconf/vendor/dotenv/compat.py": "b3d3066c860b7d006b133251ed6a2c5890e9a29cc5d0b1d39fd3572333bfc755",
+    "dynaconf/vendor/dotenv/ipython.py": "e460fd1d64d591112d5d1815dc8e6cd65e24bf302e50e2d1bfa0dbd90b10d92a",
+    "dynaconf/vendor/dotenv/main.py": "f4e2d3b4ab87489dc6ea170ff2d85c1fd6aafa9cde35aed1e9704d5ecf1eebfc",
+    "dynaconf/vendor/dotenv/parser.py": "be63dbb78b1014912e2833a9a00d17c4a9a6b1d1a2607580b9cf010f6f8b172f",
+    "dynaconf/vendor/dotenv/py.typed": "f0f8f2675695a10a5156fb7bd66bafbaae6a13e8d315990af862c792175e6e67",
+    "dynaconf/vendor/dotenv/version.py": "0ebc84867b7ed9cd46bf7ac3283a0df81fc31634751b7e53d190bd9f33a83291",
+    "dynaconf/vendor/ruamel/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "dynaconf/vendor/ruamel/yaml/__init__.py": "a871894d50a177f1609b9736abb2beb9bd10f69fd4ebde1e331f734dfe4c70cb",
+    "dynaconf/vendor/ruamel/yaml/anchor.py": "abf79783d5135b8bdcb8fa76ab2a753ddf4a80488d323a01b627d2aa0e75ff01",
+    "dynaconf/vendor/ruamel/yaml/comments.py": "3cb50ec69bf7162274ce7fef9e75f4e3896602f4ea847604b53fa5f804f0007d",
+    "dynaconf/vendor/ruamel/yaml/compat.py": "9a3ef875b45290ee40daf3ef6de93bcd9c12208dcf08e1a39b71645b612a5eb0",
+    "dynaconf/vendor/ruamel/yaml/composer.py": "7c14aaaf24ed6f193c998d81f76631a394086cabf76e2e5d406e97785e3dd53c",
+    "dynaconf/vendor/ruamel/yaml/configobjwalker.py": "88d06701b4152d8089af29ef077d3762dabbf0af00f66d1b70a8b2efe653f127",
+    "dynaconf/vendor/ruamel/yaml/constructor.py": "4826f2b05c6c1a28c8f448fd4084d57e73ce90934a75b2350eeb518f97f76607",
+    "dynaconf/vendor/ruamel/yaml/cyaml.py": "6330ea36de719092b7bdcfd5743424d78a7b4982b2b8d73ad56d5bf82454a394",
+    "dynaconf/vendor/ruamel/yaml/dumper.py": "4cbc01b6fe611c76d9d990cc78949e9d2a568c471c3296632ebe6e83f56655ce",
+    "dynaconf/vendor/ruamel/yaml/emitter.py": "76d0e44f4dcb338710b51ee56307a5c4998177ff58bf06d79321b47bfbe5a9bb",
+    "dynaconf/vendor/ruamel/yaml/error.py": "20a03983a62edc615584c103c049464357cb6b461fdb90c6d95d11c3bb532665",
+    "dynaconf/vendor/ruamel/yaml/events.py": "83ca75486e777392cba01893d3a2a6288e6e3fa3e62988186a3a5830b5970542",
+    "dynaconf/vendor/ruamel/yaml/loader.py": "7a5d08a669f6f93d5ca32e06e24d8848c0ad0d86802dd1f5800fb5f9e61e9369",
+    "dynaconf/vendor/ruamel/yaml/main.py": "3dbd879f30014660fdba7b3e2b497f416ac0e437128a653e2f28717c443d6db4",
+    "dynaconf/vendor/ruamel/yaml/nodes.py": "ed01955cef6ebf039ed8ce5e8f70b06123853e548c726c2ae5d3c603f0b7788e",
+    "dynaconf/vendor/ruamel/yaml/parser.py": "1cadf49cd08d8ed18a01ae0d7deff35ad947ab953a83344acff84d66faced949",
+    "dynaconf/vendor/ruamel/yaml/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "dynaconf/vendor/ruamel/yaml/reader.py": "9d8664211c619ac17c1e275009a3a91acb2f1bb3bcb636056d990aa3a5920834",
+    "dynaconf/vendor/ruamel/yaml/representer.py": "8208cd28cb6385cd04285414b3b703378456fcbf8c2cd1d568ceba8984293f15",
+    "dynaconf/vendor/ruamel/yaml/resolver.py": "bf307605150c46a8305481f1a2ed85b3aa381f07554e65c22ccf20d00dd6986e",
+    "dynaconf/vendor/ruamel/yaml/scalarbool.py": "2a8715f53f2eac6298b94d88761eb80b048d432d8c6ea19052a265336b9256e1",
+    "dynaconf/vendor/ruamel/yaml/scalarfloat.py": "a544b787ca30a76b1c038d18109149073e4a2c6f75133e5b3bb198a87fe7ecf0",
+    "dynaconf/vendor/ruamel/yaml/scalarint.py": "e8217c3e3afbc1653c7d37db4e96d11ac9e0799fd12e13fe86160eefc924c534",
+    "dynaconf/vendor/ruamel/yaml/scalarstring.py": "b59c4af178c030bfef9bff6ad1b9f5927c39a4be42378a3f424803bb18892ada",
+    "dynaconf/vendor/ruamel/yaml/scanner.py": "87164e6e26f94d77b6017bad571017d8304d170a8d597565e11b227ce6feb075",
+    "dynaconf/vendor/ruamel/yaml/serializer.py": "bd6e8fecc0d1ebb37cc566f97745c13e52cac210ac1ef1793accd1a371c5770e",
+    "dynaconf/vendor/ruamel/yaml/setup.py": "b3068aa4c4a74259acb652fd7bffe8555697e70da484b7800797c64be55d519f",
+    "dynaconf/vendor/ruamel/yaml/timestamp.py": "11b26b2e9dc8b1c46dfd5b8e023c76f51eb3c611ced66a408b16bc5a28f0bfe5",
+    "dynaconf/vendor/ruamel/yaml/tokens.py": "b21df50c530616e526326f64515c069da2c449e8f23f150110e96cecf8701dc3",
+    "dynaconf/vendor/ruamel/yaml/util.py": "6e0834a5769949e12bae3c124b54518137a7502b985aadf35d4f6a61247dc9d4",
+    "dynaconf/vendor/toml/__init__.py": "dbfc8c0ee3ebe91a4e1bcdeadee5e69031f460fb51fc335668ee307e52b414d7",
+    "dynaconf/vendor/toml/decoder.py": "a37976c2252fc317076c61e46cb608d9250d78d3c1ca425ee3dd3611b689ef0f",
+    "dynaconf/vendor/toml/encoder.py": "91173b34a76b991c47cc6a87570deb059dc351b44bc7d7c115de19b1647e3bef",
+    "dynaconf/vendor/toml/ordered.py": "a5ef8dfa033f5b162fde02e0350cee1697f81995c113277763b6ef614ded4af3",
+    "dynaconf/vendor/toml/tz.py": "13de8d399ed86b714a23bf9838277f6b125b23a07d2f3282dc359ee09d976004",
+    "dynaconf/vendor/tomllib/__init__.py": "acdc11bb36e887106331e8f92a045c3dd819bf282eb81043ecb1387cba58f353",
+    "dynaconf/vendor/tomllib/_parser.py": "d40116b9df19b9a26669cb402fd862c3455c951db140c39a2b8b90cf4e59de7e",
+    "dynaconf/vendor/tomllib/_re.py": "27f028654fc7ba1a0c94c7b0ac4827640c9797c4a0d6815235770710faa7b1fb",
+    "dynaconf/vendor/tomllib/_types.py": "48178816cc2c191b6ac9bc1be671e1aed6379aeeef7cb723b6a12dbf0d0a85f7",
+    "dynaconf/vendor/tomllib/_writer.py": "5806a01132216d7de088043b970418666852f933dde47ac0bbd0ff6f0c4297c6"
+  },
+  "unchanged_core_modules": {
+    "dynaconf/__init__.py": "63eeb0d4b033c30ce84b97cef1d5085847314bbbdc57b6367ae8025309ab30c9",
+    "dynaconf/__main__.py": "12266240b271508ed6200461bfc6cfe98e2eb0a13395c357dadba7907f2415d7",
+    "dynaconf/base.py": "a1f4dcb1c390a4576ad412442df127c73ef5f88d8042914518b09c686a21a1e1",
+    "dynaconf/cli.py": "27176cbeb1e08dd1bbd64aecdae5540a6004bbcc40159ca80dced9cb70ebaa3a",
+    "dynaconf/constants.py": "0ca5166b65df732a80f93a5b7cb067a64c0c17dae302bf3a3ff1ab07c3db4756",
+    "dynaconf/default_settings.py": "de6f4253c623d1dfc314aba19ef37c6f34a545e1cdd43e0c65d73a870e0ae2b6",
+    "dynaconf/hooking.py": "bc53bff002b3a0104a106a94058836d4f5dc79dca40433f7005ee9be7e3d5949",
+    "dynaconf/nodes.py": "e5646549ef9146d19be95cd02ac99be02d6b375499c19982f2ca195ca80db5c5",
+    "dynaconf/test_settings.py": "9559026127b6c8498280cfebb41e7a3626cb9f5a16ad7ffc14f69721daf82435",
+    "dynaconf/validator.py": "6dcbc9d4143f5afdfb484501c9acf7759cd72f9f4caed20367344f395b3dac3e",
+    "dynaconf/validator_conditions.py": "a3d287d24eca2107bc64e45ff7ba03bb7f9aa4989ece9b07b4a039dbfb1f61a7",
+    "dynaconf/contrib/__init__.py": "9326215d53de5992fecde3051aa6da9787f7534f81ea4b4b2bbf8810e7ad80ff",
+    "dynaconf/contrib/django_dynaconf_v2.py": "884d551b3fa979af603f91b42f713816f9656b6f4f1bbaddd9c1aa90205af872",
+    "dynaconf/contrib/flask_dynaconf.py": "4348aaab7fffe7c98b6e8caadd926603ffb2d81d41460194be8d9dae97cf31bf",
+    "dynaconf/loaders/__init__.py": "5d8481e1a951497d9856aae69a6eb3db5ba8388e07ca623fbd5447d22466abd0",
+    "dynaconf/loaders/base.py": "ff68990337a75a854d6a119a5fadda7c8deba235c2d1c78db10ba6d433ffb01c",
+    "dynaconf/loaders/env_loader.py": "77e15d6868c7bd9bc19f56646d5b4c88240360bfa49d5289a90fd1e79d6915fb",
+    "dynaconf/loaders/ini_loader.py": "6e5b7e8e3ef6f0355cdbc9ce935db29842cb067f54d80b13350ebe9333814e7e",
+    "dynaconf/loaders/json_loader.py": "95d8d211081c30832d96d3f4ad0ca327bf7783dd9c281400b0c9a0eec1b244f8",
+    "dynaconf/loaders/py_loader.py": "d8349cbb949ca2f9ec9c0d1435329ce9b0175080dcad4b54aa30c12a7d5d2597",
+    "dynaconf/loaders/redis_loader.py": "d8a604e5c2addc8087ff2a70e677c53b68d1c9999323d5c9a9766cbd8a2a3a86",
+    "dynaconf/loaders/toml_loader.py": "ec871be8eaa8a28ec5b22f370d36a5ee357b8eb6161d8ce2d4fb3ab6f4423556",
+    "dynaconf/loaders/vault_loader.py": "b6616d47e22509cdf48d85927d3db6ee3c314df81af4e327730cdc3bc47e3921",
+    "dynaconf/loaders/yaml_loader.py": "8c11f2833d97a4d46ddeb5b6a76a3c0c8023aad7a8c503d55aa9e466c5c90821",
+    "dynaconf/strategies/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "dynaconf/strategies/filtering.py": "d84ce983b6b3ac42961696824d64bf2b2b58fcd12f8b24a4b95981bf75a09178",
+    "dynaconf/typed/__init__.py": "b876e15b96cb1bb02bf6521c8a2a09eeaff25c23cad47c96f619853f6a851f39",
+    "dynaconf/typed/compat.py": "7f64dd9aade04ca6f811fb592ef51c70c3b28bc7bf3b9e3319ef16ff83bf9b0f",
+    "dynaconf/typed/exceptions.py": "f8dc65b4d97ba5b7fdaff12d9b8454ad1abf432fe19a2f12001bbf2f9c28e8da",
+    "dynaconf/typed/guards.py": "e4c95ec8c0f0a3d5b7a9f31f5e69437adbb92c4df39d34fc928fc4eef1fae831",
+    "dynaconf/typed/main.py": "f4b34657d29bef7b0b1dde0b9629fcb0b12c2168870ad239e1414dcb463d6f20",
+    "dynaconf/typed/types.py": "caec851fa7fff4527a2c55b712cf03109291d2473ab34cc11c42fed1a1a29753",
+    "dynaconf/typed/utils.py": "e3013f931864a0f1a85d322f27f25d3699762c7c0a48765b170275f8986e8388",
+    "dynaconf/typed/validators.py": "20a1d3e08aab0fdbc47792f229a752d67209f7bcc73969e72f5e6255ffc1963b",
+    "dynaconf/utils/__init__.py": "60bc2e5bb4e43943363a4bedac00899cb4165561b09a47d3b2caf3539f5886dd",
+    "dynaconf/utils/boxing.py": "b066ad864979b57416c27e1386cc3bb6c9c9e77e014aef843791a3813d5e7aa5",
+    "dynaconf/utils/files.py": "db659673fe0749f05c01da2b8c62faf94ce96b1acd7c46f1987381a8f783711f",
+    "dynaconf/utils/functional.py": "d8e6ee7457516b68979b46312cc4f90f939244617b65a2319b8dc01d37310542",
+    "dynaconf/utils/inspect.py": "524fe3ea0d14ec8a721ad5e800979b03d8fabc6ba8cea4f68b0a14897e4ed65d",
+    "dynaconf/utils/parse_conf.py": "d2ab52cb54008a54cb491906808284d10ff8fca71937ef7e83b2940b0667847b"
+  },
+  "adapter_files": {
+    "dynaconf/vendor/__init__.py": {
+      "sha256": "e8e74fbd579f4ab95cf55699f93054e26471b13fb75afe720fa3adef49ce2624",
+      "source": "\"\"\"Source-bound adapters to separately installed current libraries.\"\"\"\n"
+    },
+    "dynaconf/vendor/box/__init__.py": {
+      "sha256": "22fd2d0f9257c86faf4e59db6592838f205336c6c58b7139e7483ab6eb14d259",
+      "source": "\"\"\"Use the hash-locked current box package; no bundled legacy code.\"\"\"\nimport box as _upstream\n__path__ = list(_upstream.__path__)\n\ndef __getattr__(name):\n    return getattr(_upstream, name)\n"
+    },
+    "dynaconf/vendor/click/__init__.py": {
+      "sha256": "f69638277928d5b1646e060784730bd52dba7772636f098834f79648aa309283",
+      "source": "\"\"\"Use the hash-locked current click package; no bundled legacy code.\"\"\"\nimport click as _upstream\n__path__ = list(_upstream.__path__)\n\ndef __getattr__(name):\n    return getattr(_upstream, name)\n"
+    },
+    "dynaconf/vendor/dotenv/__init__.py": {
+      "sha256": "fc72782482f031244a89adee3f89f1eb02202b3d8d513c5370ce685145e646d8",
+      "source": "\"\"\"Use the hash-locked current dotenv package; no bundled legacy code.\"\"\"\nimport dotenv as _upstream\n__path__ = list(_upstream.__path__)\n\ndef __getattr__(name):\n    return getattr(_upstream, name)\n"
+    },
+    "dynaconf/vendor/toml/__init__.py": {
+      "sha256": "4d309a77458db9f5d5015cbffc68470cc6ff914ff84af8d15433d7bf9ca14453",
+      "source": "\"\"\"Use the hash-locked current toml package; no bundled legacy code.\"\"\"\nimport toml as _upstream\n__path__ = list(_upstream.__path__)\n\ndef __getattr__(name):\n    return getattr(_upstream, name)\n"
+    },
+    "dynaconf/vendor/tomllib/__init__.py": {
+      "sha256": "62831adb1fdc435474c6672dcb3ea6d6b2d027c0383b809cd0a584a24db3ada1",
+      "source": "\"\"\"Use current TOML readers/writers without retaining the historical bundle.\"\"\"\nfrom tomli import TOMLDecodeError, load, loads\nfrom tomli_w import dump, dumps\n__all__ = [\"load\", \"loads\", \"TOMLDecodeError\", \"dump\", \"dumps\"]\n"
+    },
+    "dynaconf/vendor/ruamel/__init__.py": {
+      "sha256": "8f39588331698e530e2b7008e9a4247e964caa71f42c9e07feddb2821bda45d1",
+      "source": "\"\"\"Namespace for the maintained current ruamel.yaml API adapter.\"\"\"\n"
+    },
+    "dynaconf/vendor/ruamel/yaml/__init__.py": {
+      "sha256": "1bf43b9157b14f90f050cf97649212361133a99881de73da7c7bf7d2fcd6a347",
+      "source": "\"\"\"Adapt Dynaconf's supported safe YAML calls to the current instance API.\"\"\"\nfrom io import StringIO\nimport ruamel.yaml as _upstream\nfrom ruamel.yaml import YAML\nfrom ruamel.yaml import dumper, representer\nfrom ruamel.yaml.dumper import SafeDumper\n\n\ndef __getattr__(name):\n    return getattr(_upstream, name)\n\n\ndef safe_load(stream):\n    return YAML(typ=\"safe\", pure=True).load(stream)\n\n\ndef safe_load_all(stream):\n    return YAML(typ=\"safe\", pure=True).load_all(stream)\n\n\ndef dump(data, stream=None, *, Dumper=None, explicit_start=False, indent=2,\n         default_flow_style=False):\n    if Dumper not in {None, SafeDumper}:\n        raise ValueError(\"Only the safe YAML dumper is supported in this profile\")\n    serializer = YAML(typ=\"safe\", pure=True)\n    serializer.explicit_start = explicit_start\n    serializer.default_flow_style = default_flow_style\n    serializer.indent(mapping=indent, sequence=indent)\n    if stream is None:\n        output = StringIO()\n        serializer.dump(data, output)\n        return output.getvalue()\n    serializer.dump(data, stream)\n\n\nsafe_dump = dump\n\n\ndef load(*args, **kwargs):\n    raise ValueError(\"Select safe_load in the Evidently compatibility profile\")\n\n\ndef full_load(*args, **kwargs):\n    raise ValueError(\"Select safe_load in the Evidently compatibility profile\")\n\n\ndef unsafe_load(*args, **kwargs):\n    raise ValueError(\"Unsafe YAML loading is outside the Evidently profile\")\n"
+    }
+  },
+  "original_license_files_preserved": true,
+  "runtime_qualified": false
+}

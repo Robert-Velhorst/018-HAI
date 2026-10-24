@@ -37,7 +37,8 @@ COPY test_app.py ./
 
 RUN python -c "import json,platform,ssl,sqlite3; from importlib.metadata import distributions; print(json.dumps({'python':platform.python_version(),'openssl':ssl.OPENSSL_VERSION,'sqlite':sqlite3.sqlite_version,'distributions':{d.metadata['Name']:d.version for d in distributions()}})); print(open('/etc/os-release',encoding='utf-8').read())"
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
+ENV DO_NOT_TRACK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 EXPOSE 8080
 CMD ["python", "app.py"]
