@@ -1,4 +1,4 @@
-# Garak and Evidently dependency refresh — preparation
+# Garak and Evidently dependency refresh — runtime candidate
 
 This follow-up starts at HAI Python refresh #337, source
 `fe3c8a734ba7f1a737a1c49ab702190d29b562c8`. That proposal and the separate
@@ -6,15 +6,24 @@ approval heads are preserved. No main merge or deployment is included.
 
 The current public metadata selects OpenAI 3.37.0, NLTK 3.10.4, Markdown
 3.11.2, Pandas 3.1.0 and Setuptools 84.2.1. Evidently 0.7.23 is still its
-latest stable release. Garak 0.17.1 is the current stable engine; the existing
-container still installs 0.15.1 until its engine lock and runtime changes are
-integrated in the next preparation step.
+latest stable release. Garak's engine advances from 0.15.1 to 0.17.1 in a
+separate hashed engine lock. Runtime graph locks exactly mirror their legacy
+requirements.txt files. Docker and CI consume the same dependency locks.
 
-Both input files are updated first. The committed runtime locks, Dockerfiles
-and runtime CI installation paths have not yet been updated to those inputs.
-Ordinary CI on this intermediate source therefore does not qualify the proposed
-new graphs. Keep this draft until generated locks, engine integration and
-fresh existing runtime contracts/image checks have been reconciled.
+The successful isolated metadata run 40083420926 generated 46 Garak-profile
+packages and 81 Evidently packages at source 45c2e3a. Both retained artifact
+ZIPs match GitHub's published digests. Their input hashes, SDK identities,
+generated lock hashes and checkout Git tree were verified before import.
+The imported locks, exact SDK images and engine lock are now integrated into
+Docker/CI. Garak's container build also requires its installed CLI to load.
+Fresh source-matching contracts/builds/health checks remain required; metadata
+resolution does not qualify the runtime.
+
+The 105 distinct engine/application/build package versions were checked against
+current stable PyPI metadata and per-version advisory feeds. None was a
+prerelease or carried an advisory in that feed. Plotly remains at 5.24.1 under
+Evidently's parent constraint instead of current stable 7.1.0. This is a version
+gap, not a claim that the native images or runtime are vulnerability-free.
 
 ## Metadata and interpreter limits
 
@@ -30,14 +39,27 @@ Dynaconf 3.3.5, the current release used by Evidently, declares Python
 remains a gap against the full latest-Python objective; it is not called
 complete or silently overridden.
 
-The dedicated metadata workflow resolves both graphs in digest-pinned official
+The dedicated metadata workflow resolved both graphs in digest-pinned official
 SDK containers. The nonroot, read-only, capability-free containers receive only
 public requirement inputs and a verified uv binary, with disposable output and
 cache mounts. No repository application source, credentials, Docker socket,
 provider configuration or operator database is mounted. Public package build
 backends can execute inside those containers to supply metadata. The workflow
-retains the actual generated locks, logs, input hashes, SDK identity and source
+retains actual generated locks, logs, input hashes, SDK identity and source
 revision for review before import. It runs no HAI application suite itself.
+
+## Garak profile boundary
+
+The existing runner deliberately installs only the fixed HTTP generator and
+prompt-injection probe profile using --no-deps for the engine. Many upstream
+provider/local-model dependencies are unconditional distribution requirements,
+not optional extras; the profile does not satisfy the full distribution's
+dependency declarations. The verified 0.17.1 wheel declares OpenAI >=2,<3,
+while this profile advances its already-3.x SDK to current 3.37.0. The selected
+generator's static source still uses OpenAI(base_url, api_key) and
+client.chat.completions, but static inspection and CLI startup do not establish
+provider/binding compatibility. That upstream constraint conflict remains
+unresolved; no pip-check or complete vendor compatibility claim is made.
 
 This does not resolve the other HAI runner graphs, existing SQLitedict advisory,
 all native image findings, provider acceptance or deployment boundaries.

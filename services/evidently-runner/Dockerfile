@@ -1,9 +1,9 @@
 # dynaconf 3.3.5 currently declares Python <3.15 on PyPI; use the newest compatible line.
-FROM python:3.14-slim
+FROM python:3.14.9-slim-bookworm@sha256:945c2676dc2b18e0c1f16879244122c57c0ffede60006bf3df159c507a31bcae
 
 WORKDIR /app
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.lock ./
+RUN python -m pip install --no-cache-dir --only-binary :all: --require-hashes -r requirements.lock
 COPY app.py ./
 COPY test_app.py ./
 
