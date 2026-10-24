@@ -1,0 +1,98 @@
+[
+  {
+    "name": "datasets",
+    "distribution_directory": "datasets",
+    "upstream_version": "5.1.0",
+    "local_version": "5.1.0+hai.fsspec.1",
+    "upstream_filename": "datasets-5.1.0-py3-none-any.whl",
+    "upstream_url": "https://files.pythonhosted.org/packages/24/cc/7f624629846c709ef1c68aa61bfb8d0ae2638cbe265104a1c2f7a630949e/datasets-5.1.0-py3-none-any.whl",
+    "upstream_wheel_sha256": "86fd08b280485aab82894d2c81842c4151d93b575efea0054315104cb7bc3cec",
+    "wheel_tag": "py3-none-any",
+    "unchanged_python_file_count": 154,
+    "unchanged_python_manifest_sha256": "95da96c4ca9de50ba976e03b6d756bc369c47994abb81c08ae79707cb2d0d525",
+    "metadata_edits": [
+      {
+        "old": "Requires-Dist: fsspec[http]<=2026.7.0,>=2023.1.0",
+        "new": "Requires-Dist: fsspec[http]==2026.9.0"
+      },
+      {
+        "old": "Requires-Python: >=3.10.0",
+        "new": "Requires-Python: >=3.15,<3.16"
+      }
+    ],
+    "profile": "Explicit dependency-contract compatibility candidate for current CPython 3.15 HAI SDK. All Python sources, resources, modes, licenses and entrypoints are preserved. Public static import/export review supports preparing this port, not upstream compatibility or data/provider acceptance. Hosted real imports, existing functional cases and full security/privacy acceptance remain required. No resolver override/advisory waiver or validation stub is used."
+  },
+  {
+    "name": "mbstrdecoder",
+    "distribution_directory": "mbstrdecoder",
+    "upstream_version": "1.1.5",
+    "local_version": "1.1.5+hai.chardet7.1",
+    "upstream_filename": "mbstrdecoder-1.1.5-py3-none-any.whl",
+    "upstream_url": "https://files.pythonhosted.org/packages/4c/eb/711270faab7b7df702339a2c68b31fd3ed4fffc68b0e99e5bdf49b1e87e4/mbstrdecoder-1.1.5-py3-none-any.whl",
+    "upstream_wheel_sha256": "4a50fe113d4abecfd86e8f716b2e413cce03d63af83ec3c7cdbe81dec0e519ed",
+    "wheel_tag": "py3-none-any",
+    "unchanged_python_file_count": 5,
+    "unchanged_python_manifest_sha256": "86b50096c1498bb13c83082cb2003680fbfae5c2d894fc40cdee7adb7fd5441b",
+    "metadata_edits": [
+      {
+        "old": "Requires-Dist: chardet<7,>=3.0.4",
+        "new": "Requires-Dist: chardet==7.7.0"
+      },
+      {
+        "old": "Requires-Python: >=3.10",
+        "new": "Requires-Python: >=3.15,<3.16"
+      }
+    ],
+    "profile": "Explicit LM Eval CPython 3.15 dependency-contract candidate. All Python source, resources, modes, licenses and entrypoints are unchanged. Modified distribution metadata identifies this port honestly; no upstream support assertion, resolver override, advisory waiver or validation stub. Current real SDK imports, unchanged upstream functional cases and full image/data/provider acceptance remain required."
+  },
+  {
+    "name": "pytablewriter",
+    "distribution_directory": "pytablewriter",
+    "upstream_version": "1.2.1",
+    "local_version": "1.2.1+hai.typepy2.1",
+    "upstream_filename": "pytablewriter-1.2.1-py3-none-any.whl",
+    "upstream_url": "https://files.pythonhosted.org/packages/21/4c/c199512f01c845dfe5a7840ab3aae6c60463b5dc2a775be72502dfd9170a/pytablewriter-1.2.1-py3-none-any.whl",
+    "upstream_wheel_sha256": "e906ff7ff5151d70a5f66e0f7b75642a7f2dce8d893c265b79cc9cf6bc04ddb4",
+    "wheel_tag": "py3-none-any",
+    "unchanged_python_file_count": 65,
+    "unchanged_python_manifest_sha256": "44fa963ead44327385cbb36c54cf9935c1d1c82da220570b727c33da045c33c2",
+    "metadata_edits": [
+      {
+        "old": "Requires-Dist: typepy[datetime]<2,>=1.3.2",
+        "new": "Requires-Dist: typepy[datetime]==2.0.0+hai.dateutil3.1"
+      },
+      {
+        "old": "Requires-Python: >=3.9",
+        "new": "Requires-Python: >=3.15,<3.16"
+      }
+    ],
+    "profile": "Explicit LM Eval CPython 3.15 dependency-contract candidate. All Python source, resources, modes, licenses and entrypoints are unchanged. Modified distribution metadata identifies this port honestly; no upstream support assertion, resolver override, advisory waiver or validation stub. Current real SDK imports, unchanged upstream functional cases and full image/data/provider acceptance remain required."
+  },
+  {
+    "name": "typepy",
+    "distribution_directory": "typepy",
+    "upstream_version": "2.0.0",
+    "local_version": "2.0.0+hai.dateutil3.1",
+    "upstream_filename": "typepy-2.0.0-py3-none-any.whl",
+    "upstream_url": "https://files.pythonhosted.org/packages/80/86/02e36d19ad12e27af63b99062f552c6a1eae030753926223c9575c8f5458/typepy-2.0.0-py3-none-any.whl",
+    "upstream_wheel_sha256": "f97d3d26d5643a0aeccefb5f5ebadf64610e53eb2d0fa14133e5929a63314cfc",
+    "wheel_tag": "py3-none-any",
+    "unchanged_python_file_count": 50,
+    "unchanged_python_manifest_sha256": "244048e5cb3093a6506ca46656237fdd2d4a296848c0d346c05377c97b89b04d",
+    "metadata_edits": [
+      {
+        "old": "Requires-Dist: python-dateutil<3.0.0,>=2.8.0; extra == \"datetime\"",
+        "new": "Requires-Dist: python-dateutil==3.0.0; extra == \"datetime\""
+      },
+      {
+        "old": "Requires-Dist: python-dateutil<3.0.0,>=2.8.0; extra == \"test\"",
+        "new": "Requires-Dist: python-dateutil==3.0.0; extra == \"test\""
+      },
+      {
+        "old": "Requires-Python: >=3.9",
+        "new": "Requires-Python: >=3.15,<3.16"
+      }
+    ],
+    "profile": "Explicit LM Eval CPython 3.15 dependency-contract candidate. All Python source, resources, modes, licenses and entrypoints are unchanged. Modified distribution metadata identifies this port honestly; no upstream support assertion, resolver override, advisory waiver or validation stub. Current real SDK imports, unchanged upstream functional cases and full image/data/provider acceptance remain required."
+  }
+]
