@@ -19,10 +19,12 @@ import (
 var maintenanceLeaseDriverSequence atomic.Uint64
 
 type maintenanceLeaseDriverState struct {
-	opened       atomic.Int64
-	closed       atomic.Int64
-	failUnlock   bool
-	unlockResult bool
+	opened             atomic.Int64
+	closed             atomic.Int64
+	failUnlock         bool
+	unlockResult       bool
+	acquireResult      bool
+	onAcquireRowsClose func()
 }
 
 type maintenanceLeaseDriver struct{ state *maintenanceLeaseDriverState }
@@ -48,6 +50,9 @@ func (maintenanceLeaseConn) Begin() (driver.Tx, error) {
 }
 
 func (c maintenanceLeaseConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	if strings.Contains(query, "pg_try_advisory_lock") {
+		return &maintenanceLeaseRows{released: c.state.acquireResult, onClose: c.state.onAcquireRowsClose}, nil
+	}
 	if !strings.Contains(query, "pg_advisory_unlock") {
 		return nil, fmt.Errorf("unexpected query: %s", query)
 	}
@@ -60,10 +65,16 @@ func (c maintenanceLeaseConn) QueryContext(_ context.Context, query string, _ []
 type maintenanceLeaseRows struct {
 	released bool
 	done     bool
+	onClose  func()
 }
 
 func (*maintenanceLeaseRows) Columns() []string { return []string{"pg_advisory_unlock"} }
-func (*maintenanceLeaseRows) Close() error      { return nil }
+func (r *maintenanceLeaseRows) Close() error {
+	if r.onClose != nil {
+		r.onClose()
+	}
+	return nil
+}
 func (r *maintenanceLeaseRows) Next(destination []driver.Value) error {
 	if r.done {
 		return io.EOF

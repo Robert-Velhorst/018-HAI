@@ -133,6 +133,16 @@ console.log(JSON.stringify({ error, calls, output, files, env, evidence, owner, 
 
 
 class CIWorkflowContractTest(unittest.TestCase):
+    def test_model_maintenance_lease_requires_real_postgres_pass(self):
+        migrations = job_block("migrations-integration")
+        for contract in (
+            "hai_llm_maintenance_lease_test",
+            'HAI_LLM_MAINTENANCE_LEASE_TEST_DSN: "host=127.0.0.1 user=postgres password=postgres dbname=hai_llm_maintenance_lease_test port=5432 sslmode=disable TimeZone=UTC"',
+            "go test -count=1 -p 1 -timeout 90s -run '^TestPostgresModelMaintenanceLeaseLifecycle$' ./internal/llm/ -v",
+            "grep -q -- '^--- PASS: TestPostgresModelMaintenanceLeaseLifecycle ('",
+        ):
+            self.assertIn(contract, migrations)
+
     def test_trello_live_contract_is_compiled_without_live_credentials(self) -> None:
         backend = job_block("backend")
         self.assertIn(

@@ -256,6 +256,12 @@ func (r *GormModelMaintenanceRepository) AcquireModelMaintenanceLease(ctx contex
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	if r == nil || r.DB == nil {
+		return nil, false, fmt.Errorf("model maintenance lease storage is unavailable")
+	}
 	providerID = strings.TrimSpace(providerID)
 	modelID = strings.TrimSpace(modelID)
 	if providerID == "" || modelID == "" {
@@ -275,6 +281,12 @@ func (r *GormModelMaintenanceRepository) AcquireModelMaintenanceLease(ctx contex
 		// The server may have acquired the session lock before the response was
 		// lost. Discard this connection rather than returning uncertain session
 		// state to the shared pool.
+		discardModelMaintenanceLeaseConn(conn)
+		return nil, false, err
+	}
+	if err := ctx.Err(); err != nil {
+		// Cancellation after the response must not grant execution authority or
+		// return a possibly locked session to the pool.
 		discardModelMaintenanceLeaseConn(conn)
 		return nil, false, err
 	}
