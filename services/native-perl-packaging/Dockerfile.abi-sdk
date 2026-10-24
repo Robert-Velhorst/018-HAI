@@ -1,0 +1,15 @@
+FROM gcc:16.2.0-trixie@sha256:3f73339bf0d3d64081cac3f6d9fdafc6dd4cef2b9c49e0a09f91e97cb0eb139a AS compiler
+FROM hai-perl-package-sdk:ci AS original-sdk
+FROM python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51
+COPY --from=compiler /usr/local/ /usr/local/
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends \
+      build-essential debhelper dpkg-dev fakeroot gpg gpgv debian-keyring \
+      libapt-pkg-dev libcrypt-dev libdb-dev libgdbm-dev libgdbm-compat-dev \
+      libbz2-dev zlib1g-dev netbase procps \
+    && groupadd --gid 10001 source-build \
+    && useradd --uid 10001 --gid source-build --no-create-home --shell /bin/sh source-build
+# Preserve the already reviewed full official keyring and exact signer renewal.
+COPY --from=original-sdk /usr/share/keyrings/ /usr/share/keyrings/
+ENV HAI_DISPOSABLE_PERL_ABI_SDK=1
+ENTRYPOINT ["python", "-I", "/abi-inputs/build_abi_packages.py"]

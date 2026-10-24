@@ -26,4 +26,12 @@ Package installation uses ordinary root package-manager privileges inside the di
 
 The installed testbed is network-disabled with bounded CPU, memory, processes and temporary filesystems. Only the reviewed public inputs and candidate outputs are mounted read-only, alongside a separate writable evidence directory. There is no Docker socket, host source tree, credential, operator database or application deployment. The manager has only the capabilities needed for ordinary file ownership and user changes; cases run as the normal user. Retain dependency diagnostics, package identities, complete autopkgtest results and hashes even on failure. Installed acceptance on this one amd64 testbed remains pending and will not establish every reverse dependency, platform or production image.
 
+### Coordinated XS module rebuild
+
+Run 40138692460 stopped at normal APT simulation: the existing Perl 5.40 ABI modules caused APT to propose removing libapt-pkg-perl, libtext-charwidth-perl, libtext-wrapi18n-perl, ucf and mercurial. The no-remove guard prevented installation and no installed cases ran.
+
+The follow-up builds the latest published libapt-pkg-perl 0.1.43 and Text::CharWidth 0.04-12 recipes against the actual normally installed Perl 5.44 package family in a separate minimal build SDK. It does not remove packages from the original SDK or installed-case testbed. Source descriptors and all archives are hash-pinned; normal dpkg-source signature and strong-checksum validation is mandatory. Both module builds run as UID 10001 through unchanged published rules and cases, using GCC 16.2. The generated package controls must declare the real perlapi-5.44.0 dependency. No dependency string, package-manager state, interpreter selection, source assertion or ABI identity is patched.
+
+The final full testbed verifies the primary and ABI producer receipts and every candidate hash, then performs one normal APT transaction containing all seven Perl packages plus all generated module packages. The same no-remove guard and twelve unfiltered published Perl installed cases remain required. Module source builds do not prove every module reverse dependency or platform, and this profile remains unqualified until the hosted evidence passes.
+
 Interface: [Debian autopkgtest manual](https://manpages.debian.org/trixie/autopkgtest/autopkgtest.1.en.html). The source archive supplies the cases and control metadata; this profile adds orchestration and identity gates only.

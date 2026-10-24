@@ -43,6 +43,22 @@ def main():
         if digest(path.read_bytes()) != item['sha256']:
             raise ValueError('Candidate archive differs from verified build')
         paths.append(str(path))
+    abi_spec = json.loads(Path('/abi-inputs/abi-sources.json').read_text())
+    abi_raw = Path('/abi-candidates/abi-qualification.json').read_bytes()
+    abi = json.loads(abi_raw)
+    if (not abi.get('all_source_and_build_gates_passed')
+            or abi.get('original_recipes_or_cases_changed') is not False
+            or abi.get('sources') != abi_spec['sources']
+            or abi.get('producer_receipt_sha256') != digest((candidates/'qualification.json').read_bytes())
+            or not set(abi_spec['expected_binary_packages']) <= {p['package'] for p in abi['candidate_packages']}):
+        raise ValueError('Require both normally built target-ABI modules from these exact candidates')
+    for item in abi['candidate_packages']:
+        if Path(item['name']).name != item['name']:
+            raise ValueError('Unexpected ABI archive path')
+        path = Path('/abi-candidates')/item['name']
+        if digest(path.read_bytes()) != item['sha256']:
+            raise ValueError('ABI package archive changed')
+        paths.append(str(path))
     Path('/build/home').mkdir(parents=True, exist_ok=True)
     Path('/build/tmp').mkdir(parents=True, exist_ok=True)
     environment = {
@@ -58,6 +74,7 @@ def main():
         'scope': 'Normal installation and all published Debian autopkgtests on one disposable amd64 testbed',
         'version': spec['version'], 'candidate_packages': packages,
         'producer_receipt_sha256': digest((candidates/'qualification.json').read_bytes()),
+        'abi_receipt_sha256': digest(abi_raw), 'abi_candidate_packages': abi['candidate_packages'],
         'commands': [], 'manager_UID': os.getuid(), 'test_user': 'source-build',
         'normal_installability_passed': False,
         'normal_dependency_and_complete_family_install_passed': False,
@@ -109,6 +126,15 @@ def main():
         if run('dpkg-audit', ['dpkg', '--audit'], 30).strip():
             raise RuntimeError('Package database reports incomplete configurations')
         report['normal_dependency_and_complete_family_install_passed'] = True
+        abi_status = run('ABI-dpkg-status', ['dpkg-query', '-W',
+                         '-f=${binary:Package}\t${Version}\t${db:Status-Status}\n',
+                         *sorted(abi_spec['expected_binary_packages'])], 30)
+        actual = {row[0].split(':')[0]: row[1:] for row in
+                  (line.split('\t') for line in abi_status.splitlines()) if len(row) == 3}
+        expected_versions = {source['source']: [source['version'], 'installed'] for source in abi_spec['sources']}
+        if actual != expected_versions:
+            raise RuntimeError('Both exact target-ABI modules must be normally configured')
+        report['normal_ABI_module_installation_passed'] = True
         report['installed_perl_config'] = run('installed-perl-config', ['/usr/bin/perl', '-V'], 30)
         run('all-published-installed-cases', ['autopkgtest', '--user=source-build',
             '--no-built-binaries', '--timeout=2400', '--output-dir=/outputs/autopkgtest',

@@ -13,7 +13,7 @@ jobs:
   complete-package-family:
     name: Build the complete published Perl package family
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -30,6 +30,7 @@ jobs:
           mkdir -p "$HAI_SOURCE_ROOT/inputs" "$HAI_SOURCE_ROOT/outputs"
           python -I services/native-perl-packaging/fetch_source.py "$HAI_SOURCE_ROOT/inputs"
           cp services/native-perl-packaging/qualify_installed.py "$HAI_SOURCE_ROOT/inputs/qualify_installed.py"
+          python -I services/native-perl-packaging/fetch_abi_sources.py "$HAI_SOURCE_ROOT/abi-inputs"
           sha256sum "$HAI_SOURCE_ROOT/inputs/"* > "$HAI_SOURCE_ROOT/input-sha256.txt"
           sudo chown 10001:10001 "$HAI_SOURCE_ROOT/outputs"
       - name: Build disposable Debian package SDK
@@ -46,6 +47,24 @@ jobs:
             --mount type=bind,src="$HAI_SOURCE_ROOT/outputs",dst=/outputs \
             --env HAI_HOSTED_SOURCE_QUALIFICATION=github-hosted \
             hai-perl-package-sdk:ci
+      - name: Build separate target-Perl ABI module SDK
+        run: docker build --file services/native-perl-packaging/Dockerfile.abi-sdk --tag hai-perl-abi-sdk:ci services/native-perl-packaging
+      - name: Build both unchanged published ABI module recipes
+        timeout-minutes: 35
+        run: |
+          mkdir -p "$HAI_SOURCE_ROOT/abi-outputs"
+          docker image inspect hai-perl-abi-sdk:ci > "$HAI_SOURCE_ROOT/abi-sdk-image-inspect.json"
+          docker run --init --rm --network none --user 0:0 \
+            --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
+            --cap-add FSETID --cap-add SETGID --cap-add SETUID \
+            --security-opt no-new-privileges --memory 6g --cpus 2 --pids-limit 256 \
+            --tmpfs /build:rw,exec,nosuid,nodev,size=2g,mode=1777 \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,size=512m,mode=1777 \
+            --mount type=bind,src="$HAI_SOURCE_ROOT/abi-inputs",dst=/abi-inputs,readonly \
+            --mount type=bind,src="$HAI_SOURCE_ROOT/outputs",dst=/candidates,readonly \
+            --mount type=bind,src="$HAI_SOURCE_ROOT/abi-outputs",dst=/abi-outputs \
+            --env HAI_HOSTED_SOURCE_QUALIFICATION=github-hosted \
+            hai-perl-abi-sdk:ci
       - name: Build disposable installed-package testbed
         run: docker build --file services/native-perl-packaging/Dockerfile.testbed --tag hai-perl-installed-testbed:ci services/native-perl-packaging
       - name: Verify ordinary package installation and every published autopkgtest
@@ -61,6 +80,8 @@ jobs:
             --tmpfs /tmp:rw,exec,nosuid,nodev,size=2g,mode=1777 \
             --mount type=bind,src="$HAI_SOURCE_ROOT/inputs",dst=/inputs,readonly \
             --mount type=bind,src="$HAI_SOURCE_ROOT/outputs",dst=/candidates,readonly \
+            --mount type=bind,src="$HAI_SOURCE_ROOT/abi-inputs",dst=/abi-inputs,readonly \
+            --mount type=bind,src="$HAI_SOURCE_ROOT/abi-outputs",dst=/abi-candidates,readonly \
             --mount type=bind,src="$HAI_SOURCE_ROOT/installed-outputs",dst=/outputs \
             --env HAI_HOSTED_SOURCE_QUALIFICATION=github-hosted \
             hai-perl-installed-testbed:ci
