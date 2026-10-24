@@ -46,6 +46,16 @@
               "new": "__version__ = \"@PROJECT_VERSION@@PYTHON_RELEASE@\""
             }
           ]
+        },
+        "ortools/math_opt/python/normalize.py": {
+          "original_sha256": "77beba66cb043de4d480f4dfa11cfb7bea0bc47aecd8dd56d0449fa7e24b3552",
+          "patched_sha256": "96952c6675354b1eff7ff40f2106f0ab695f3cb398f7c941e41b500849384b96",
+          "edits": [
+            {
+              "old": "if field.label == field.LABEL_REPEATED:",
+              "new": "if field.is_repeated:"
+            }
+          ]
         }
       }
     },
@@ -84,5 +94,10 @@
   },
   "new_application_cases_authored": false,
   "local_vendor_native_application_execution": false,
-  "runtime_qualified": false
+  "runtime_qualified": false,
+  "packaging_environment": {
+    "OR_TOOLS_PATCH": "6755"
+  },
+  "public_release_version_source": "https://pypi.org/pypi/ortools/9.15.6755/json",
+  "migration_source": "https://protobuf.dev/support/migration/"
 }

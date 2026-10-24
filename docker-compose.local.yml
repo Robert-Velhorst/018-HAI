@@ -1319,6 +1319,8 @@ services:
   ortools-solver:
     build:
       context: ./services/ortools-solver
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["optimization"]
     restart: unless-stopped
     mem_limit: 512m

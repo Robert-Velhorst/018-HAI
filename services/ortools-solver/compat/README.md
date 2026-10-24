@@ -6,9 +6,11 @@ Protobuf release is native v36.2 / Python 7.36.2. Updating only a Python constra
 would leave the generated code and native engine bound to the older library.
 
 This proposal derives explicitly modified `9.15.6755+hai.protobuf7.1` from
-OR-Tools commit `551ad10d94835c99e5e1e684500d3db398c0e345`. Four exact source
+OR-Tools commit `551ad10d94835c99e5e1e684500d3db398c0e345`. Five exact source
 edits select the SHA-256-bound Protobuf 36.2 source archive, identify the local
-package version and require the matching Python runtime. The solver, schemas,
+package version, require the matching Python runtime and migrate the removed
+MathOpt FieldDescriptor.label access to the equivalent is_repeated property.
+The solver mathematics, schemas,
 application bounds and all existing scheduling cases remain unchanged.
 
 The original OR-Tools Protobuf CMake patch adapts Zlib target propagation and
@@ -41,3 +43,24 @@ Primary records:
 - https://github.com/protocolbuffers/protobuf/releases/tag/v36.2
 - https://pypi.org/pypi/ortools/9.15.6755/json
 - https://pypi.org/pypi/protobuf/7.36.2/json
+
+## Integrated build/runtime path
+
+The verified candidate runtime (9 packages) and build (14 packages) locks are
+integrated into the canonical mirrors. The root requirements files declare
+runtime prerequisites; the supported complete installation is the source-built
+Docker/CI wheel. They no longer pretend the incompatible upstream wheel can
+provide this Protobuf 7 profile.
+
+The upstream OR_TOOLS_PATCH=6755 packaging input identifies the public release
+build number, with the local port suffix retained. Earlier shallow-clone builds
+reported the upstream fallback 9.15.9999; that is not a published release.
+
+Compilation uses UID 10001. Original scheduling cases run without network as
+UID 10001 in both build SDK and runtime image. Runtime imports assert matching
+local package/module and Protobuf versions. The image inherits the unchanged
+source-pinned OpenSSL 4.1.0 / SQLite 3.54.1 builder/profile, drops its installer
+and bootstrap wheel, and receives the existing strict exact-image scan without
+exclusions. An explicit Docker context allowlist excludes operator/secret files.
+Other compiler/bundled/native/OS versions and real runtime compatibility remain
+unqualified until their actual hosted evidence is inspected.

@@ -1,0 +1,10 @@
+**
+!Dockerfile
+!app.py
+!test_app.py
+!requirements.runtime.lock
+!requirements.build.lock
+!native-runtime.profile.json
+!compat/
+!compat/apply_source_port.py
+!compat/source-port-spec.json
