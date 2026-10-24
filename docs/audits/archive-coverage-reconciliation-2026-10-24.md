@@ -63,6 +63,14 @@ validation and A2A message parsing. The current implementations preserve or
 deliberately strengthen the relevant behavior; the archived helpers must not be
 restored wholesale merely because their names disappeared.
 
+Eight additional declaration identities across seven production files have
+static dispositions in `archive-production-helper-dispositions-2026-10-24.md`:
+owner-scoped metric counting, metadata-only conversation previews, successor
+secret redaction, direct scheduler parsing, expanded capability terms, the MCP
+projection function/type and fixed catalog-maintenance failure messages. The
+extra URL-redaction repair remains published in PR #319, not integrated on main.
+No fresh unit-test pass or whole-file completion is implied by this static pass.
+
 All nine historical `Test...` identities absent from their original files in
 this cohort have individual dispositions in
 `archive-test-successors-reconciliation-2026-10-24.md`. They comprise renamed,
