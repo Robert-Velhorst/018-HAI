@@ -55,7 +55,27 @@ handle prevented concurrent readers/writers during verification and permitted
 the scoped deletion. The final absence check passed; 23,326,720 logical bytes
 were removed. TAR header metadata was not retained as product source.
 
-The E0F snapshot remains because its four differences are published in a PR,
-not yet preserved on main. All eleven conversation archives remain. Neither
-an open PR, passing CI nor this member comparison clears those other sources
-for deletion. The remaining integration objective is not complete.
+## Post-merge E0F verification and removal
+
+The preceding inspection is historical. PR #332 was subsequently authorized,
+marked ready and squash-merged on 2026-10-24 as
+`f7bc8ae30aebfd114cc98ae18848aabf0829f32f`. All 41 exact-head checks had
+succeeded before that merge.
+
+A fresh comparison against that advertised remote-main revision found one
+byte-identical file and 2,140 line-ending-equivalent files, no missing or changed
+files, no extra empty directories, and matching executable semantics for all
+2,141 files. Every original file's exact bytes were reconstructible from main.
+The first comparison lacked four local Git blobs; those were resolved from the
+existing PR #332 object store before accepting preservation, not treated as
+source deletions or waived differences.
+
+After native process/mount, reparse-path and full-archive integrity checks, only
+the E0F TAR was removed. A private receipt records the before/after free space,
+archive fingerprint, preserved revision and successful absence check. Removal
+freed 23,326,720 logical bytes; the TAR container's headers/timestamps were not
+retained as product source.
+
+All eleven conversation archives remain. This source-TAR comparison clears
+neither those archives nor unrelated worktrees or databases for deletion.
+The remaining integration objective is not complete.

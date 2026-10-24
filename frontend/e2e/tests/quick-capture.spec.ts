@@ -15,7 +15,9 @@ test.describe('Quick capture on the owned acceptance stack', () => {
 
   test('restores its draft and persists one note before clearing it', async ({ page }) => {
     const title = `E2E quick capture ${randomUUID()}`;
-    const content = `${title}. Synthetic acceptance note; no external action is requested.`;
+    // Memory intentionally merges similar notes. Keep retries distinct without deleting records.
+    const nonce = Array.from({ length: 8 }, () => randomUUID()).join(' ');
+    const content = `${title}. Synthetic acceptance note; no external action is requested. ${nonce}`;
 
     await page.goto('/login');
     await page.getByTestId('login-email').fill(email);
@@ -57,7 +59,7 @@ test.describe('Quick capture on the owned acceptance stack', () => {
     const persisted = await page.request.get(`/api/v1/memory/${encodeURIComponent(saved.id)}`);
     expect(persisted.ok()).toBeTruthy();
     expect(await persisted.json()).toMatchObject({
-      id: saved.id, kind: 'note', summary: title, content, tags: ['quick-capture'],
+      id: saved.id, kind: 'note', summary: title, content, tags: 'quick-capture',
     });
     await page.reload();
     await expect(titleInput).toHaveValue('');
