@@ -15,6 +15,7 @@ import urllib.request
 import zipfile
 
 SDKS = {
+    "miniswe-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "lm-eval-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "crewai-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "ortools-runtime": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
@@ -48,7 +49,7 @@ def main():
     for name in ["outputs", "cache"]:
         (output / name).chmod(0o777)
     service, input_filename = INPUTS.get(args.runner, (args.runner,
-        "requirements-port.in" if args.runner in {"evidently-runner", "guardrails-runner", "lm-eval-runner"} else "requirements.in"))
+        "requirements-port.in" if args.runner in {"evidently-runner", "guardrails-runner", "lm-eval-runner", "miniswe-runner"} else "requirements.in"))
     input_path = Path("services") / service / input_filename
     source = (root / input_path).read_bytes()
     (output / "inputs/requirements.in").write_bytes(source)
@@ -100,6 +101,36 @@ def main():
         if port_build["sha256"] != "0cc1a5307a648a8f858f3181e5df8c23b07f6af6681e33e8b3d102dd3e8ddf7b":
             raise ValueError("LM Eval metadata port differs from the reviewed static build")
         (output/"port-build.json").write_text(json.dumps(port_build, indent=2)+"\n", encoding="utf-8")
+    if args.runner == "miniswe-runner":
+        build = subprocess.run([sys.executable,
+            str(root/"services/miniswe-runner/compat/build_port_wheel.py"),
+            "--output-directory", str(output/"inputs")], capture_output=True, check=False, timeout=120)
+        (output/"port-build.log").write_bytes(build.stdout+build.stderr)
+        if build.returncode:
+            raise RuntimeError("LiteLLM current-SDK candidate construction failed")
+        port_build=json.loads(build.stdout)
+        if port_build["sha256"] != "4522bd0c2914a03df1d02ae29c56087d65d3b43bfbc941cef2bfd98587e23c36":
+            raise ValueError("LiteLLM candidate differs from the reviewed static build")
+        (output/"port-build.json").write_text(json.dumps(port_build,indent=2)+"\n",encoding="utf-8")
+        parents = subprocess.run([sys.executable,
+            str(root/"services/miniswe-runner/compat/build_python_parent_ports.py"),
+            "--output-directory",str(output/"inputs")],capture_output=True,check=False,timeout=180)
+        (output/"python-parent-port-build.log").write_bytes(parents.stdout+parents.stderr)
+        if parents.returncode:
+            raise RuntimeError("Source-bound Python parent port construction failed")
+        parent_builds=json.loads(parents.stdout)
+        expected_parents={"datasets":"c38f4c04391c1696121d7a9e777c6f598ff6766b7aaad70c68e98c1d7ab6511e",
+                          "botocore":"cbffba919de6995f7908519ad2924aac4f9dc8f73858eefbffe1e7e99686d00e"}
+        if len(parent_builds)!=2 or {p["name"]:p["sha256"] for p in parent_builds}!=expected_parents:
+            raise ValueError("Python parent ports differ from reviewed static builds")
+        (output/"python-parent-port-build.json").write_text(json.dumps(parent_builds,indent=2)+"\n",encoding="utf-8")
+        native = subprocess.run([sys.executable,
+            str(root/"services/miniswe-runner/compat/build_fastuuid_wheel.py"),
+            "--output",str(output)],capture_output=True,check=False,timeout=1800)
+        (output/"fastuuid-preparation.log").write_bytes(native.stdout+native.stderr)
+        if native.returncode:
+            print((native.stdout+native.stderr).decode("utf-8",errors="replace")[-12000:])
+            raise RuntimeError("Source-bound FastUUID native candidate construction failed")
     metadata_raw = urllib.request.urlopen("https://pypi.org/pypi/uv/0.13.5/json", timeout=40).read()
     metadata = json.loads(metadata_raw)
     wheels = [f for f in metadata["urls"] if f["packagetype"] == "bdist_wheel" and "manylinux_2_17_x86_64" in f["filename"]]
@@ -142,6 +173,28 @@ def main():
                "public_build_backend_metadata_execution_possible": True,
                "private_application_source_or_credentials_mounted": False,
                "application_tests_run": False, "host_sdk_installed": False}
+    if args.runner == "miniswe-runner" and process.returncode == 0:
+        qualified = subprocess.run([sys.executable,
+            str(root/"services/miniswe-runner/compat/qualify_public_sdk.py"),
+            "--output",str(output),"--sdk",sdk],capture_output=True,check=False,timeout=600)
+        (output/"public-sdk-qualification.log").write_bytes(qualified.stdout+qualified.stderr)
+        receipt["public_sdk_qualification_returncode"]=qualified.returncode
+        receipt["public_sdk_import_qualified"]=qualified.returncode==0
+        receipt["public_vendor_sdk_code_executed_in_disposable_container"]=True if qualified.returncode==0 else None
+        if qualified.returncode:
+            (output/"receipt.json").write_text(json.dumps(receipt,indent=2)+"\n",encoding="utf-8")
+            print((qualified.stdout+qualified.stderr).decode("utf-8",errors="replace")[-14000:])
+            raise SystemExit(qualified.returncode)
+        cases = subprocess.run([sys.executable,
+            str(root/"services/miniswe-runner/compat/qualify_upstream_cases.py"),
+            "--output",str(output),"--sdk",sdk],capture_output=True,check=False,timeout=2600)
+        (output/"upstream-case-qualification.log").write_bytes(cases.stdout+cases.stderr)
+        receipt["unchanged_upstream_case_qualification_returncode"]=cases.returncode
+        receipt["unchanged_upstream_cases_qualified"]=cases.returncode==0
+        if cases.returncode:
+            (output/"receipt.json").write_text(json.dumps(receipt,indent=2)+"\n",encoding="utf-8")
+            print((cases.stdout+cases.stderr).decode("utf-8",errors="replace")[-16000:])
+            raise SystemExit(cases.returncode)
     (output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(receipt))
     if process.returncode:

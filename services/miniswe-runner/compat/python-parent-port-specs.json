@@ -1,0 +1,48 @@
+[
+  {
+    "name": "datasets",
+    "distribution_directory": "datasets",
+    "upstream_version": "5.1.0",
+    "local_version": "5.1.0+hai.fsspec.1",
+    "upstream_filename": "datasets-5.1.0-py3-none-any.whl",
+    "upstream_url": "https://files.pythonhosted.org/packages/24/cc/7f624629846c709ef1c68aa61bfb8d0ae2638cbe265104a1c2f7a630949e/datasets-5.1.0-py3-none-any.whl",
+    "upstream_wheel_sha256": "86fd08b280485aab82894d2c81842c4151d93b575efea0054315104cb7bc3cec",
+    "wheel_tag": "py3-none-any",
+    "unchanged_python_file_count": 154,
+    "unchanged_python_manifest_sha256": "95da96c4ca9de50ba976e03b6d756bc369c47994abb81c08ae79707cb2d0d525",
+    "metadata_edits": [
+      {
+        "old": "Requires-Dist: fsspec[http]<=2026.7.0,>=2023.1.0",
+        "new": "Requires-Dist: fsspec[http]==2026.9.0"
+      },
+      {
+        "old": "Requires-Python: >=3.10.0",
+        "new": "Requires-Python: >=3.15,<3.16"
+      }
+    ],
+    "profile": "Explicit dependency-contract compatibility candidate for current CPython 3.15 HAI SDK. All Python sources, resources, modes, licenses and entrypoints are preserved. Public static import/export review supports preparing this port, not upstream compatibility or data/provider acceptance. Hosted real imports, existing functional cases and full security/privacy acceptance remain required. No resolver override/advisory waiver or validation stub is used."
+  },
+  {
+    "name": "botocore",
+    "distribution_directory": "botocore",
+    "upstream_version": "1.43.118",
+    "local_version": "1.43.118+hai.dateutil3.1",
+    "upstream_filename": "botocore-1.43.118-py3-none-any.whl",
+    "upstream_url": "https://files.pythonhosted.org/packages/9c/ce/61b39a8e7a69af5ea43c1c3e1b0065a4866b42ccddf107e16686a3143614/botocore-1.43.118-py3-none-any.whl",
+    "upstream_wheel_sha256": "a45d7ae570674161e4a3542d8c68633bf7503f92d1de781ef7361b79488eda6f",
+    "wheel_tag": "py3-none-any",
+    "unchanged_python_file_count": 76,
+    "unchanged_python_manifest_sha256": "3d82bf5072a8b9e33de43bc549d5d1f0daa8e0415b424e82b72a6b4deb87e0a3",
+    "metadata_edits": [
+      {
+        "old": "Requires-Dist: python-dateutil (<3.0.0,>=2.1)",
+        "new": "Requires-Dist: python-dateutil==3.0.0"
+      },
+      {
+        "old": "Requires-Python: >= 3.10",
+        "new": "Requires-Python: >=3.15,<3.16"
+      }
+    ],
+    "profile": "Explicit dependency-contract compatibility candidate for current CPython 3.15 HAI SDK. All Python sources, resources, modes, licenses and entrypoints are preserved. Public static import/export review supports preparing this port, not upstream compatibility or data/provider acceptance. Hosted real imports, existing functional cases and full security/privacy acceptance remain required. No resolver override/advisory waiver or validation stub is used."
+  }
+]

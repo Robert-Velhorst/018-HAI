@@ -1,0 +1,145 @@
+[
+  {
+    "name": "fastuuid",
+    "upstream_sdist_sha256": "178947fc2f995b38497a74172adee64fdeb8b7ec18f2a5934d037641ba265d26",
+    "files": [
+      {
+        "path": "tests/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "prepared_fastuuid_path": "tests/__init__.py"
+      },
+      {
+        "path": "tests/conftest.py",
+        "sha256": "3a410c3671098968443145ade1b1dec1008bf643560a087ec0c82f4ae23185cc",
+        "bytes": 299,
+        "prepared_fastuuid_path": "tests/conftest.py"
+      },
+      {
+        "path": "tests/test_uuid.py",
+        "sha256": "dbb56f1e5b31435ddb10d4d14cbc159cf6090522d5a4f5686bee8bd1571ead77",
+        "bytes": 10385,
+        "prepared_fastuuid_path": "tests/test_uuid.py"
+      },
+      {
+        "path": "LICENSE",
+        "sha256": "00736c852386ac15a12283c00677b46ef4b303be53ab0a1d05f48a9291355fa4",
+        "bytes": 1534,
+        "prepared_fastuuid_path": "LICENSE"
+      }
+    ],
+    "selectors": [
+      "tests/test_uuid.py"
+    ],
+    "all_cases_and_helpers_preserved": true
+  },
+  {
+    "name": "datasets",
+    "repository": "huggingface/datasets",
+    "source_commit": "efe6ea4f88260b1a5066f28a9c90d82365a29f42",
+    "files": [
+      {
+        "path": "tests/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "url": "https://raw.githubusercontent.com/huggingface/datasets/efe6ea4f88260b1a5066f28a9c90d82365a29f42/tests/__init__.py"
+      },
+      {
+        "path": "tests/conftest.py",
+        "sha256": "0c1ed2b4eb3d30ef7f9d5238e6739897c5b8a490a9047eaeeece488d3a87ce4b",
+        "bytes": 2451,
+        "url": "https://raw.githubusercontent.com/huggingface/datasets/efe6ea4f88260b1a5066f28a9c90d82365a29f42/tests/conftest.py"
+      },
+      {
+        "path": "tests/utils.py",
+        "sha256": "db65ee8fdfdc56c5c5f42a14460d19ceb4a0032e7f60da3b6aeeaa8a34cec69a",
+        "bytes": 18522,
+        "url": "https://raw.githubusercontent.com/huggingface/datasets/efe6ea4f88260b1a5066f28a9c90d82365a29f42/tests/utils.py"
+      },
+      {
+        "path": "tests/test_filesystem.py",
+        "sha256": "95e2cec588ffedd0fdcb2ad8848d2111d3b1dcf1ddc19b8bd2ed1d8bece63560",
+        "bytes": 2298,
+        "url": "https://raw.githubusercontent.com/huggingface/datasets/efe6ea4f88260b1a5066f28a9c90d82365a29f42/tests/test_filesystem.py"
+      },
+      {
+        "path": "tests/fixtures/__init__.py",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "url": "https://raw.githubusercontent.com/huggingface/datasets/efe6ea4f88260b1a5066f28a9c90d82365a29f42/tests/fixtures/__init__.py"
+      },
+      {
+        "path": "tests/fixtures/files.py",
+        "sha256": "db9eefd975a75ded7bb60719a5d4a5b9f93b146f023d5bc73611a510e68923ca",
+        "bytes": 22449,
+        "url": "https://raw.githubusercontent.com/huggingface/datasets/efe6ea4f88260b1a5066f28a9c90d82365a29f42/tests/fixtures/files.py"
+      },
+      {
+        "path": "tests/fixtures/fsspec.py",
+        "sha256": "ed4c41b23c558c9c4eb7594c31820b0aef653f7c81501b2da34165f559acf9a7",
+        "bytes": 4077,
+        "url": "https://raw.githubusercontent.com/huggingface/datasets/efe6ea4f88260b1a5066f28a9c90d82365a29f42/tests/fixtures/fsspec.py"
+      },
+      {
+        "path": "tests/fixtures/hub.py",
+        "sha256": "a6533e7f3ff8ab831805f9605d190ede58de1508ef29a9b4c5746a45082bad2c",
+        "bytes": 7016,
+        "url": "https://raw.githubusercontent.com/huggingface/datasets/efe6ea4f88260b1a5066f28a9c90d82365a29f42/tests/fixtures/hub.py"
+      },
+      {
+        "path": "LICENSE",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "bytes": 11358,
+        "url": "https://raw.githubusercontent.com/huggingface/datasets/efe6ea4f88260b1a5066f28a9c90d82365a29f42/LICENSE"
+      },
+      {
+        "path": "tests/test_filelock.py",
+        "sha256": "e0b98dbc13eda51e50b86ae431906d53b23bc22d9f3e3a6c95d8915aa990bca8",
+        "bytes": 320,
+        "url": "https://raw.githubusercontent.com/huggingface/datasets/efe6ea4f88260b1a5066f28a9c90d82365a29f42/tests/test_filelock.py"
+      }
+    ],
+    "selectors": [
+      "tests/test_filesystem.py",
+      "tests/test_filelock.py"
+    ],
+    "all_cases_and_helpers_preserved": true
+  },
+  {
+    "name": "botocore",
+    "repository": "boto/botocore",
+    "source_commit": "444e17a456ee01d28fd0a521936edf2e8da535eb",
+    "files": [
+      {
+        "path": "tests/__init__.py",
+        "sha256": "b05994f784cbf3b293b63a3460c77763cd443edbb2e0ebd26fb69a7e51533f49",
+        "bytes": 20157,
+        "url": "https://raw.githubusercontent.com/boto/botocore/444e17a456ee01d28fd0a521936edf2e8da535eb/tests/__init__.py"
+      },
+      {
+        "path": "tests/unit/__init__.py",
+        "sha256": "228b646a418b322d3b95810d70b70965f79724eb3e692c67eb177ff19aea1f2a",
+        "bytes": 1724,
+        "url": "https://raw.githubusercontent.com/boto/botocore/444e17a456ee01d28fd0a521936edf2e8da535eb/tests/unit/__init__.py"
+      },
+      {
+        "path": "tests/unit/test_utils.py",
+        "sha256": "e80431bc5381280f8081e6fa0981e6097837bd79721fb3bdfdd7ae5e05394135",
+        "bytes": 138294,
+        "url": "https://raw.githubusercontent.com/boto/botocore/444e17a456ee01d28fd0a521936edf2e8da535eb/tests/unit/test_utils.py"
+      },
+      {
+        "path": "LICENSE.txt",
+        "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+        "bytes": 10174,
+        "url": "https://raw.githubusercontent.com/boto/botocore/444e17a456ee01d28fd0a521936edf2e8da535eb/LICENSE.txt"
+      }
+    ],
+    "selectors": [
+      "tests/unit/test_utils.py::TestParseTimestamps",
+      "tests/unit/test_utils.py::TestDatetime2Timestamp",
+      "tests/unit/test_utils.py::TestParseToUTCDatetime"
+    ],
+    "all_cases_and_helpers_preserved": true
+  }
+]

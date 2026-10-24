@@ -3,6 +3,8 @@ name: Public runner dependency metadata
 on:
   pull_request:
     paths:
+      - services/miniswe-runner/requirements-port.in
+      - services/miniswe-runner/compat/**
       - services/lm-eval-runner/requirements.in
       - services/lm-eval-runner/requirements-port.in
       - services/lm-eval-runner/compat/**
@@ -31,11 +33,11 @@ jobs:
   resolve:
     name: Resolve public metadata (${{ matrix.runner }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ matrix.runner == 'miniswe-runner' && 100 || 15 }}
     strategy:
       fail-fast: false
       matrix:
-        runner: [lm-eval-runner, garak-runner, evidently-runner, agent-framework-runner, guardrails-runner, pydantic-ai-runner, crewai-runner, ortools-runtime, ortools-build]
+        runner: [miniswe-runner, lm-eval-runner, garak-runner, evidently-runner, agent-framework-runner, guardrails-runner, pydantic-ai-runner, crewai-runner, ortools-runtime, ortools-build]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,6 +57,12 @@ jobs:
           name: public-runner-metadata-${{ matrix.runner }}
           path: |
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/outputs/requirements.lock
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/outputs/requirements.sdk-cases.lock
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/upstream-case-specs.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/run_upstream_cases.py
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/requirements.sdk-cases.in
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/upstream-case-results/*
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/upstream-case-qualification.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/receipt.json
@@ -62,4 +70,16 @@ jobs:
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/*.whl
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/evidently-port-build.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/evidently-port-build.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/verify_sdk_import.py
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/qualification/*.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/qualification/*.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/public-sdk-qualification.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-build.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/python-parent-port-build.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/python-parent-port-build.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-build.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-preparation.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-build/exports/Cargo.lock
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-build/exports/HAI_SOURCE_PORT.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/fastuuid-build/exports/*-version.txt
           if-no-files-found: error

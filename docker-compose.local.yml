@@ -1120,6 +1120,9 @@ services:
   miniswe-runner:
     build:
       context: ./services/miniswe-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
+        hai-miniswe-wheels: ${HAI_MINISWE_WHEEL_CONTEXT:-./.build/miniswe-runtime/inputs}
     profiles: ["patch-proposals"]
     restart: unless-stopped
     depends_on:

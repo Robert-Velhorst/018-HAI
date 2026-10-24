@@ -1,0 +1,5 @@
+pytest==9.1.1
+hypothesis==6.170.9
+setuptools==84.2.1
+lz4==4.4.5
+zstandard==0.25.0
