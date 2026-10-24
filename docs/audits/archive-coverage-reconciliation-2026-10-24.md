@@ -31,10 +31,13 @@ code was executed, and no raw private transcript was published.
 | Selected variants | 5,503 | 214 |
 
 These are literal classifications, not semantic-completion counts. Repeated
-paths and earlier versions overlap. The 25 temporary-audit variants still need
-their own disposition. The refreshed tooling distinguishes all selected
-fingerprints from all indexed fingerprints; neither selected cohort alone
-establishes coverage of the whole index or conversation history.
+paths and earlier versions overlap. The 25 temporary-audit variants now have a
+separate static diagnostic disposition in
+`archive-browser-diagnostics-reconciliation-2026-10-24.md`. Together the three
+cohorts account for all 5,742 successful fingerprint lookups, not semantic
+integration of all those changes. Neither product cohort alone establishes
+coverage of the whole index or conversation history. The prepared Quick Capture
+acceptance test still requires pinned dependencies and owned-stack execution.
 
 ## One changed test variant
 
@@ -59,11 +62,24 @@ eleven remaining files. Full byte integrity proves preservation of the baseline,
 not that malformed baseline records or every conversation requirement have been
 semantically processed.
 
+The subsequent private record diagnosis matches all 47 offsets, lengths and
+hashes to truncated `compacted` records blocked in `payload.replacement_history`.
+They are not malformed completed-patch events. This classification does not
+reconstruct missing history or prove that every requirement in those snapshots
+has been integrated.
+
 The 70 non-success-flagged patch entries have 18 distinct fingerprints. Twenty
 entries also have an identical success-flagged patch elsewhere in the index;
 that is application evidence, not current-main or ordering proof. The remaining
 failed patches must not disappear from scope simply because the successful-only
 cohort excluded them.
+
+All eighteen now have explicit dispositions in the failed-patch and subsequent
+runtime/framework reconciliation receipts. Sixteen variants (65 entries) have
+preserved or explicitly superseded source intent on the reviewed baseline. Two
+variants (five entries) exposed actual approval-expiry and historical-provenance
+gaps, with tested prepared repairs. Those repairs still require publication,
+exact-head CI and main integration before they can support source cleanup.
 
 The eleven remaining files have distinct first-64-KiB hashes. They are not exact
 whole-file or strict-prefix duplicates of one another. Neither this prefix check,
