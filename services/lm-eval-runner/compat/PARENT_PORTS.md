@@ -72,3 +72,18 @@ port wheels; incompatible requirements still fail resolution. Overlapping tool
 distributions must match both runtime versions and every Python/native source
 byte before tests run. No case or production dependency is changed to make the
 theme assertion pass. All four suites require new-source hosted qualification.
+
+
+## Canonical runtime integration
+
+The canonical input and both lock mirrors now select the exact 70-package graph
+qualified on source 0559e08 with 953 unchanged vendor cases. Normal CI and the
+image recipe build all five source-bound wheels, verify their individual hashes,
+then install the hash-locked graph. The installed-profile verifier checks the
+engine plus all four parents against their original Python source manifests.
+The four original parent distributions retain 274 Python files unchanged.
+
+Existing application cases, task files, native runtime profile and strict image
+scan are preserved. New-source image behavior/security must be qualified by its
+own hosted results; prior source imports/vendor cases do not prove deployment
+readiness. No real model/provider/private-data acceptance is claimed.

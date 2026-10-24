@@ -11,3 +11,5 @@
 !compat/build_port_wheel.py
 !compat/verify_installed_profile.py
 !compat/port-spec.json
+!compat/build_python_parent_ports.py
+!compat/python-parent-port-specs.json
