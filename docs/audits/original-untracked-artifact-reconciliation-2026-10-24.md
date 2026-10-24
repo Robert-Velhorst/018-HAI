@@ -46,6 +46,16 @@ Nine prepared files equal main after line-ending normalization. The password-res
 
 For every file, deliberately changing an assertion causes the full-file comparison to reject the mutation. No production or test code was replaced by this source review. These are static successor checks, not passing Redis/PostgreSQL test execution or a guarantee about all transitive authentication behavior. The other untracked source groups and the complete working copy are not cleared for deletion.
 
+## Script syntax and runner-smoke fixtures
+
+All 18 original untracked scripts were parsed alongside their main and prepared counterparts: 54 checks with no parse errors. This comprises 39 PowerShell AST parses under PowerShell 7.6.5, nine Python AST parses, three Bash syntax-only checks and three Node syntax-only checks. None of the target installation, recovery or infrastructure scripts was executed.
+
+The full isolated recovery rehearsal differs from its original only by importing the backup script with `-LibraryOnly`, on both main and prepared source. Reintroducing the old import would remove this execution boundary. The other script deltas remain subject to individual functional review; parsing alone does not clear them.
+
+The runner-smoke program and its existing unit suite were exercised through injected fake process results: all 15 tests pass without skips. Real subprocess calls and process creation were independently forbidden during import and execution; the guard observed zero attempts. The tested program, test file and workflow match the prepared checkpoint. Source bytes and original inputs remained unchanged.
+
+The tests cover generated resource/network restrictions, synthetic offline settings, diagnostic redaction, failure handling and cleanup-command selection. Their mocked readiness messages do not mean a runner or container was actually started. No Docker container, installer, provider request, real readiness probe or recovery action ran, and the unit result is not live-image or operational cleanup acceptance.
+
 ## Remaining work and retention
 
 The other historical failure roots have not been requalified by this three-root run. Untracked source differences, private runtime state, recovery artifacts, other checkouts and conversation archives still require their own integration and preservation decisions. All original files remain intact. This report is aggregate evidence only, not a substitute for the private raw records, main integration, publication authorization or deletion proof.
