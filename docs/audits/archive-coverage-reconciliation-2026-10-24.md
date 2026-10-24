@@ -89,8 +89,13 @@ prove database durability, live provider acceptance or complete history review.
 All nine historical `Test...` identities absent from their original files in
 this cohort have individual dispositions in
 `archive-test-successors-reconciliation-2026-10-24.md`. They comprise renamed,
-expanded and intentionally superseded tests. Test fixtures/helpers and all other
-changed declarations remain separate review work. These receipts do not clear
+expanded and intentionally superseded tests. The remaining 22 fixture identities
+now have static dispositions in `archive-test-fixture-dispositions-2026-10-24.md`.
+Together the identity receipts address 54 absent identities: 23 production
+declarations, nine actual tests and 22 fixtures. Their exact one-to-one
+crosswalk is `archive-go-identity-dispositions-2026-10-24.json`; all rows retain
+false whole-file integration and deletion flags. All other changed declarations
+remain separate review work. These receipts do not clear
 the 251 whole-file variants or make the retained archives deletion-eligible.
 
 ## One changed test variant

@@ -1,0 +1,558 @@
+{
+  "version": 1,
+  "main": "3b5afa697ebb0e72b01d59e3a04648a04317cd45",
+  "scope": "Absent identity subset of the 251 changed Go additions, not complete source or transcript coverage",
+  "reviewedVariantCount": 36,
+  "counts": {
+    "test_fixture": 22,
+    "production_declaration": 23,
+    "test_function": 9
+  },
+  "publicationVerified": false,
+  "mainIntegrationOfReceiptsVerified": false,
+  "archiveDeletionEligible": false,
+  "limitation": "Dispositions link to bounded human source reviews. Other changed declarations and requirements remain outside this identity count.",
+  "rows": [
+    {
+      "path": "idp/internal/app/authentication/auth_service_test.go",
+      "reference": "8a0d09dbb4c6",
+      "identity": "func:Send:noopSender",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "idp/internal/app/authentication/auth_service_test.go",
+      "reference": "8a0d09dbb4c6",
+      "identity": "type:noopSender",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/memory/service_test.go",
+      "reference": "1475f769f82b",
+      "identity": "func:Error:errNotFound",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/memory/service_test.go",
+      "reference": "1475f769f82b",
+      "identity": "type:errNotFound",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/task/service_test.go",
+      "reference": "f5c408a70432",
+      "identity": "func:Create:fakeMemoryService",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/task/service_test.go",
+      "reference": "f5c408a70432",
+      "identity": "func:FindByID:fakeMemoryService",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/task/service_test.go",
+      "reference": "f5c408a70432",
+      "identity": "func:Retrieve:fakeMemoryService",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/source/repository.go",
+      "reference": "c10c7226e3a0",
+      "identity": "func:DeleteExtraction:*GormRepository",
+      "category": "production_declaration",
+      "receipt": "archive-owner-and-maintenance-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/haios/handler.go",
+      "reference": "fba950aa3722",
+      "identity": "func:count:*Handler",
+      "category": "production_declaration",
+      "receipt": "archive-production-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/source/service_test.go",
+      "reference": "66c82d7c1fcb",
+      "identity": "var:osWriteFile",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/source/scheduler.go",
+      "reference": "ed0934970876",
+      "identity": "var:fmtSscanf",
+      "category": "production_declaration",
+      "receipt": "archive-production-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/safety/redaction.go",
+      "reference": "8eb831b71589",
+      "identity": "var:keyValueSecretPattern",
+      "category": "production_declaration",
+      "receipt": "archive-production-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/memoryengine/service.go",
+      "reference": "4ff5b904605e",
+      "identity": "func:conversationPreview",
+      "category": "production_declaration",
+      "receipt": "archive-production-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/agentruntime/runtime_test.go",
+      "reference": "9d2d02ba1935",
+      "identity": "func:TestOdysseusAdapterUsesAgentModeWithoutBash",
+      "category": "test_function",
+      "receipt": "archive-test-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/ambient/repository.go",
+      "reference": "3dbcb5e46cba",
+      "identity": "func:UpdateNeed:*GormRepository",
+      "category": "production_declaration",
+      "receipt": "archive-owner-and-maintenance-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/ambient/repository.go",
+      "reference": "3dbcb5e46cba",
+      "identity": "var:_",
+      "category": "production_declaration",
+      "receipt": "archive-owner-and-maintenance-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/ambient/service.go",
+      "reference": "4454e0b8c6a6",
+      "identity": "func:UpdateNeed:*service",
+      "category": "production_declaration",
+      "receipt": "archive-owner-and-maintenance-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/autonomy/service.go",
+      "reference": "15b8b2182135",
+      "identity": "var:ErrNotFound",
+      "category": "production_declaration",
+      "receipt": "archive-owner-and-maintenance-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/workflow/autonomy_telemetry.go",
+      "reference": "6d63232bb376",
+      "identity": "func:closeRunningAutonomyTrace",
+      "category": "production_declaration",
+      "receipt": "archive-owner-and-maintenance-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "idp/internal/app/authentication/cookies.go",
+      "reference": "1703aa672fae",
+      "identity": "func:setAuthCookie",
+      "category": "production_declaration",
+      "receipt": "archive-helper-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/assistant/handler_test.go",
+      "reference": "8c2d8df492c4",
+      "identity": "func:TestCommandHandlerRejectsGlobalCycleForNonOwner",
+      "category": "test_function",
+      "receipt": "archive-test-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/agentcycle/handler_test.go",
+      "reference": "3b1f27e5d15c",
+      "identity": "func:contains",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/agentcycle/handler_test.go",
+      "reference": "3b1f27e5d15c",
+      "identity": "func:stringContains",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/ambient/handler_test.go",
+      "reference": "63066efb2c75",
+      "identity": "func:Accept:*capturingAmbientService",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/ambient/handler_test.go",
+      "reference": "63066efb2c75",
+      "identity": "func:Dismiss:*capturingAmbientService",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/ambient/handler_test.go",
+      "reference": "63066efb2c75",
+      "identity": "func:Overview:*capturingAmbientService",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/ambient/handler_test.go",
+      "reference": "63066efb2c75",
+      "identity": "func:OverviewForOwner:*capturingAmbientService",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/ambient/handler_test.go",
+      "reference": "63066efb2c75",
+      "identity": "func:Scan:*capturingAmbientService",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/ambient/handler_test.go",
+      "reference": "63066efb2c75",
+      "identity": "func:ScanForOwner:*capturingAmbientService",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/ambient/handler_test.go",
+      "reference": "63066efb2c75",
+      "identity": "func:TestAmbientResolutionHandlersRequireVerifiedOwner",
+      "category": "test_function",
+      "receipt": "archive-test-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/ambient/handler_test.go",
+      "reference": "63066efb2c75",
+      "identity": "func:TestAmbientResolutionHandlersUseVerifiedOwner",
+      "category": "test_function",
+      "receipt": "archive-test-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/ambient/handler_test.go",
+      "reference": "63066efb2c75",
+      "identity": "func:UpdateNeedForOwner:*capturingAmbientService",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/ambient/handler_test.go",
+      "reference": "63066efb2c75",
+      "identity": "type:capturingAmbientService",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/router/interactive_permissions_test.go",
+      "reference": "0d751a21a4fa",
+      "identity": "func:TestInteractiveExecutionRoutesRequireSignedApprovalPermission",
+      "category": "test_function",
+      "receipt": "archive-test-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "idp/internal/app/authentication/auth_middleware_test.go",
+      "reference": "8056186556df",
+      "identity": "func:TestAuthMiddlewareRefreshesBeforeResolvingExpiredAccessIdentity",
+      "category": "test_function",
+      "receipt": "archive-test-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/braincatalog/handler_test.go",
+      "reference": "b6be10708a32",
+      "identity": "func:contains",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/braincatalog/handler_test.go",
+      "reference": "b6be10708a32",
+      "identity": "func:find",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/mcppreflight/service.go",
+      "reference": "c3d997fc7bd4",
+      "identity": "func:validateLocalURL",
+      "category": "production_declaration",
+      "receipt": "archive-helper-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/planningoptimizer/service.go",
+      "reference": "17dc06709701",
+      "identity": "func:sortedIDs",
+      "category": "production_declaration",
+      "receipt": "archive-owner-and-maintenance-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/braincatalog/capability_recommendation.go",
+      "reference": "6b0be667c4e2",
+      "identity": "func:capabilityTokens",
+      "category": "production_declaration",
+      "receipt": "archive-production-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/evidently/service_test.go",
+      "reference": "4a38848b9d38",
+      "identity": "func:errorsIs",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/mcpbridge/service.go",
+      "reference": "671784fb6638",
+      "identity": "func:wrapWorkflowItems",
+      "category": "production_declaration",
+      "receipt": "archive-production-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/mcpbridge/service.go",
+      "reference": "671784fb6638",
+      "identity": "type:workflowItem",
+      "category": "production_declaration",
+      "receipt": "archive-production-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/mcpbridge/service.go",
+      "reference": "671784fb6638",
+      "identity": "var:_",
+      "category": "production_declaration",
+      "receipt": "archive-owner-and-maintenance-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/a2abridge/service.go",
+      "reference": "972bac9ba4b0",
+      "identity": "func:validateLocalURL",
+      "category": "production_declaration",
+      "receipt": "archive-helper-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/a2abridge/handler.go",
+      "reference": "e0b265985caf",
+      "identity": "func:taskText",
+      "category": "production_declaration",
+      "receipt": "archive-helper-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/a2abridge/service_test.go",
+      "reference": "28266afb8437",
+      "identity": "func:TestHandlerProvidesCardAndTokenBoundedTaskSend",
+      "category": "test_function",
+      "receipt": "archive-test-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/llm/maintenance.go",
+      "reference": "cb91455210c6",
+      "identity": "func:pullOllamaModel",
+      "category": "production_declaration",
+      "receipt": "archive-owner-and-maintenance-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/llm/maintenance_scheduler_test.go",
+      "reference": "a8649f1239d1",
+      "identity": "func:TestModelMaintenanceSchedulerIntervalIsBounded",
+      "category": "test_function",
+      "receipt": "archive-test-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/braincatalog/maintenance.go",
+      "reference": "430351c78627",
+      "identity": "func:redactedCatalogMaintenanceReason",
+      "category": "production_declaration",
+      "receipt": "archive-production-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/gitleaks/service.go",
+      "reference": "e3634749c595",
+      "identity": "func:String:*service",
+      "category": "production_declaration",
+      "receipt": "archive-owner-and-maintenance-helper-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/frameworkregistry/handler_security_test.go",
+      "reference": "9ea8988e8b97",
+      "identity": "func:TestPublicSelectionIgnoresClientApprovalAndRiskAssertions",
+      "category": "test_function",
+      "receipt": "archive-test-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "backend/internal/task/validation.go",
+      "reference": "3aad37d301e9",
+      "identity": "func:validationEvidence",
+      "category": "production_declaration",
+      "receipt": "archive-helper-successors-reconciliation-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    },
+    {
+      "path": "idp/internal/app/config/authentication_config_test.go",
+      "reference": "466c049d6df7",
+      "identity": "const:testJWTSecret",
+      "category": "test_fixture",
+      "receipt": "archive-test-fixture-dispositions-2026-10-24.md",
+      "dispositionStatus": "documented_successor_or_retirement_only",
+      "wholeFileIntegrationVerified": false,
+      "sourceDeletionEligible": false
+    }
+  ]
+}
+
