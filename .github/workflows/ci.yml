@@ -100,13 +100,18 @@ jobs:
       - name: Install hash-locked runner dependencies
         if: matrix.name != 'miniswe-runner' && matrix.name != 'ortools-solver' && matrix.requirements-lock != '' && matrix.name != 'evidently-runner' && matrix.name != 'guardrails-runner' && !contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner","agent-framework-runner"]'), matrix.name)
         run: python -m pip install --disable-pip-version-check --require-hashes -r "${{ matrix.requirements-lock }}"
-      - name: Build and install source-bound LM Eval optional-cache metadata wheel
+      - name: Build and install source-bound LM Eval engine and parent wheels
         if: matrix.name == 'lm-eval-runner'
         env:
           HAI_LMEVAL_WHEEL_DIRECTORY: ${{ runner.temp }}/hai-lmeval-port-wheel
         run: |
           python services/lm-eval-runner/compat/build_port_wheel.py --output-directory "$HAI_LMEVAL_WHEEL_DIRECTORY"
+          python services/lm-eval-runner/compat/build_python_parent_ports.py --output-directory "$HAI_LMEVAL_WHEEL_DIRECTORY"
           echo "0cc1a5307a648a8f858f3181e5df8c23b07f6af6681e33e8b3d102dd3e8ddf7b  $HAI_LMEVAL_WHEEL_DIRECTORY/lm_eval-0.4.13+hai.optionalcache.1-py3-none-any.whl" | sha256sum --check
+          echo "c38f4c04391c1696121d7a9e777c6f598ff6766b7aaad70c68e98c1d7ab6511e  $HAI_LMEVAL_WHEEL_DIRECTORY/datasets-5.1.0+hai.fsspec.1-py3-none-any.whl" | sha256sum --check
+          echo "dfde69c71d1e9a79dd6461dfa6a752046f4cd07ae9a6b413311e012f31e48478  $HAI_LMEVAL_WHEEL_DIRECTORY/mbstrdecoder-1.1.5+hai.chardet7.1-py3-none-any.whl" | sha256sum --check
+          echo "e62ad605649888a75504d248ccafbc2af9cc2196835259785ede5236abb814b9  $HAI_LMEVAL_WHEEL_DIRECTORY/pytablewriter-1.2.1+hai.typepy2.1-py3-none-any.whl" | sha256sum --check
+          echo "03aee58a15216438933debc0bedf6027627e4783b5979adbab3320fdeff42bf5  $HAI_LMEVAL_WHEEL_DIRECTORY/typepy-2.0.0+hai.dateutil3.1-py3-none-any.whl" | sha256sum --check
           python -m pip install --disable-pip-version-check --no-build-isolation --find-links "$HAI_LMEVAL_WHEEL_DIRECTORY" --require-hashes -r services/lm-eval-runner/requirements.lock
           python -I services/lm-eval-runner/compat/verify_installed_profile.py
       - name: Build and install source-bound Evidently and Dynaconf compatibility wheels

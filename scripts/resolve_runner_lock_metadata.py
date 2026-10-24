@@ -54,6 +54,7 @@ def main():
     source = (root / input_path).read_bytes()
     (output / "inputs/requirements.in").write_bytes(source)
     port_build = None
+    lm_parent_builds = None
     evidently_port_build = None
     if args.runner == "evidently-runner":
         build = subprocess.run([sys.executable,
@@ -101,6 +102,20 @@ def main():
         if port_build["sha256"] != "0cc1a5307a648a8f858f3181e5df8c23b07f6af6681e33e8b3d102dd3e8ddf7b":
             raise ValueError("LM Eval metadata port differs from the reviewed static build")
         (output/"port-build.json").write_text(json.dumps(port_build, indent=2)+"\n", encoding="utf-8")
+        parents = subprocess.run([sys.executable,
+            str(root/"services/lm-eval-runner/compat/build_python_parent_ports.py"),
+            "--output-directory",str(output/"inputs")],capture_output=True,check=False,timeout=180)
+        (output/"python-parent-port-build.log").write_bytes(parents.stdout+parents.stderr)
+        if parents.returncode:
+            raise RuntimeError("LM Eval current parent source-port construction failed")
+        lm_parent_builds=json.loads(parents.stdout)
+        expected={"datasets":"c38f4c04391c1696121d7a9e777c6f598ff6766b7aaad70c68e98c1d7ab6511e",
+                  "mbstrdecoder":"dfde69c71d1e9a79dd6461dfa6a752046f4cd07ae9a6b413311e012f31e48478",
+                  "pytablewriter":"e62ad605649888a75504d248ccafbc2af9cc2196835259785ede5236abb814b9",
+                  "typepy":"03aee58a15216438933debc0bedf6027627e4783b5979adbab3320fdeff42bf5"}
+        if len(lm_parent_builds)!=4 or {row["name"]:row["sha256"] for row in lm_parent_builds}!=expected:
+            raise ValueError("LM Eval current parent wheels differ from reviewed static builds")
+        (output/"python-parent-port-build.json").write_text(json.dumps(lm_parent_builds,indent=2)+"\n",encoding="utf-8")
     if args.runner == "miniswe-runner":
         build = subprocess.run([sys.executable,
             str(root/"services/miniswe-runner/compat/build_port_wheel.py"),
@@ -164,7 +179,8 @@ def main():
     lock = output / "outputs/requirements.lock"
     receipt = {"runner": args.runner, "input_path": input_path.as_posix(), "python": version, "sdk": sdk,
                "returncode": process.returncode, "input_filename": input_filename, "local_port_wheel": port_build,
-               "local_evidently_wheel": evidently_port_build, "input_sha256": hashlib.sha256(source).hexdigest(),
+               "local_evidently_wheel": evidently_port_build, "local_lm_parent_wheels": lm_parent_builds,
+               "input_sha256": hashlib.sha256(source).hexdigest(),
                "uv_wheel_sha256": hashlib.sha256(raw).hexdigest(),
                "uv_binary_sha256": hashlib.sha256(executable).hexdigest(),
                "log_sha256": hashlib.sha256(log).hexdigest(),
@@ -173,6 +189,27 @@ def main():
                "public_build_backend_metadata_execution_possible": True,
                "private_application_source_or_credentials_mounted": False,
                "application_tests_run": False, "host_sdk_installed": False}
+    if args.runner == "lm-eval-runner" and process.returncode == 0:
+        qualified = subprocess.run([sys.executable,
+            str(root/"services/lm-eval-runner/compat/qualify_public_sdk.py"),
+            "--output",str(output),"--sdk",sdk],capture_output=True,check=False,timeout=600)
+        (output/"public-sdk-qualification.log").write_bytes(qualified.stdout+qualified.stderr)
+        receipt["public_sdk_qualification_returncode"]=qualified.returncode
+        receipt["public_sdk_import_qualified"]=qualified.returncode==0
+        if qualified.returncode:
+            (output/"receipt.json").write_text(json.dumps(receipt,indent=2)+"\n",encoding="utf-8")
+            print((qualified.stdout+qualified.stderr).decode("utf-8",errors="replace")[-16000:])
+            raise SystemExit(qualified.returncode)
+        cases = subprocess.run([sys.executable,
+            str(root/"services/lm-eval-runner/compat/qualify_upstream_cases.py"),
+            "--output",str(output),"--sdk",sdk],capture_output=True,check=False,timeout=4200)
+        (output/"upstream-case-qualification.log").write_bytes(cases.stdout+cases.stderr)
+        receipt["unchanged_upstream_case_qualification_returncode"]=cases.returncode
+        receipt["unchanged_upstream_cases_qualified"]=cases.returncode==0
+        if cases.returncode:
+            (output/"receipt.json").write_text(json.dumps(receipt,indent=2)+"\n",encoding="utf-8")
+            print((cases.stdout+cases.stderr).decode("utf-8",errors="replace")[-18000:])
+            raise SystemExit(cases.returncode)
     if args.runner == "miniswe-runner" and process.returncode == 0:
         qualified = subprocess.run([sys.executable,
             str(root/"services/miniswe-runner/compat/qualify_public_sdk.py"),

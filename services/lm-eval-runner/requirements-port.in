@@ -1,2 +1,6 @@
 lm-eval[api]==0.4.13+hai.optionalcache.1
 setuptools==84.2.1
+datasets==5.1.0+hai.fsspec.1
+mbstrdecoder==1.1.5+hai.chardet7.1
+pytablewriter==1.2.1+hai.typepy2.1
+typepy[datetime]==2.0.0+hai.dateutil3.1
