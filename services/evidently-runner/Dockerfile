@@ -28,8 +28,15 @@ ENV HOME=/tmp DO_NOT_TRACK=1
 COPY compat ./compat
 RUN python compat/build_port_wheel.py --output-directory /app/wheels \
     && echo "2db131ed9ddfc1dc15a25635c8a6e58d51e608fe7459c504f091c5bd2168bd52  /app/wheels/dynaconf-3.3.5+hai.evidently.1-py3-none-any.whl" | sha256sum --check
-COPY requirements.lock ./
-RUN python -m pip install --no-cache-dir --only-binary :all: --find-links /app/wheels --require-hashes -r requirements.lock
+COPY requirements-build.lock requirements.lock ./
+# PyYAML 6.0.3 has no CPython 3.15 wheel. Build its verified source with pinned tools.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential libyaml-dev libyaml-0-2 \
+    && python -m pip install --no-cache-dir --only-binary :all: --require-hashes -r requirements-build.lock \
+    && python -m pip install --no-cache-dir --no-build-isolation --find-links /app/wheels --require-hashes -r requirements.lock \
+    && python -m pip uninstall --yes cython setuptools-scm vcs-versioning wheel \
+    && apt-get purge -y --auto-remove build-essential libyaml-dev \
+    && rm -rf /var/lib/apt/lists/*
 COPY compat_pandas.py apply_vendor_compat.py ./
 RUN python apply_vendor_compat.py --apply-to-sdk
 # Install dependencies while building; the immutable runtime has no package installer.

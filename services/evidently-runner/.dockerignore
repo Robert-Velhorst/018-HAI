@@ -2,6 +2,7 @@
 !app.py
 !test_app.py
 !requirements.lock
+!requirements-build.lock
 !compat_pandas.py
 !apply_vendor_compat.py
 !native-runtime.profile.json

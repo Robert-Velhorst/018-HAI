@@ -46,3 +46,11 @@ are Python 3.15.1 on Debian 13. Runtime existing cases run as UID 10001 with
 network disabled. The native source manifest/builder and all app/case/Pandas
 adapter bytes remain unchanged. Actual fresh image/health/scan qualification
 remains required; this candidate is not a complete latest-version claim.
+
+The first integrated CI source stops before application cases: PyYAML 6.0.3
+has no CPython 3.15 binary wheel. Use the same hash-locked six-package build
+metadata set already qualified by the other Python 3.15 runners, compile the
+hash-verified PyYAML source with build isolation disabled, and remove build-only
+packages/development headers from the image afterward. No interpreter downgrade,
+dependency removal, hash bypass or advisory waiver is used. Existing runtime
+pins are unchanged. Fresh actual SDK/image case qualification is still required.
