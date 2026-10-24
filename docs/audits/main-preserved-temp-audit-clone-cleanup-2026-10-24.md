@@ -101,3 +101,47 @@ concurrent free-space changes came from this removal.
 The two follow-up removals together account for 6,540 files and 96,311,821 logical
 bytes. Other divergent, sparse, dirty, shared or incompletely reconciled copies
 remain intact. This is not completion of the full local-data removal objective.
+
+## Sparse nginx audit copy
+
+The `codex-018-nginx-audit` copy used a sparse, partial checkout at
+`e79bdf85663da012aa1c4c733e9bd414a8a88d04`. This commit is not an ancestor of
+main. Its parent is the preserved main-ancestor snapshot above, and all seven
+of its nginx pin replacements are already present on reviewed main. A
+zero-context, LF-normalized reverse patch check and structured comparisons of
+the three gateway images and frontend runtime stage verified that narrow
+source disposition. This does not assert equality of the complete old and
+current-main trees.
+
+The original commit was separately published and verified under annotated tag
+`archive/local-preservation-20261024/hai-nginx-pin-review` before removal. Its
+one-commit change range passed the pinned Gitleaks scan without rule changes.
+Missing objects needed for publication were read from existing retained local
+object stores; lazy downloads stayed disabled. Main was not changed by the tag.
+
+Sparse-aware content verification checked all 164 physically present tracked
+files, including any present skip-worktree files, against archived HEAD blobs.
+Seventeen were exact and 147 ordinary line-ending conversions. The other 3,080
+indexed skip-worktree paths were absent on disk, not silently accepted as
+verified present content. The index itself matched HEAD. A physical source-file
+walk rejected files outside the verified set. The sparse selection and its two
+worktree flags were inspected explicitly; the commit-message draft matched the
+published commit message. Private settings or an unpublished draft would refuse
+removal.
+
+Git fsck returned no errors but listed nine unreachable trees/blobs. Each object
+was individually found in the exact parent snapshot retained in main's history;
+none was an unreviewed commit. Thus this was accounted unreachable data, not a
+claim of zero unreachable objects.
+
+The native removal preflight rechecked the remote archive, main ancestry of the
+parent, refs, consumers, mounts, reparse points and source state. It rehashed
+every present source file and the index, local/worktree configuration, sparse
+selection and commit-message metadata immediately before deletion. A newly
+appearing skip-worktree file or altered source/metadata would refuse removal.
+
+Only the explicit sparse audit directory was removed: 219 physical files,
+3,385,153 logical bytes including Git metadata. Its absence was confirmed.
+Observed free space changed from 6,282,039,296 to 6,285,860,864 bytes; concurrent
+free-space changes are not attributed wholesale to this removal. No transcript,
+database, backup, original dirty checkout or runtime was deleted by this step.
