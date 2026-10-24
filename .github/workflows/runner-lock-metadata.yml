@@ -30,8 +30,8 @@ jobs:
       - name: Resolve source metadata in restricted public-only SDK
         env:
           METADATA_OUTPUT: ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}
-          RUNNER_NAME: ${{ matrix.runner }}
-        run: python scripts/resolve_runner_lock_metadata.py --runner "$RUNNER_NAME" --output "$METADATA_OUTPUT"
+          HAI_METADATA_RUNNER: ${{ matrix.runner }}
+        run: python scripts/resolve_runner_lock_metadata.py --runner "$HAI_METADATA_RUNNER" --output "$METADATA_OUTPUT"
       - name: Retain generated locks and provenance
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
