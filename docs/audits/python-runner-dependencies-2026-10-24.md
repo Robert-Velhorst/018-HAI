@@ -50,3 +50,15 @@ The remaining HAI runners, native libraries, Go/npm proposals, operator database
 - [SQLitedict advisory](https://github.com/advisories/GHSA-g4r7-86gm-pgqc)
 - [Python SDK versions](https://github.com/actions/python-versions/blob/main/versions-manifest.json)
 - [Official Python image tags](https://hub.docker.com/_/python)
+
+## CI action freshness follow-up
+
+The initial refreshed source `018376cb2d66d44cd6d77234512b890c4ccf9df0`
+passed all 41 reported checks, including build/contracts/container health for
+all five changed runner graphs, with a matching tested/source tree. That
+receipt belongs to that exact head. The follow-up updates both Python setup
+action references from 7.0.0 to the newer public stable 7.1.0 (released October
+22), pinned at `6d4fd22b20465ccc0f7354476588e8df7c9ca0e0`. The existing
+reviewed-action policy assertion follows that exact pin; its cases are retained.
+Fresh CI is required for the follow-up head. No application code or dependency
+lock changes in this follow-up, no new cases and no local suite run.
