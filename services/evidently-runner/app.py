@@ -4,6 +4,10 @@ from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
 import json
+import os
+
+# This bounded runner is offline; disable SDK telemetry before its imports.
+os.environ["DO_NOT_TRACK"] = "1"
 
 import evidently
 import pandas as pd
