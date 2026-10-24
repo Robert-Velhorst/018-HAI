@@ -73,9 +73,24 @@ def main():
         if digest != actual or int(size) != len(files[name]):
             raise ValueError("Upstream RECORD content differs: " + name)
     sources = {name: sha256(data) for name, data in sorted(files.items()) if name.endswith(".py")}
-    if (len(sources) != spec["unchanged_python_file_count"]
-            or sha256(json.dumps(sources, sort_keys=True, separators=(",", ":")).encode()) != spec["unchanged_python_manifest_sha256"]):
+    if (len(sources) != spec["upstream_python_file_count"]
+            or sha256(json.dumps(sources, sort_keys=True, separators=(",", ":")).encode()) != spec["upstream_python_manifest_sha256"]):
         raise ValueError("Original evaluation engine sources differ")
+    for name, patch in spec["source_patches"].items():
+        if name not in sources or sha256(files[name]) != patch["original_sha256"]:
+            raise ValueError("Source patch target differs")
+        value = files[name]
+        for edit in patch["edits"]:
+            before, after = edit["old"].encode(), edit["new"].encode()
+            if value.count(before) != 1:
+                raise ValueError("Source patch is ambiguous")
+            value = value.replace(before, after, 1)
+        if sha256(value) != patch["patched_sha256"]:
+            raise ValueError("Modified source differs")
+        files[name] = value
+    ported_sources = {name: sha256(files[name]) for name in sources}
+    if sha256(json.dumps(ported_sources, sort_keys=True, separators=(",", ":")).encode()) != spec["ported_python_manifest_sha256"]:
+        raise ValueError("Ported Python source manifest differs")
     original_metadata = files[old + "/METADATA"].replace(b"\r\n", b"\n")
     metadata = email.message_from_bytes(original_metadata)
     if metadata["Name"] != "litellm" or metadata["Version"] != spec["upstream_version"]:
@@ -107,13 +122,15 @@ def main():
     files[old + "/WHEEL"] = ("\n".join(
         "Generator: HAI current-SDK compatibility candidate" if line.startswith("Generator:") else line
         for line in wheel) + "\n").encode()
-    # Preserve every engine module, task/resource, license and CLI entrypoint.
-    if {name: sha256(files[name]) for name in sources} != sources:
-        raise ValueError("An evaluation engine source was modified")
+    # Only the explicitly reviewed compatibility module may change. Preserve
+    # all other engine modules/resources, licenses and CLI entrypoints.
+    if any(sha256(files[name]) != digest for name, digest in sources.items()
+           if name not in spec["source_patches"]):
+        raise ValueError("An unreviewed engine source was modified")
     files.pop(old + "/RECORD")
     files = {name.replace(old + "/", new + "/", 1): data for name, data in files.items()}
     modes = {name.replace(old + "/", new + "/", 1): mode for name, mode in modes.items()}
-    receipt = {**spec, "vendor_code_executed": False, "python_sources_modified": 0,
+    receipt = {**spec, "vendor_code_executed": False, "python_sources_modified": len(spec["source_patches"]),
                "runtime_qualified": False}
     files[new + "/HAI_PORT.json"] = (json.dumps(receipt, indent=2) + "\n").encode()
     stream = io.StringIO(newline="")
@@ -136,7 +153,8 @@ def main():
         destination.write(result.getvalue())
     print(json.dumps({"filename": output.name, "sha256": sha256(result.getvalue()),
                       "upstream_sha256": spec["upstream_wheel_sha256"],
-                      "unchanged_python_files": len(sources), "python_sources_modified": 0,
+                      "unchanged_python_files": len(sources)-len(spec["source_patches"]),
+                      "python_sources_modified": len(spec["source_patches"]),
                       "native_bridge_bytes_and_ABI_tag_preserved": True, "vendor_code_executed": False,
                       "runtime_qualified": False}))
 

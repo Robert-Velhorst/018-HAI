@@ -1,12 +1,11 @@
 {
   "schema_version": 1,
   "upstream_version": "1.106.3",
-  "local_version": "1.106.3+hai.py315.1",
+  "local_version": "1.106.3+hai.py315.2",
   "upstream_url": "https://files.pythonhosted.org/packages/59/06/1cfb1cb1cbede3a884e6a2b3c1ba2ab3f1b784af333eb9709f1672d8b845/litellm-1.106.3-cp310-abi3-manylinux_2_28_x86_64.whl",
   "upstream_wheel_sha256": "e2059580bad87f195c11550854c50bca8b4669db271d855786719aa0dfc9bd24",
   "wheel_tag": "cp310-abi3-manylinux_2_28_x86_64",
-  "unchanged_python_file_count": 2776,
-  "unchanged_python_manifest_sha256": "5cbfdfe8ad4e029edd425a8e01dd21bd606bfe7368a1e1dd9aea95e796ed7e2c",
+  "unchanged_python_file_count": 2775,
   "native_members": [
     {
       "path": "litellm/rust_bridge/_native.abi3.so",
@@ -36,7 +35,7 @@
       "new": "Requires-Python: >=3.15, <3.16"
     }
   ],
-  "profile": "Explicit compatibility candidate for the existing Mini-SWE local Ollama integration on standard GIL CPython 3.15. Preserve upstream Python/native/resource bytes and Linux ABI3 tag. Four dependency contracts are pinned to reviewed current public releases; Python support is restricted to the candidate interpreter series. Metadata resolution, network-disabled hosted SDK import and existing application/image/security qualification are mandatory before runtime integration. This is not an upstream compatibility assertion or an advisory waiver.",
+  "profile": "Explicit standard-GIL CPython 3.15 Linux compatibility port. One source-bound module imports the actual current re._constants/re._parser implementations used by the removed sre wrappers. All function/class ASTs and regex rejection logic are unchanged. These are private CPython interfaces, restricted to the pinned interpreter profile and requiring hosted qualification. Remaining 2775 Python files, native bridge, ABI tag, resources and licenses are preserved. No model/agent application or full security acceptance is claimed.",
   "static_review": {
     "absolute_dependency_import_sites": 164,
     "missing_export_has_existing_importerror_fallback": true,
@@ -45,5 +44,46 @@
     "limitations": "Import/export and signature review is not behavioral or native ABI qualification; public-only hosted import and application acceptance remain pending."
   },
   "new_application_cases_authored": false,
-  "operator_sdk_or_database_changed": false
+  "operator_sdk_or_database_changed": false,
+  "upstream_python_file_count": 2776,
+  "upstream_python_manifest_sha256": "5cbfdfe8ad4e029edd425a8e01dd21bd606bfe7368a1e1dd9aea95e796ed7e2c",
+  "source_patches": {
+    "litellm/router_strategy/complexity_router/config.py": {
+      "original_sha256": "963af159c71e4c1a50fb72bff4d149fddf024b3743b98e3f6e533595eb723f09",
+      "patched_sha256": "cc9f8690e2312983de6b67ca0c39ce518cc622a7b8e8c3219fb619128d8559c7",
+      "edits": [
+        {
+          "old": "with warnings.catch_warnings():\n    warnings.simplefilter(\"ignore\", DeprecationWarning)\n    import sre_constants\n    import sre_parse\n",
+          "new": "from re import _constants as sre_constants\nfrom re import _parser as sre_parse\n"
+        },
+        {
+          "old": "import warnings\n",
+          "new": ""
+        }
+      ]
+    }
+  },
+  "ported_python_manifest_sha256": "de5e24ef4be4d79e0a6042db7e53ce6398cf29b90b06ec445628d76453c25e82",
+  "CPython_regex_source_records": [
+    {
+      "url": "https://raw.githubusercontent.com/python/cpython/v3.14.9/Lib/sre_constants.py",
+      "sha256": "87013dc0b349c2c044100f70a8daa9d713e60a527e26f6ab8ee1fc978a6d3234",
+      "bytes": 232
+    },
+    {
+      "url": "https://raw.githubusercontent.com/python/cpython/v3.14.9/Lib/sre_parse.py",
+      "sha256": "c4929134532306081918f185c99305c6f55213bc16b32f8c259bc60f7f81e810",
+      "bytes": 229
+    },
+    {
+      "url": "https://raw.githubusercontent.com/python/cpython/v3.15.1/Lib/re/_constants.py",
+      "sha256": "42253b3181b81aad6c46392f44a0ab26dcfa31feea411296f43ba16616a1ab0b",
+      "bytes": 6036
+    },
+    {
+      "url": "https://raw.githubusercontent.com/python/cpython/v3.15.1/Lib/re/_parser.py",
+      "sha256": "a3ae4b5e8442b39d82ac611a11bec6a7367fb47a95b3b5bceaee6e7e9c39883a",
+      "bytes": 40327
+    }
+  ]
 }

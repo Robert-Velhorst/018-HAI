@@ -109,7 +109,7 @@ def main():
         if build.returncode:
             raise RuntimeError("LiteLLM current-SDK candidate construction failed")
         port_build=json.loads(build.stdout)
-        if port_build["sha256"] != "adcd73ed48214f460fa33ef679dff287d6a2b8175a2d33bdc90f0725983d7e8b":
+        if port_build["sha256"] != "4522bd0c2914a03df1d02ae29c56087d65d3b43bfbc941cef2bfd98587e23c36":
             raise ValueError("LiteLLM candidate differs from the reviewed static build")
         (output/"port-build.json").write_text(json.dumps(port_build,indent=2)+"\n",encoding="utf-8")
         native = subprocess.run([sys.executable,

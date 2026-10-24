@@ -13,8 +13,9 @@ are explicit; they do not assert upstream support. Hosted resolution, isolated
 SDK import and subsequent application/image/security qualification are required.
 No dependency conflict, advisory or native import check may be ignored.
 
-All 2,776 upstream Python files and the original Linux ABI3 Rust bridge are
-preserved. The bridge is SHA-256-bound; its `cp310-abi3-manylinux_2_28_x86_64`
+All 2,775 unpatched upstream Python files and the original Linux ABI3 Rust
+bridge are preserved. One explicitly source-bound regex import module is ported
+as described below. The bridge is SHA-256-bound; its `cp310-abi3-manylinux_2_28_x86_64`
 tag and non-pure wheel classification are retained. This is not a pure-Python
 retag or native rebuild. The original release's compiler/toolchain currency and
 complete native behavior are not qualified by preserving its binary.
@@ -30,7 +31,7 @@ compatibility proof for the SDK's entire provider surface.
 The builder verifies the public Linux wheel, every original RECORD entry,
 Python source manifest, native bridge hash and original ABI tag. It preserves
 resources, licenses, permissions and CLI entrypoints and emits a deterministic
-local wheel without importing vendor code.
+local wheel with only the reviewed source patch, without importing vendor code.
 
 The public metadata workflow resolves a separate candidate graph on Python
 3.15.1. After successful resolution it installs only public dependencies into
@@ -85,3 +86,25 @@ acceptance. Canonical application inputs, cases, image and locks remain unchange
 Primary migration guidance: https://pyo3.rs/main/migration
 Current crate records: https://crates.io/crates/pyo3/0.30.1,
 https://crates.io/crates/rand/0.10.3, https://crates.io/crates/uuid/1.29.0.
+
+## CPython 3.15 regex import port
+
+The first source-built FastUUID wheel installs successfully, but the actual
+LiteLLM import then exposed removed sre_constants/sre_parse modules. The
+0.14.0+hai.py315.1 native wheel and source/compiler receipts are retained.
+
+LiteLLM 1.106.3+hai.py315.2 changes only its complexity-router config module
+to import the actual re._constants and re._parser implementations directly.
+CPython 3.14.9's deprecated wrappers forwarded those exact implementations;
+the modules are removed in 3.15.1. All 30 function/class ASTs in that module,
+including regex safety validation, remain unchanged. No fake parser, opcode
+replacement, disabled validator or compatibility environment flag is added.
+These remain private CPython interfaces, bound to the explicit current
+interpreter profile and requiring real hosted import/runtime qualification.
+The original source manifest and the ported installed manifest are separately
+hash-bound. Both interpreters' official module-source hashes are recorded.
+
+The retained 44-crate graph has six stable-version gaps (UUID's old MD5/digest
+chain and Getrandom's r-efi constraint), despite zero reported public-feed
+advisory IDs. The observed C compiler is Debian GCC 14.2.0-19. Compiler currency,
+full native security and the complete latest-stable goal remain unqualified.

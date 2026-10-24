@@ -22,7 +22,7 @@ def main():
             or args.receipt != Path("/qualification/sdk-import.json")):
         raise RuntimeError("Requires the fixed disposable CPython 3.15 Linux SDK layout")
     sys.path.insert(0, str(args.site_packages))
-    expected = {"mini-swe-agent": "2.4.6", "litellm": "1.106.3+hai.py315.1",
+    expected = {"mini-swe-agent": "2.4.6", "litellm": "1.106.3+hai.py315.2",
                 "filelock": "4.2.4", "openai": "3.37.0", "huggingface-hub": "2.3.0",
                 "importlib-metadata": "10.1.0", "fastuuid": "0.14.0+hai.py315.1"}
     observed = {name: version(name) for name in expected}
@@ -34,8 +34,8 @@ def main():
     sources = {str(p): hashlib.sha256(p.locate().read_bytes()).hexdigest()
                for p in package.files if str(p).startswith("litellm/") and str(p).endswith(".py")}
     manifest = hashlib.sha256(json.dumps(sources, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    if len(sources) != spec["unchanged_python_file_count"] or manifest != spec["unchanged_python_manifest_sha256"]:
-        raise ValueError("Installed LiteLLM Python sources differ from upstream")
+    if len(sources) != spec["upstream_python_file_count"] or manifest != spec["ported_python_manifest_sha256"]:
+        raise ValueError("Installed LiteLLM Python sources differ from the reviewed port")
     for native in spec["native_members"]:
         path = next(p for p in package.files if str(p) == native["path"])
         if hashlib.sha256(path.locate().read_bytes()).hexdigest() != native["sha256"]:
@@ -71,7 +71,9 @@ def main():
               "distributions": observed, "vendor_sdk_imports_pass": True,
               "native_bridge_loaded": True, "native_bridge_sha256_verified": True,
               "fastuuid_native_extension_loaded_and_hash_verified": True,
-              "upstream_python_files_unchanged": len(sources), "filelock_setup_signature_present": True,
+              "upstream_python_files_unchanged": len(sources)-len(spec["source_patches"]),
+              "python_source_patch_files": len(spec["source_patches"]),
+              "filelock_setup_signature_present": True,
               "application_cases_run": False, "model_or_agent_instantiated": False,
               "private_application_source_or_credentials_mounted": False,
               "full_behavioral_native_security_or_provider_acceptance": False}
