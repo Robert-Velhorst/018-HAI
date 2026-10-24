@@ -80,7 +80,8 @@ cp -R /source /build/source
 cd /build/source
 cargo generate-lockfile
 cp Cargo.lock HAI_SOURCE_PORT.json /exports/
-python -m maturin build --locked --release --compatibility linux --interpreter /python/bin/python3.15 --out /exports
+/build/maturin/bin/maturin --version | tee /exports/maturin-version.txt
+/build/maturin/bin/maturin build --locked --release --compatibility linux --interpreter /python/bin/python3.15 --out /exports
 '''
     command += [spec['rust']['image'],'sh','-c',script]
     try:
