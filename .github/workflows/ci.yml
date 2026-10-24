@@ -12,7 +12,7 @@ jobs:
   python-runners:
     name: Python runner contracts (${{ matrix.name }})
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: ${{ matrix.name == 'ortools-solver' && 100 || 60 }}
     strategy:
       fail-fast: false
       max-parallel: 4
