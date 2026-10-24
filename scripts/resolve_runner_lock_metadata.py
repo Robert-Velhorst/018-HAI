@@ -14,8 +14,17 @@ import urllib.request
 import zipfile
 
 SDKS = {
+    "crewai-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
+    "ortools-runtime": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
+    "ortools-build": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "garak-runner": ("3.15.1", "python:3.15.1-slim-bookworm@sha256:575f8bc12ec26542e0678bc6b60e385218248019d433157ec327264a78c3a853"),
     "evidently-runner": ("3.14.9", "python:3.14.9-slim-bookworm@sha256:945c2676dc2b18e0c1f16879244122c57c0ffede60006bf3df159c507a31bcae"),
+}
+
+
+INPUTS = {
+    "ortools-runtime": ("ortools-solver", "requirements.runtime.in"),
+    "ortools-build": ("ortools-solver", "requirements.build.in"),
 }
 
 
@@ -33,7 +42,9 @@ def main():
     # Linux container UID 10001 can write only these disposable public paths.
     for name in ["outputs", "cache"]:
         (output / name).chmod(0o777)
-    source = (root / "services" / args.runner / "requirements.in").read_bytes()
+    service, filename = INPUTS.get(args.runner, (args.runner, "requirements.in"))
+    input_path = Path("services") / service / filename
+    source = (root / input_path).read_bytes()
     (output / "inputs/requirements.in").write_bytes(source)
     metadata_raw = urllib.request.urlopen("https://pypi.org/pypi/uv/0.13.5/json", timeout=40).read()
     metadata = json.loads(metadata_raw)
@@ -66,7 +77,7 @@ def main():
     log = process.stdout + process.stderr
     (output / "resolution.log").write_bytes(log)
     lock = output / "outputs/requirements.lock"
-    receipt = {"runner": args.runner, "python": version, "sdk": sdk,
+    receipt = {"runner": args.runner, "input_path": input_path.as_posix(), "python": version, "sdk": sdk,
                "returncode": process.returncode, "input_sha256": hashlib.sha256(source).hexdigest(),
                "uv_wheel_sha256": hashlib.sha256(raw).hexdigest(),
                "uv_binary_sha256": hashlib.sha256(executable).hexdigest(),
