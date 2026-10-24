@@ -123,6 +123,12 @@ two other file-difference variants are not behaviorally cleared. The dashboard
 snooze shortcut is a documented UX difference. These counts do not increase the
 global archive cohort or establish whole-file integration or deletion eligibility.
 
+The model-field follow-up in `archive-typescript-model-reconciliation-2026-10-24.md`
+covers 29 overlapping variants at 28 paths: 1,081 historical properties unchanged,
+four changed and three absent by old name. Import expansions and two additive
+model variants have source-level explanations. Required-to-optional changes
+remain a consumer-validation gap, not a claim of proven API compatibility.
+
 The Promptfoo test file moved from exact to changed relative to the earlier
 main snapshot. Its archived content hash matches the earlier Git blob. All
 three original test bodies remain byte-identical; canonical main adds the
