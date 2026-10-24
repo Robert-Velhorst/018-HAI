@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "port_version": "9.15.6755+hai.protobuf7.1",
+  "profile": "Keep the real OR-Tools v9.15 solver while regenerating/linking Protobuf 36.2 and requiring Python Protobuf 7.36.2. Adapt original Zlib/static-runtime CMake patch intent to the hash-bound current source.",
+  "components": {
+    "ortools": {
+      "upstream_version": "9.15.6755",
+      "commit": "551ad10d94835c99e5e1e684500d3db398c0e345",
+      "patches": {
+        "cmake/dependencies/CMakeLists.txt": {
+          "original_sha256": "ce090f1bcec6cf8afe400f683459b421c6a8255251a5f929574e1d4eaa4607ff",
+          "patched_sha256": "6917a4add702eb2d57bfdbdfc29e65af3b02c241847fd8aad938c76af61a3969",
+          "edits": [
+            {
+              "old": "  FetchContent_Declare(\n    Protobuf\n    GIT_REPOSITORY \"https://github.com/protocolbuffers/protobuf.git\"\n    GIT_TAG \"v33.1\"\n    GIT_SHALLOW TRUE\n    GIT_SUBMODULES \"\"\n    UPDATE_COMMAND git reset --hard\n    PATCH_COMMAND git apply --ignore-whitespace\n    \"${CMAKE_CURRENT_LIST_DIR}/../../patches/protobuf-v33.1.patch\"\n    OVERRIDE_FIND_PACKAGE # Make package visible for \"protobuf-matchers\" below\n    SYSTEM\n  )\n",
+              "new": "  FetchContent_Declare(\n    Protobuf\n    URL \"https://codeload.github.com/protocolbuffers/protobuf/tar.gz/2c74169b34066ceb8ddb6b882fcb3fb32d737a55\"\n    URL_HASH \"SHA256=ef957adfc3ec0e2794031697e6a94bbc213103cead96c26a1fccb0dbdadd3404\"\n    DOWNLOAD_EXTRACT_TIMESTAMP TRUE\n    PATCH_COMMAND \"/usr/local/bin/python\"\n      \"/tmp/requirements/compat/apply_source_port.py\"\n      --component protobuf --source <SOURCE_DIR>\n    OVERRIDE_FIND_PACKAGE\n    SYSTEM\n  )\n"
+            }
+          ]
+        },
+        "cmake/python.cmake": {
+          "original_sha256": "900928f5e51c70946c58c8f6351e9cfb36380ad9ad2a083b639a83fbef628e80",
+          "patched_sha256": "7cff9f48ba1dcc4235d2d4d44d7b043615a377fb8234e579744d0b85de3b7be3",
+          "edits": [
+            {
+              "old": "  set(PYTHON_RELEASE \"\")",
+              "new": "  set(PYTHON_RELEASE \"+hai.protobuf7.1\")"
+            }
+          ]
+        },
+        "ortools/python/setup.py.in": {
+          "original_sha256": "829cdc42053ed727d14389e8a98b65a95d3246812c8d861d047f78aec9b15493",
+          "patched_sha256": "a89dc1c91a25ada3b4c379f12bad54a8668364e34dcdb6c78bb61e74af9d41c3",
+          "edits": [
+            {
+              "old": "'protobuf >= 6.33.1,<6.34'",
+              "new": "'protobuf == 7.36.2'"
+            }
+          ]
+        },
+        "ortools/python/__init__.py.in": {
+          "original_sha256": "bef14986fe4967a77232919e4a29b097dd71a1874247142fbdc5b365bec65fd9",
+          "patched_sha256": "be75f70108d704f11bf0973881ff8330c8a0e2efd06dc28ef2b30ada5753a122",
+          "edits": [
+            {
+              "old": "__version__ = \"@PROJECT_VERSION@\"",
+              "new": "__version__ = \"@PROJECT_VERSION@@PYTHON_RELEASE@\""
+            }
+          ]
+        }
+      }
+    },
+    "protobuf": {
+      "release_tag": "v36.2",
+      "commit": "2c74169b34066ceb8ddb6b882fcb3fb32d737a55",
+      "url": "https://codeload.github.com/protocolbuffers/protobuf/tar.gz/2c74169b34066ceb8ddb6b882fcb3fb32d737a55",
+      "sha256": "ef957adfc3ec0e2794031697e6a94bbc213103cead96c26a1fccb0dbdadd3404",
+      "bytes": 7358524,
+      "source_CMake_sha256": "2ad37654d88ad8364feb51fc1daf8a57541d33700117fc2609258f5b4e83ef26",
+      "patches": {
+        "CMakeLists.txt": {
+          "original_sha256": "2ad37654d88ad8364feb51fc1daf8a57541d33700117fc2609258f5b4e83ef26",
+          "patched_sha256": "7dc684f789c39d53506448e591274a5a0824f68fc34d702ab145cff59afd46e6",
+          "edits": [
+            {
+              "old": "  find_package(ZLIB)\n  if (ZLIB_FOUND)\n    set(HAVE_ZLIB 1)\n    # FindZLIB module define ZLIB_INCLUDE_DIRS variable\n    # Set ZLIB_INCLUDE_DIRECTORIES for compatible\n    set(ZLIB_INCLUDE_DIRECTORIES ${ZLIB_INCLUDE_DIRECTORIES} ${ZLIB_INCLUDE_DIRS})\n    # Using imported target if exists\n    if (TARGET ZLIB::ZLIB)\n      set(ZLIB_LIBRARIES ZLIB::ZLIB)\n      set(_protobuf_FIND_ZLIB \"if(NOT ZLIB_FOUND)\\n  find_package(ZLIB)\\nendif()\")\n    endif (TARGET ZLIB::ZLIB)\n  else (ZLIB_FOUND)\n    set(HAVE_ZLIB 0)\n    # Explicitly set these to empty (override NOT_FOUND) so cmake doesn't\n    # complain when we use them later.\n    set(ZLIB_INCLUDE_DIRECTORIES)\n    set(ZLIB_LIBRARIES)\n  endif (ZLIB_FOUND)\n",
+              "new": "  if (NOT TARGET ZLIB::ZLIB)\n    find_package(ZLIB REQUIRED)\n  endif()\n  set(HAVE_ZLIB 1)\n  set(ZLIB_INCLUDE_DIRECTORIES ${ZLIB_INCLUDE_DIRECTORIES} ${ZLIB_INCLUDE_DIRS})\n  set(ZLIB_LIBRARIES ZLIB::ZLIB)\n  set(_protobuf_FIND_ZLIB \"if(NOT ZLIB_FOUND AND NOT TARGET ZLIB::ZLIB)\\n  find_package(ZLIB REQUIRED)\\nendif()\")\n"
+            },
+            {
+              "old": "cmake_dependent_option(protobuf_MSVC_STATIC_RUNTIME \"Link static runtime libraries\" ON",
+              "new": "cmake_dependent_option(protobuf_MSVC_STATIC_RUNTIME \"Link static runtime libraries\" OFF"
+            },
+            {
+              "old": "include_directories(\n  ${ZLIB_INCLUDE_DIRECTORIES}\n",
+              "new": "include_directories(\n"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "build_tools": {
+    "cmake": "4.4.4",
+    "swig": "4.5.1"
+  },
+  "new_application_cases_authored": false,
+  "local_vendor_native_application_execution": false,
+  "runtime_qualified": false
+}

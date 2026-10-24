@@ -1,0 +1,7 @@
+# Runtime dependencies declared by OR-Tools 9.15.6755. OR-Tools itself is built from the official v9.15 source tag for CPython 3.15.
+absl-py>=2.0.0
+immutabledict>=3.0.0
+numpy>=2.5.4
+pandas>=2.0.0
+protobuf==7.36.2
+typing-extensions>=4.12.0

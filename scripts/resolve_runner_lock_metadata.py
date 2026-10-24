@@ -27,8 +27,8 @@ SDKS = {
 
 
 INPUTS = {
-    "ortools-runtime": ("ortools-solver", "requirements.runtime.in"),
-    "ortools-build": ("ortools-solver", "requirements.build.in"),
+    "ortools-runtime": ("ortools-solver", "requirements.runtime-port.in"),
+    "ortools-build": ("ortools-solver", "requirements.build-port.in"),
 }
 
 
