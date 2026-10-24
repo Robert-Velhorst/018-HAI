@@ -1,0 +1,8 @@
+**
+!Dockerfile
+!requirements.lock
+!native-runtime.profile.json
+!app.py
+!test_app.py
+!compat/
+!compat/verify_sdk_import.py

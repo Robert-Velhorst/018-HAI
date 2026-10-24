@@ -195,3 +195,38 @@ Zstandard lack suitable published CPython 3.15 Linux wheels, so the pinned GCC
 unchanged Datasets helper. No source/case stub or compatibility guard bypass
 is introduced. A passing import check alone does not qualify these cases;
 new-head hosted results and complete runtime/image integration remain required.
+
+## Canonical runtime integration
+
+The canonical input and both lock mirrors now select the verified 83-package
+graph, including Filelock 4.2.4 and all four explicit source ports. Normal hosted
+CI repeats the restricted source builds, real SDK checks and all 80 unchanged
+vendor cases before preparing a wheel context. prepare_runtime_context.py
+requires the current checkout receipt, exact canonical pins/hash sets, unchanged
+executed helpers and expected case counts. Every prepared wheel must match a
+canonical lock hash. Source identity or graph drift fails preparation.
+
+The Docker build requires two named contexts: hai-native-source points to
+services/native-python-runtime; hai-miniswe-wheels points to the inputs folder
+of that same job's verified public preparation. Normal CI prepares and supplies
+both automatically. Compose accepts the latter through HAI_MINISWE_WHEEL_CONTEXT
+(default ./.build/miniswe-runtime/inputs). A missing context fails the build;
+there is no fallback to older published distributions or a host compiler.
+Operator SDK execution remains refused by the preparation helpers. Production
+deployment uses a separately approved built image; no deployment is performed
+by these pull-request checks.
+
+Package installation preserves upstream hash-verified source installation for
+PyYAML 6.0.3, whose CPython 3.15 wheel is unavailable, while the five scientific
+native packages require binary wheels. This matches the qualified SDK graph;
+no interpreter guard is bypassed or optional extension stubbed. Native compiler
+images, source archives and local wheel identities remain explicit.
+
+The image targets Python 3.15.1 and the existing OpenSSL 4.1.0 / SQLite 3.54.1
+native profile. It copies the same installed packages from its package stage,
+verifies real SDK imports through a read-only view with network disabled, runs
+the unchanged application cases as UID 10001, and removes pip/bootstrap wheels.
+The normal health check and strict exact-image inventory/scan now include this
+runner without advisory exclusions. New-source hosted evidence is required;
+selected SDK/vendor cases alone do not establish image security, sandbox escape
+resistance, real model/provider privacy or operator-data acceptance.
