@@ -250,6 +250,7 @@ export class ConnectedSourceService implements IConnectedSourceService {
       || page.offset !== offset || page.limit !== limit || page.items.length > limit
       || (page.items.length > 0 && offset + page.items.length > page.total)
       || !page.items.every(validItem) || typeof page.hasMore !== 'boolean'
+      || (page.items.length === 0 && page.hasMore)
       || page.hasMore !== (page.offset + page.items.length < page.total)) {
       throw new Error('Source history returned an invalid page.');
     }

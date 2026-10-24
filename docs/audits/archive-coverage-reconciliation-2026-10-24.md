@@ -148,6 +148,13 @@ is detected by the negative control. Compact history is an explicit response
 contract change. Server-side deduplication, authorization and real execution
 remain outside this client-double evidence.
 
+The connected-source continuation review exposed an additional prepared-code
+defect: an empty history page could claim more records. The scoped repair,
+three Angular regression cases, twelve-case red/green check and focused strict
+no-emit type check are recorded in
+`source-history-continuation-reconciliation-2026-10-24.md`. The Angular suite and
+browser flow are not executed; publication and main preservation remain open.
+
 The Promptfoo test file moved from exact to changed relative to the earlier
 main snapshot. Its archived content hash matches the earlier Git blob. All
 three original test bodies remain byte-identical; canonical main adds the

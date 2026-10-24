@@ -18,6 +18,33 @@ describe('ConnectedSourceService extraction corrections', () => {
 
   afterEach(() => http.verify());
 
+  it('rejects an empty audit page that claims more records', () => {
+    let error: unknown;
+    service.auditLogPage(0, 8).subscribe({ error: failure => { error = failure; } });
+    http.expectOne(r => r.url === '/api/v1/sources/audit-logs').flush({
+      items: [], total: 1, limit: 8, offset: 0, hasMore: true,
+    });
+    expect(error).toEqual(jasmine.any(Error));
+  });
+
+  it('rejects an empty sync page that claims more records', () => {
+    let error: unknown;
+    service.syncJobPage(0, 8).subscribe({ error: failure => { error = failure; } });
+    http.expectOne(r => r.url === '/api/v1/sources/sync-jobs').flush({
+      items: [], total: 1, limit: 8, offset: 0, hasMore: true,
+    });
+    expect(error).toEqual(jasmine.any(Error));
+  });
+
+  it('rejects an empty extraction page that claims more records', () => {
+    let error: unknown;
+    service.extractions('', false, 8, 0).subscribe({ error: failure => { error = failure; } });
+    http.expectOne(r => r.url === '/api/v1/sources/extractions').flush({
+      items: [], total: 1, totalCount: 1, limit: 8, offset: 0, hasMore: true,
+    });
+    expect(error).toEqual(jasmine.any(Error));
+  });
+
   it('requests an offset audit page and refuses an older server returning an unpaged array', () => {
     let error: unknown;
     service.auditLogPage(8).subscribe({ error: (failure) => { error = failure; } });
