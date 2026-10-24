@@ -1,0 +1,54 @@
+name: Stable Perl Debian package candidate
+
+on:
+  pull_request:
+    paths:
+      - services/native-perl-packaging/**
+      - .github/workflows/native-perl-packages.yml
+
+permissions:
+  contents: read
+
+jobs:
+  complete-package-family:
+    name: Build the complete published Perl package family
+    runs-on: ubuntu-latest
+    timeout-minutes: 105
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.15.1"
+      - name: Prepare the four pinned public source inputs
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          HAI_SOURCE_ROOT="$RUNNER_TEMP/hai-perl-packages"
+          printf 'HAI_SOURCE_ROOT=%s\n' "$HAI_SOURCE_ROOT" >> "$GITHUB_ENV"
+          mkdir -p "$HAI_SOURCE_ROOT/inputs" "$HAI_SOURCE_ROOT/outputs"
+          python -I services/native-perl-packaging/fetch_source.py "$HAI_SOURCE_ROOT/inputs"
+          sha256sum "$HAI_SOURCE_ROOT/inputs/"* > "$HAI_SOURCE_ROOT/input-sha256.txt"
+          sudo chown 10001:10001 "$HAI_SOURCE_ROOT/outputs"
+      - name: Build disposable Debian package SDK
+        run: docker build --file services/native-perl-packaging/Dockerfile.sdk --tag hai-perl-package-sdk:ci services/native-perl-packaging
+      - name: Verify signed recipe and build its complete package family
+        timeout-minutes: 95
+        run: |
+          docker image inspect hai-perl-package-sdk:ci > "$HAI_SOURCE_ROOT/sdk-image-inspect.json"
+          docker run --init --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 6g --cpus 2 --pids-limit 256 \
+            --tmpfs /build:rw,exec,nosuid,nodev,size=5g,mode=1777 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+            --mount type=bind,src="$HAI_SOURCE_ROOT/inputs",dst=/inputs,readonly \
+            --mount type=bind,src="$HAI_SOURCE_ROOT/outputs",dst=/outputs \
+            --env HAI_HOSTED_SOURCE_QUALIFICATION=github-hosted \
+            hai-perl-package-sdk:ci
+      - name: Retain source, signature/build logs and all candidate packages
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-perl-complete-Debian-candidate
+          path: ${{ runner.temp }}/hai-perl-packages
+          if-no-files-found: warn

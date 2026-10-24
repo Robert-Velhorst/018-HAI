@@ -1,0 +1,11 @@
+FROM python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS python-sdk
+FROM gcc:16.2.0-trixie@sha256:3f73339bf0d3d64081cac3f6d9fdafc6dd4cef2b9c49e0a09f91e97cb0eb139a
+COPY --from=python-sdk /usr/local/ /usr/local/
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends build-essential libbz2-dev libcrypt-dev libdb-dev libgdbm-dev libgdbm-compat-dev zlib1g-dev netbase procps file cpio debhelper dpkg-dev fakeroot dist gpgv debian-keyring \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 source-build \
+    && useradd --uid 10001 --gid source-build --no-create-home --shell /bin/sh source-build
+USER 10001:10001
+ENV HAI_DISPOSABLE_PERL_PACKAGE_SDK=1 HOME=/build/home TMPDIR=/build/tmp
+ENTRYPOINT ["python", "-I", "/inputs/build_packages.py"]
