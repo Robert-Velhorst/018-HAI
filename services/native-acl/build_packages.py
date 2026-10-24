@@ -50,6 +50,7 @@ def main():
         for pattern in ['*.buildinfo','*.changes','*.udeb']:
             for item in work.glob(pattern):shutil.copyfile(item,output/item.name)
         # Retain the actual built source and logs, including the unchanged upstream cases.
+        receipt['compiled_test_lookup_sha256']=sha((source/'.libs/libtestlookup.so').read_bytes())
         shutil.make_archive(str(output/'built-source'),'gztar',source.parent,source.name)
         counts=receipt['case_status_counts']
         receipt['all_upstream_cases_qualified']=bool(counts['PASS']) and all(counts[n]==0 for n in ['FAIL','SKIP','XFAIL','XPASS','ERROR'])

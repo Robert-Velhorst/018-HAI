@@ -31,11 +31,19 @@ def main():
     archive=build/'built-source.tar.gz'
     if sha(archive.read_bytes())!=receipt['output_file_sha256'][archive.name]:raise ValueError('Built source archive changed')
     (work/'home').mkdir();(work/'tmp').mkdir()
-    with tarfile.open(archive,mode='r:gz') as tar:
+    # Restore publisher case files, never generated build-tree symlinks.
+    with tarfile.open(inputs/'acl_2.4.0.orig.tar.xz',mode='r:xz') as tar:
         members=tar.getmembers()
-        if len(members)>30000 or sum(m.size for m in members)>256*1024*1024:raise ValueError('Built-source member bounds')
+        if len(members)>10000 or sum(m.size for m in members)>64*1024*1024:raise ValueError('Original-source member bounds')
         tar.extractall(work,filter='data')
     source=work/spec['archive_root']
+    with tarfile.open(archive,mode='r:gz') as tar:
+        member=tar.getmember(spec['archive_root']+'/.libs/libtestlookup.so.0.0.0')
+        if not member.isfile() or member.size>1024*1024:raise ValueError('Unexpected compiled test helper')
+        helper=tar.extractfile(member).read()
+        if not helper.startswith(b'\x7fELF') or sha(helper)!=receipt['compiled_test_lookup_sha256']:raise ValueError('Compiled test helper changed')
+    (source/'.libs').mkdir()
+    (source/'.libs/libtestlookup.so').write_bytes(helper)
     for name,digest in receipt['original_test_files'].items():
         if sha((source/name).read_bytes())!=digest:raise ValueError('An original upstream case/helper changed')
     selected=set()
