@@ -1,6 +1,11 @@
-FROM ghcr.io/gitleaks/gitleaks:v8.30.1 AS gitleaks
+FROM ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f AS gitleaks
 
-FROM python:3.15-slim
+FROM python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+RUN python -m pip uninstall --yes pip
+RUN ["python", "-I", "-c", "import importlib.util,json,pathlib,sysconfig; bundled=pathlib.Path(sysconfig.get_path(\"stdlib\"))/\"ensurepip\"/\"_bundled\"; wheels=list(bundled.glob(\"pip-*.whl\")); [p.unlink() for p in wheels]; assert importlib.util.find_spec(\"pip\") is None; assert not list(bundled.glob(\"*.whl\")); print(json.dumps({\"package_installer\":\"absent\",\"bootstrap_wheels\":0,\"removed_bootstrap_wheels\":len(wheels)}))"]
 COPY --from=gitleaks /usr/bin/gitleaks /usr/local/bin/gitleaks
 COPY app.py /app/app.py
 RUN groupadd --gid 10001 hai && useradd --uid 10001 --gid hai --no-create-home --shell /usr/sbin/nologin hai

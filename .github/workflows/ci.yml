@@ -43,13 +43,13 @@ jobs:
             python-version: "3.15.1"
             requirements-lock: services/garak-runner/requirements.lock
           - name: gitleaks-runner
-            python-version: "3.13"
+            python-version: "3.15.1"
             requirements-lock: ""
           - name: gosec-runner
-            python-version: "3.13"
+            python-version: "3.15.1"
             requirements-lock: ""
           - name: grype-runner
-            python-version: "3.13"
+            python-version: "3.15.1"
             requirements-lock: ""
           - name: guardrails-runner
             python-version: "3.15.1"
@@ -67,16 +67,16 @@ jobs:
             python-version: "3.15.1"
             requirements-lock: services/pydantic-ai-runner/requirements.lock
           - name: syft-runner
-            python-version: "3.13"
+            python-version: "3.15.1"
             requirements-lock: ""
           - name: trivy-runner
-            python-version: "3.13"
+            python-version: "3.15.1"
             requirements-lock: ""
           - name: wasi-runner
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: ""
           - name: whispercpp-runner
-            python-version: "3.13"
+            python-version: "3.15.1"
             requirements-lock: ""
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -188,6 +188,28 @@ jobs:
           else
             docker build --file Dockerfile --tag "hai-${{ matrix.name }}:ci" .
           fi
+      - name: Record exact public scanner and WASI image versions
+        if: contains(fromJSON('["gitleaks-runner","grype-runner","syft-runner","wasi-runner"]'), matrix.name)
+        timeout-minutes: 2
+        env:
+          HAI_VERSION_DIRECTORY: ${{ runner.temp }}/hai-runner-version-${{ matrix.name }}
+        run: |
+          mkdir -p "$HAI_VERSION_DIRECTORY"
+          sha256sum scripts/record_stdlib_runner_version.py > "$HAI_VERSION_DIRECTORY/verifier.sha256"
+          docker image inspect "hai-${{ matrix.name }}:ci" > "$HAI_VERSION_DIRECTORY/image-inspect.json"
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 512m --cpus 1 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+            --mount type=bind,src="$PWD/scripts/record_stdlib_runner_version.py",dst=/review/version.py,readonly \
+            --entrypoint python "hai-${{ matrix.name }}:ci" -I /review/version.py "${{ matrix.name }}" \
+            > "$HAI_VERSION_DIRECTORY/runtime-version.json"
+      - name: Retain public runner version inventory
+        if: always() && contains(fromJSON('["gitleaks-runner","grype-runner","syft-runner","wasi-runner"]'), matrix.name)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: public-runner-version-${{ matrix.name }}
+          path: ${{ runner.temp }}/hai-runner-version-${{ matrix.name }}
+          if-no-files-found: warn
       - name: Start and health-check isolated runner container
         timeout-minutes: 2
         working-directory: services/${{ matrix.name }}
