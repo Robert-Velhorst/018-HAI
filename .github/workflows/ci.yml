@@ -19,7 +19,7 @@ jobs:
       matrix:
         include:
           - name: agent-framework-runner
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: services/agent-framework-runner/requirements.lock
           - name: crewai-runner
             python-version: "3.12"
@@ -52,7 +52,7 @@ jobs:
             python-version: "3.13"
             requirements-lock: ""
           - name: guardrails-runner
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: services/guardrails-runner/requirements.lock
           - name: lm-eval-runner
             python-version: "3.15.1"
@@ -64,7 +64,7 @@ jobs:
             python-version: "3.12"
             requirements-lock: services/ortools-solver/requirements.lock
           - name: pydantic-ai-runner
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: services/pydantic-ai-runner/requirements.lock
           - name: syft-runner
             python-version: "3.13"
@@ -91,14 +91,14 @@ jobs:
             services/*/requirements.txt
             services/*/requirements.in
       - name: Install hash-locked Python build metadata tools
-        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner"]'), matrix.name) || matrix.name == 'evidently-runner'
+        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner","agent-framework-runner"]'), matrix.name) || matrix.name == 'evidently-runner'
         run: |
           python -m pip install --disable-pip-version-check --only-binary :all: --require-hashes -r "services/${{ matrix.name }}/requirements-build.lock"
       - name: Install refreshed hash-locked runner dependencies
-        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner"]'), matrix.name)
+        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner","agent-framework-runner"]'), matrix.name)
         run: python -m pip install --disable-pip-version-check --no-build-isolation --require-hashes -r "${{ matrix.requirements-lock }}"
       - name: Install hash-locked runner dependencies
-        if: matrix.requirements-lock != '' && matrix.name != 'evidently-runner' && !contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner"]'), matrix.name)
+        if: matrix.requirements-lock != '' && matrix.name != 'evidently-runner' && matrix.name != 'guardrails-runner' && !contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner","agent-framework-runner"]'), matrix.name)
         run: python -m pip install --disable-pip-version-check --require-hashes -r "${{ matrix.requirements-lock }}"
       - name: Build and install source-bound Evidently and Dynaconf compatibility wheels
         if: matrix.name == 'evidently-runner'
@@ -114,6 +114,14 @@ jobs:
         if: matrix.name == 'evidently-runner'
         working-directory: services/evidently-runner
         run: python apply_vendor_compat.py --apply-to-sdk
+      - name: Build and install source-bound Guardrails offline compatibility wheel
+        if: matrix.name == 'guardrails-runner'
+        env:
+          HAI_GUARDRAILS_WHEEL_DIRECTORY: ${{ runner.temp }}/hai-guardrails-port-wheel
+        run: |
+          python services/guardrails-runner/compat/build_port_wheel.py --output-directory "$HAI_GUARDRAILS_WHEEL_DIRECTORY"
+          echo "c16222e9b42be2b593e19e97649058e92ad5df2fa3b47cb4f912525a1ad86fa4  $HAI_GUARDRAILS_WHEEL_DIRECTORY/guardrails_ai-0.11.0+hai.offline.1-py3-none-any.whl" | sha256sum --check
+          python -m pip install --disable-pip-version-check --only-binary :all: --find-links "$HAI_GUARDRAILS_WHEEL_DIRECTORY" --require-hashes -r services/guardrails-runner/requirements.lock
       - name: Compile runner and run isolated contract tests
         working-directory: services/${{ matrix.name }}
         env:
@@ -159,6 +167,38 @@ jobs:
           test "$scan_status" -eq 0
       - name: Retain exact-image security inventory and provenance
         if: always() && contains(fromJSON('["fastmcp-bridge","deepeval-runner","docling-runner","lm-eval-runner","evidently-runner","garak-runner","trivy-runner"]'), matrix.name)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runner-image-security-${{ matrix.name }}
+          path: ${{ runner.temp }}/hai-image-security-${{ matrix.name }}/reports
+          if-no-files-found: warn
+
+      - name: Scan exact runner image without advisory exclusions
+        if: matrix.name == 'guardrails-runner'
+        timeout-minutes: 15
+        env:
+          HAI_SCAN_DIRECTORY: ${{ runner.temp }}/hai-image-security-${{ matrix.name }}
+          HAI_SCAN_IMAGE: hai-${{ matrix.name }}:ci
+        run: |
+          mkdir -p "$HAI_SCAN_DIRECTORY/input" "$HAI_SCAN_DIRECTORY/reports" "$HAI_SCAN_DIRECTORY/cache"
+          docker image inspect "$HAI_SCAN_IMAGE" > "$HAI_SCAN_DIRECTORY/reports/image-inspect.json"
+          docker image save "$HAI_SCAN_IMAGE" -o "$HAI_SCAN_DIRECTORY/input/image.tar"
+          python scripts/runner_image_archive_identity.py "$HAI_SCAN_DIRECTORY/input/image.tar" "$HAI_SCAN_DIRECTORY/reports/image-inspect.json" "$HAI_SCAN_IMAGE" "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "$HAI_SCAN_DIRECTORY/reports/image-config-id.txt"
+          scan_status=0
+          docker run --rm --read-only --user "$(id -u):$(id -g)" --cap-drop ALL \
+            --security-opt no-new-privileges --memory 4g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=3g \
+            --mount type=bind,src="$HAI_SCAN_DIRECTORY/input",dst=/input,readonly \
+            --mount type=bind,src="$HAI_SCAN_DIRECTORY/reports",dst=/reports \
+            --mount type=bind,src="$HAI_SCAN_DIRECTORY/cache",dst=/cache \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --input /input/image.tar --cache-dir /cache --scanners vuln \
+            --list-all-pkgs --ignorefile /dev/null --exit-code 1 --format json --timeout 10m \
+            --output /reports/image-security.json || scan_status=$?
+          python scripts/verify_runner_image_security.py "$HAI_SCAN_DIRECTORY/reports/image-security.json" "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "services/${{ matrix.name }}" > "$HAI_SCAN_DIRECTORY/reports/verified-image.json"
+          test "$scan_status" -eq 0
+      - name: Retain exact-image security inventory and provenance
+        if: always() && matrix.name == 'guardrails-runner'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runner-image-security-${{ matrix.name }}

@@ -15,6 +15,9 @@ import urllib.request
 import zipfile
 
 SDKS = {
+    "agent-framework-runner": ("3.15.1", "python:3.15.1-slim-bookworm@sha256:575f8bc12ec26542e0678bc6b60e385218248019d433157ec327264a78c3a853"),
+    "guardrails-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
+    "pydantic-ai-runner": ("3.15.1", "python:3.15.1-slim-bookworm@sha256:575f8bc12ec26542e0678bc6b60e385218248019d433157ec327264a78c3a853"),
     "garak-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "evidently-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
 }
@@ -34,7 +37,7 @@ def main():
     # Linux container UID 10001 can write only these disposable public paths.
     for name in ["outputs", "cache"]:
         (output / name).chmod(0o777)
-    input_filename = "requirements-port.in" if args.runner == "evidently-runner" else "requirements.in"
+    input_filename = "requirements-port.in" if args.runner in {"evidently-runner", "guardrails-runner"} else "requirements.in"
     source = (root / "services" / args.runner / input_filename).read_bytes()
     (output / "inputs/requirements.in").write_bytes(source)
     port_build = None
@@ -62,6 +65,18 @@ def main():
         if evidently_port_build["sha256"] != "e604b98d65f00e043ffdf1a2c33a059050f131848f79c04b17d0a2d38bdbc72c":
             raise ValueError("Evidently port wheel differs from the reviewed static build")
         (output/"evidently-port-build.json").write_text(json.dumps(evidently_port_build, indent=2)+"\n", encoding="utf-8")
+    if args.runner == "guardrails-runner":
+        build = subprocess.run([sys.executable,
+            str(root/"services/guardrails-runner/compat/build_port_wheel.py"),
+            "--output-directory", str(output/"inputs")], capture_output=True, check=False, timeout=120)
+        (output/"port-build.log").write_bytes(build.stdout + build.stderr)
+        if build.returncode:
+            print((build.stdout + build.stderr).decode("utf-8", errors="replace")[-12000:])
+            raise SystemExit(build.returncode)
+        port_build = json.loads(build.stdout)
+        if port_build["sha256"] != "c16222e9b42be2b593e19e97649058e92ad5df2fa3b47cb4f912525a1ad86fa4":
+            raise ValueError("Guardrails port wheel differs from the reviewed static build")
+        (output/"port-build.json").write_text(json.dumps(port_build, indent=2)+"\n", encoding="utf-8")
     metadata_raw = urllib.request.urlopen("https://pypi.org/pypi/uv/0.13.5/json", timeout=40).read()
     metadata = json.loads(metadata_raw)
     wheels = [f for f in metadata["urls"] if f["packagetype"] == "bdist_wheel" and "manylinux_2_17_x86_64" in f["filename"]]
