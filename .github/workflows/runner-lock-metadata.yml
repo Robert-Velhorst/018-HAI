@@ -3,6 +3,8 @@ name: Public runner dependency metadata
 on:
   pull_request:
     paths:
+      - services/miniswe-runner/requirements-port.in
+      - services/miniswe-runner/compat/**
       - services/lm-eval-runner/requirements.in
       - services/lm-eval-runner/requirements-port.in
       - services/lm-eval-runner/compat/**
@@ -31,11 +33,11 @@ jobs:
   resolve:
     name: Resolve public metadata (${{ matrix.runner }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ matrix.runner == 'miniswe-runner' && 25 || 15 }}
     strategy:
       fail-fast: false
       matrix:
-        runner: [lm-eval-runner, garak-runner, evidently-runner, agent-framework-runner, guardrails-runner, pydantic-ai-runner, crewai-runner, ortools-runtime, ortools-build]
+        runner: [miniswe-runner, lm-eval-runner, garak-runner, evidently-runner, agent-framework-runner, guardrails-runner, pydantic-ai-runner, crewai-runner, ortools-runtime, ortools-build]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,4 +64,8 @@ jobs:
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/*.whl
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/evidently-port-build.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/evidently-port-build.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/verify_sdk_import.py
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/qualification/*.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/qualification/*.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/public-sdk-qualification.log
           if-no-files-found: error
