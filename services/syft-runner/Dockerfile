@@ -12,7 +12,7 @@ RUN groupadd --gid 10002 hai && useradd --uid 10002 --gid hai --no-create-home -
 # Install the same-run source-qualified ACL candidate after all other package work.
 RUN --mount=type=bind,from=hai-native-acl,source=/,target=/tmp/hai-acl,readonly \
     python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl \
-    && dpkg -i /tmp/hai-acl/libacl1_2.4.0-1_amd64.deb \
+    && dpkg '--path-include=/usr/share/doc/libacl1/*' -i /tmp/hai-acl/libacl1_2.4.0-1_amd64.deb \
     && python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl --installed \
     && mkdir -p /usr/share/doc/hai-acl \
     && cp /tmp/hai-acl/qualification.json /usr/share/doc/hai-acl/qualification.json
