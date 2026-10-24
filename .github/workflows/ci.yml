@@ -189,7 +189,7 @@ jobs:
             docker build --file Dockerfile --tag "hai-${{ matrix.name }}:ci" .
           fi
       - name: Record exact public scanner and WASI image versions
-        if: contains(fromJSON('["gitleaks-runner","grype-runner","syft-runner","wasi-runner"]'), matrix.name)
+        if: contains(fromJSON('["gitleaks-runner","grype-runner","syft-runner","wasi-runner","gosec-runner","whispercpp-runner"]'), matrix.name)
         timeout-minutes: 2
         env:
           HAI_VERSION_DIRECTORY: ${{ runner.temp }}/hai-runner-version-${{ matrix.name }}
@@ -204,7 +204,7 @@ jobs:
             --entrypoint python "hai-${{ matrix.name }}:ci" -I /review/version.py "${{ matrix.name }}" \
             > "$HAI_VERSION_DIRECTORY/runtime-version.json"
       - name: Retain public runner version inventory
-        if: always() && contains(fromJSON('["gitleaks-runner","grype-runner","syft-runner","wasi-runner"]'), matrix.name)
+        if: always() && contains(fromJSON('["gitleaks-runner","grype-runner","syft-runner","wasi-runner","gosec-runner","whispercpp-runner"]'), matrix.name)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: public-runner-version-${{ matrix.name }}
