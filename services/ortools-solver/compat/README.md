@@ -108,3 +108,13 @@ signed/unsigned range checks, solver semantics and existing cases are retained.
 All ten changed files across three components verify against original/resulting
 hashes. This is a source port, not a compatibility guard or warning suppression.
 New-source compilation and runtime/image qualification remain required.
+
+## Consistent module and distribution identity
+
+The release-suffix definition precedes both module and package generation in
+CMake. The original RELEASE/rc1 conditional is preserved; the supported release
+profile identifies the modified port consistently. Previously __init__.py was
+configured before PYTHON_RELEASE existed, although the later wheel metadata
+correctly contained the suffix. The strict installed module/distribution version
+assertions remain unchanged. No generated wheel is rewritten, solver behavior
+changed or existing case assertion relaxed. All ten source-patch hashes verify.

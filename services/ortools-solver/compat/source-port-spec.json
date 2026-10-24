@@ -23,11 +23,15 @@
         },
         "cmake/python.cmake": {
           "original_sha256": "900928f5e51c70946c58c8f6351e9cfb36380ad9ad2a083b639a83fbef628e80",
-          "patched_sha256": "7cff9f48ba1dcc4235d2d4d44d7b043615a377fb8234e579744d0b85de3b7be3",
+          "patched_sha256": "c0c2a83413af187a9d63a245a0fdc1b0cd21772c0629adbb6e862f7f4b64037d",
           "edits": [
             {
-              "old": "  set(PYTHON_RELEASE \"\")",
-              "new": "  set(PYTHON_RELEASE \"+hai.protobuf7.1\")"
+              "old": "if(RELEASE)\n  set(PYTHON_RELEASE \"\")\nelse()\n  set(PYTHON_RELEASE \"rc1\")\nendif()\n",
+              "new": ""
+            },
+            {
+              "old": "configure_file(\n  ${PROJECT_SOURCE_DIR}/ortools/python/__init__.py.in",
+              "new": "if(RELEASE)\n  set(PYTHON_RELEASE \"+hai.protobuf7.1\")\nelse()\n  set(PYTHON_RELEASE \"rc1\")\nendif()\nconfigure_file(\n  ${PROJECT_SOURCE_DIR}/ortools/python/__init__.py.in"
             }
           ]
         },
