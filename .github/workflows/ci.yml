@@ -19,10 +19,10 @@ jobs:
       matrix:
         include:
           - name: agent-framework-runner
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: services/agent-framework-runner/requirements.lock
           - name: crewai-runner
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: services/crewai-runner/requirements.lock
           - name: deepeval-runner
             python-version: "3.15.1"
@@ -52,7 +52,7 @@ jobs:
             python-version: "3.13"
             requirements-lock: ""
           - name: guardrails-runner
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: services/guardrails-runner/requirements.lock
           - name: lm-eval-runner
             python-version: "3.15.1"
@@ -61,10 +61,10 @@ jobs:
             python-version: "3.14"
             requirements-lock: services/miniswe-runner/requirements.lock
           - name: ortools-solver
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: services/ortools-solver/requirements.lock
           - name: pydantic-ai-runner
-            python-version: "3.12"
+            python-version: "3.15.1"
             requirements-lock: services/pydantic-ai-runner/requirements.lock
           - name: syft-runner
             python-version: "3.13"
@@ -91,14 +91,14 @@ jobs:
             services/*/requirements.txt
             services/*/requirements.in
       - name: Install hash-locked Python build metadata tools
-        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner"]'), matrix.name) || matrix.name == 'evidently-runner'
+        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner","agent-framework-runner"]'), matrix.name) || matrix.name == 'evidently-runner'
         run: |
           python -m pip install --disable-pip-version-check --only-binary :all: --require-hashes -r "services/${{ matrix.name }}/requirements-build.lock"
       - name: Install refreshed hash-locked runner dependencies
-        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner"]'), matrix.name)
+        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner","agent-framework-runner"]'), matrix.name)
         run: python -m pip install --disable-pip-version-check --no-build-isolation --require-hashes -r "${{ matrix.requirements-lock }}"
       - name: Install hash-locked runner dependencies
-        if: matrix.requirements-lock != '' && matrix.name != 'evidently-runner' && !contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner"]'), matrix.name)
+        if: matrix.name != 'ortools-solver' && matrix.requirements-lock != '' && matrix.name != 'evidently-runner' && matrix.name != 'guardrails-runner' && !contains(fromJSON('["fastmcp-bridge","deepeval-runner","deepteam-runner","docling-runner","lm-eval-runner","garak-runner","agent-framework-runner"]'), matrix.name)
         run: python -m pip install --disable-pip-version-check --require-hashes -r "${{ matrix.requirements-lock }}"
       - name: Build and install source-bound Evidently and Dynaconf compatibility wheels
         if: matrix.name == 'evidently-runner'
@@ -114,6 +114,26 @@ jobs:
         if: matrix.name == 'evidently-runner'
         working-directory: services/evidently-runner
         run: python apply_vendor_compat.py --apply-to-sdk
+      - name: Build and install source-bound Guardrails offline compatibility wheel
+        if: matrix.name == 'guardrails-runner'
+        env:
+          HAI_GUARDRAILS_WHEEL_DIRECTORY: ${{ runner.temp }}/hai-guardrails-port-wheel
+        run: |
+          python services/guardrails-runner/compat/build_port_wheel.py --output-directory "$HAI_GUARDRAILS_WHEEL_DIRECTORY"
+          echo "c16222e9b42be2b593e19e97649058e92ad5df2fa3b47cb4f912525a1ad86fa4  $HAI_GUARDRAILS_WHEEL_DIRECTORY/guardrails_ai-0.11.0+hai.offline.1-py3-none-any.whl" | sha256sum --check
+          python -m pip install --disable-pip-version-check --only-binary :all: --find-links "$HAI_GUARDRAILS_WHEEL_DIRECTORY" --require-hashes -r services/guardrails-runner/requirements.lock
+      - name: Build source-pinned OR-Tools wheel for current Python
+        if: matrix.name == 'ortools-solver'
+        env:
+          HAI_ORTOOLS_WHEEL_DIRECTORY: ${{ runner.temp }}/hai-ortools-wheel
+        run: |
+          mkdir -p "$HAI_ORTOOLS_WHEEL_DIRECTORY"
+          docker build --target wheel-export --output "type=local,dest=$HAI_ORTOOLS_WHEEL_DIRECTORY" services/ortools-solver
+          python -m pip install --disable-pip-version-check --require-hashes -r services/ortools-solver/requirements.runtime.lock -r services/ortools-solver/requirements.build.lock
+          wheel="$(find "$HAI_ORTOOLS_WHEEL_DIRECTORY" -maxdepth 1 -type f -name 'ortools-*.whl' -print -quit)"
+          test -n "$wheel"
+          sha256sum "$wheel"
+          python -m pip install --disable-pip-version-check --no-deps "$wheel"
       - name: Compile runner and run isolated contract tests
         working-directory: services/${{ matrix.name }}
         env:
@@ -134,7 +154,7 @@ jobs:
         working-directory: services/${{ matrix.name }}
         run: python ../../scripts/python_runner_container_smoke.py --runner "${{ matrix.name }}" --image "hai-${{ matrix.name }}:ci"
       - name: Scan exact runner image without advisory exclusions
-        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","docling-runner","lm-eval-runner","evidently-runner","garak-runner","trivy-runner"]'), matrix.name)
+        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","docling-runner","lm-eval-runner","evidently-runner","garak-runner","trivy-runner","guardrails-runner"]'), matrix.name)
         timeout-minutes: 15
         env:
           HAI_SCAN_DIRECTORY: ${{ runner.temp }}/hai-image-security-${{ matrix.name }}
@@ -158,12 +178,13 @@ jobs:
           python scripts/verify_runner_image_security.py "$HAI_SCAN_DIRECTORY/reports/image-security.json" "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "services/${{ matrix.name }}" > "$HAI_SCAN_DIRECTORY/reports/verified-image.json"
           test "$scan_status" -eq 0
       - name: Retain exact-image security inventory and provenance
-        if: always() && contains(fromJSON('["fastmcp-bridge","deepeval-runner","docling-runner","lm-eval-runner","evidently-runner","garak-runner","trivy-runner"]'), matrix.name)
+        if: always() && contains(fromJSON('["fastmcp-bridge","deepeval-runner","docling-runner","lm-eval-runner","evidently-runner","garak-runner","trivy-runner","guardrails-runner"]'), matrix.name)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runner-image-security-${{ matrix.name }}
           path: ${{ runner.temp }}/hai-image-security-${{ matrix.name }}/reports
           if-no-files-found: warn
+
 
   secret-scan:
     name: Repository secret scan (redacted output)

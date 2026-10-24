@@ -3,6 +3,14 @@ name: Public runner dependency metadata
 on:
   pull_request:
     paths:
+      - services/agent-framework-runner/requirements.in
+      - services/guardrails-runner/requirements.in
+      - services/guardrails-runner/requirements-port.in
+      - services/guardrails-runner/compat/**
+      - services/pydantic-ai-runner/requirements.in
+      - services/crewai-runner/requirements.in
+      - services/ortools-solver/requirements.runtime.in
+      - services/ortools-solver/requirements.build.in
       - services/garak-runner/requirements.in
       - services/evidently-runner/requirements.in
       - services/evidently-runner/requirements-port.in
@@ -21,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [garak-runner, evidently-runner]
+        runner: [garak-runner, evidently-runner, agent-framework-runner, guardrails-runner, pydantic-ai-runner, crewai-runner, ortools-runtime, ortools-build]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,11 +49,11 @@ jobs:
           name: public-runner-metadata-${{ matrix.runner }}
           path: |
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/outputs/requirements.lock
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/receipt.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/resolution.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/*.whl
-            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.json
-            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/evidently-port-build.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/evidently-port-build.log
           if-no-files-found: error

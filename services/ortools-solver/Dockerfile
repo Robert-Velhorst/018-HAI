@@ -1,4 +1,4 @@
-FROM python:3.15-slim AS ortools-build
+FROM python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS ortools-build
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -41,7 +41,10 @@ RUN wheel="$(find /opt/or-tools/build/python/dist -maxdepth 1 -type f -name 'ort
     && python -m pip install --no-cache-dir --no-deps "$wheel" \
     && python -m unittest discover -v -s . -p 'test_app.py'
 
-FROM python:3.15-slim AS runtime
+FROM scratch AS wheel-export
+COPY --from=ortools-build /opt/or-tools/build/python/dist/ /
+
+FROM python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51 AS runtime
 
 WORKDIR /app
 COPY requirements.runtime.lock ./
@@ -52,6 +55,8 @@ RUN wheel="$(find /tmp -maxdepth 1 -type f -name 'ortools-*.whl' -print -quit)" 
     && python -m pip install --no-cache-dir --no-deps "$wheel" \
     && rm "$wheel"
 COPY app.py ./
+
+RUN python -c "import json,platform,ssl,sqlite3; from importlib.metadata import distributions; print(json.dumps({'python':platform.python_version(),'openssl':ssl.OPENSSL_VERSION,'sqlite':sqlite3.sqlite_version,'distributions':{d.metadata['Name']:d.version for d in distributions()}})); print(open('/etc/os-release',encoding='utf-8').read())"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1

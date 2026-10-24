@@ -1375,6 +1375,8 @@ services:
   guardrails-runner:
     build:
       context: ./services/guardrails-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["validation"]
     restart: unless-stopped
     mem_limit: 512m
