@@ -28,6 +28,9 @@ type FetchOptions struct {
 // fetchFeedBytes reads the raw feed bytes for a feed, confining local files to
 // the feeds root and validating HTTP URLs.
 func fetchFeedBytes(ctx context.Context, feed Feed, opts FetchOptions) ([]byte, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("accountfeed: fetch context is required")
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -36,7 +39,7 @@ func fetchFeedBytes(ctx context.Context, feed Feed, opts FetchOptions) ([]byte, 
 		return readBoundedLocalFeed(ctx, opts.FeedsRoot, feed.Path)
 	case SourceHTTPJSONFeed:
 		if !opts.AllowHTTP {
-			return nil, fmt.Errorf("accountfeed: HTTP feeds are disabled (set the enable flag to allow %s)", feed.URL)
+			return nil, fmt.Errorf("accountfeed: HTTP feeds are disabled; explicit enablement is required")
 		}
 		allowLoopback := opts.AllowLoopbackURL != "" && opts.AllowLoopbackURL == feed.URL
 		if err := validateFeedURLForFetch(feed.URL, allowLoopback); err != nil {
@@ -59,14 +62,7 @@ func fetchFeedBytes(ctx context.Context, feed Feed, opts FetchOptions) ([]byte, 
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("accountfeed: feed HTTP %d", resp.StatusCode)
 		}
-		body, err := io.ReadAll(io.LimitReader(resp.Body, maxFeedBytes+1))
-		if err != nil {
-			return nil, err
-		}
-		if len(body) > maxFeedBytes {
-			return nil, fmt.Errorf("accountfeed: HTTP feed exceeds %d bytes", maxFeedBytes)
-		}
-		return body, nil
+		return readBoundedFeedBytes(ctx, resp.Body)
 	case SourceAutoposterAPI:
 		return nil, fmt.Errorf("accountfeed: Autoposter requires its governed paginated reader")
 	default:
@@ -112,18 +108,32 @@ func readBoundedLocalFeed(ctx context.Context, base, name string) ([]byte, error
 	if info.Size() > maxFeedBytes {
 		return nil, fmt.Errorf("accountfeed: local feed exceeds %d bytes", maxFeedBytes)
 	}
-	body, err := io.ReadAll(io.LimitReader(file, maxFeedBytes+1))
+	body, err := readBoundedFeedBytes(ctx, file)
 	if err != nil {
-		return nil, err
-	}
-	if len(body) > maxFeedBytes {
-		return nil, fmt.Errorf("accountfeed: local feed exceeds %d bytes", maxFeedBytes)
-	}
-	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if err := root.VerifyFile(name, file, info); err != nil {
 		return nil, fmt.Errorf("accountfeed: unsafe feed path: %w", err)
+	}
+	return body, nil
+}
+
+func readBoundedFeedBytes(ctx context.Context, reader io.Reader) ([]byte, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("accountfeed: read context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	body, err := io.ReadAll(io.LimitReader(reader, maxFeedBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(body) > maxFeedBytes {
+		return nil, fmt.Errorf("accountfeed: feed exceeds maximum size of %d bytes", maxFeedBytes)
 	}
 	return body, nil
 }

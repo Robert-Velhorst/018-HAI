@@ -45,7 +45,15 @@ if [[ ! "$FIRST_RUN_ADMIN_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{
   exit 1
 fi
 
-secret() { openssl rand -hex 32; }
+secret() {
+  local value
+  value="$(openssl rand -hex 32)" || return $?
+  if [[ ! "$value" =~ ^[0-9a-fA-F]{64}$ ]]; then
+    echo 'Secret generation did not return exactly 32 bytes of hexadecimal entropy.' >&2
+    return 1
+  fi
+  printf '%s\n' "$value"
+}
 
 # Generate everything before writing stdout so a failed entropy request cannot
 # leave a partially generated env-file fragment.

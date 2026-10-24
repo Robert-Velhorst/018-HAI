@@ -137,26 +137,26 @@ func TestTrelloQuietBoardCursorOnlySkipsKnownBoardMetadataActivity(t *testing.T)
 		wantQuiet  bool
 		wantCursor string
 	}{
-		{name: "no activity", wantQuiet: true, wantCursor: "existing-cursor"},
+		{name: "no activity", actions: []trelloAction{}, wantQuiet: true, wantCursor: "existing-cursor"},
 		{
-			name: "board metadata activity advances cursor",
-			actions: []trelloAction{{Type: "updateBoard", Date: activityTime.Format(time.RFC3339Nano)}},
+			name:      "board metadata activity advances cursor",
+			actions:   []trelloAction{{Type: "updateBoard", Date: activityTime.Format(time.RFC3339Nano)}},
 			wantQuiet: true,
 		},
 		{
-			name: "card activity requires full sync",
+			name:    "card activity requires full sync",
 			actions: []trelloAction{{Type: "updateCard", Date: activityTime.Format(time.RFC3339Nano)}},
 		},
 		{
-			name: "unknown activity requires full sync",
+			name:    "unknown activity requires full sync",
 			actions: []trelloAction{{Type: "futureAction", Date: activityTime.Format(time.RFC3339Nano)}},
 		},
 		{
-			name: "malformed activity requires full sync",
+			name:    "malformed activity requires full sync",
 			actions: []trelloAction{{Type: "updateBoard", Date: "not-a-timestamp"}},
 		},
 		{
-			name: "saturated page requires full sync",
+			name:    "saturated page requires full sync",
 			actions: make([]trelloAction, trelloActionPageSize),
 		},
 	}

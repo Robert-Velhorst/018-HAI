@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"automation-hub-backend/internal/models"
@@ -86,6 +87,9 @@ func (s *Service) installationAvailable(target string) bool {
 }
 
 func (s *Service) installationReason(target string) string {
+	if s.installationAvailable(target) {
+		return ""
+	}
 	if s.installCapabilityReason != nil {
 		if reason := s.installCapabilityReason(target); reason != "" {
 			return reason
@@ -237,9 +241,8 @@ func (s *Service) Overview(ctx context.Context) ([]Target, error) {
 		if targets[i].State == "update_available" {
 			targets[i].InstallStatus = "blocked"
 			targets[i].InstallBlockedReason = s.installationReason(targets[i].ID)
-			if s.installationAvailable(targets[i].ID) {
+			if targets[i].InstallBlockedReason == "" {
 				targets[i].InstallStatus = "capability_ready"
-				targets[i].InstallBlockedReason = "Containment is available; owner policy, publisher evidence and runtime safety gates still apply."
 			}
 		}
 		for _, j := range jobs {
@@ -261,7 +264,8 @@ func (s *Service) Overview(ctx context.Context) ([]Target, error) {
 			var report Report
 			if json.Unmarshal([]byte(receipt.Result), &report) != nil || !report.PublisherVerified || report.PublisherPinStatus != "verified" {
 				pinReason := companionPublisherBlockReason(report.PublisherPinStatus)
-				targets[i].InstallBlockedReason = pinReason + " " + targets[i].InstallBlockedReason
+				targets[i].InstallStatus = "blocked"
+				targets[i].InstallBlockedReason = strings.TrimSpace(pinReason + " " + targets[i].InstallBlockedReason)
 			}
 		}
 	}

@@ -496,6 +496,10 @@ func (r *Runner) RunWorkflowTask(request workflow.TaskRunRequest) (*workflow.Tas
 	if result.VerificationStatus == "" {
 		result.VerificationStatus = plan.ValidationResult.Status
 	}
+	if resultErr != nil {
+		result.ExecutionOutcomeUncertain = true
+		result.FailureReason = workflowTaskFailureReason("workflow execution evidence failed validation", result.FailureReason)
+	}
 	// Unknown effects require reconciliation, never approval-only routing or
 	// optimistic validation, even if the receipt reports completed execution.
 	if result.ExecutionOutcomeUncertain {
@@ -781,6 +785,7 @@ func compareFrameworkRiskContracts(preflight, executed *workflow.FrameworkSelect
 		!equalOptionalInt(preflight.MaximumAutonomyLevel, executed.MaximumAutonomyLevel) ||
 		!equalOptionalBool(preflight.RequiresApproval, executed.RequiresApproval) ||
 		preflight.EffectivePreferenceDigest != executed.EffectivePreferenceDigest ||
+		preflight.OperatingContractDigest != executed.OperatingContractDigest ||
 		preflight.ConstitutionDigest != executed.ConstitutionDigest {
 		return fmt.Errorf("selector-v5 risk contract or governing digests differ from the side-effect-free preview")
 	}

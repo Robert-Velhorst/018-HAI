@@ -2,6 +2,7 @@ package source
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,24 @@ func trelloCardExternalIDs(values ...int) []string {
 		ids[index] = trelloCardExternalIDPrefix + testTrelloMongoID(value)
 	}
 	return ids
+}
+
+func TestValidateTrelloPageCursorProgressRejectsPageCounterOverflow(t *testing.T) {
+	for _, count := range []int{0, math.MaxInt - 1, math.MaxInt} {
+		current, next, page := trelloCursorContractFixture(trelloPhaseReconcileInventory, testTrelloMongoID(200), 0)
+		current.PagesProcessed = count
+		next.PagesProcessed = count
+		next.PagesProcessed++
+		page.CursorAfter = page.CursorBefore
+		err := validateTrelloPageCursorProgress(&current, &next, page, nil, nil, false, "running")
+		if count == math.MaxInt {
+			if err == nil {
+				t.Fatal("wrapped negative page counter accepted as durable progress")
+			}
+		} else if err != nil {
+			t.Fatalf("valid page counter increment from %d rejected: %v", count, err)
+		}
+	}
 }
 
 func trelloActionReceipts(sourceID uuid.UUID, values ...int) []models.TrelloActionReceipt {

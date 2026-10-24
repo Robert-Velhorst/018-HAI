@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -368,5 +369,53 @@ func TestGoogleExchangeDoesNotFollowTokenEndpointRedirects(t *testing.T) {
 	}
 	if redirectFollowed {
 		t.Fatal("OAuth client followed a token endpoint redirect")
+	}
+}
+
+func TestGoogleExchangeRejectsOversizedProviderBodiesInsteadOfAcceptingTheirPrefix(t *testing.T) {
+	for _, test := range []struct {
+		name, limitedPath string
+		extra             bool
+	}{
+		{"oversized token", "/token", true},
+		{"oversized userinfo", "/userinfo", true},
+		{"exact-limit token", "/token", false},
+		{"exact-limit userinfo", "/userinfo", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var userInfoCalls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body := `{"access_token":"fixture-access-token"}`
+				if r.URL.Path == "/userinfo" {
+					userInfoCalls.Add(1)
+					body = `{"email":"operator@example.test","email_verified":true}`
+				}
+				if r.URL.Path == test.limitedPath {
+					body += strings.Repeat(" ", (1<<20)-len(body))
+					if test.extra {
+						body += "!"
+					}
+				}
+				_, _ = w.Write([]byte(body))
+			}))
+			defer server.Close()
+			g := newTestGoogleOAuth()
+			g.tokenEndpoint, g.userInfoURL = server.URL+"/token", server.URL+"/userinfo"
+			state, err := g.signState()
+			if err != nil {
+				t.Fatal(err)
+			}
+			email, err := g.Exchange(context.Background(), "fixture-code", state)
+			if test.extra {
+				if err == nil || email != "" {
+					t.Fatalf("oversized provider body accepted: email=%q error=%v", email, err)
+				}
+				if test.limitedPath == "/token" && userInfoCalls.Load() != 0 {
+					t.Fatal("oversized token body advanced to userinfo")
+				}
+			} else if err != nil || email != "operator@example.test" {
+				t.Fatalf("exact-limit provider body rejected: email=%q error=%v", email, err)
+			}
+		})
 	}
 }

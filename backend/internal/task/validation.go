@@ -1130,12 +1130,12 @@ func validationNegationCompatible(criterion, description string) bool {
 		if !ok {
 			continue
 		}
-		if requiredPolarity == validationPolarityPositive &&
-			availablePolarity == validationPolarityNegative {
+		if requiredPolarity&validationPolarityPositive != 0 &&
+			availablePolarity&validationPolarityNegative != 0 {
 			return false
 		}
-		if requiredPolarity == validationPolarityNegative &&
-			availablePolarity == validationPolarityPositive {
+		if requiredPolarity&validationPolarityNegative != 0 &&
+			availablePolarity&validationPolarityPositive != 0 {
 			return false
 		}
 	}

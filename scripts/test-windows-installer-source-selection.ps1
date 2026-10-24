@@ -135,6 +135,33 @@ try {
         if (-not $rejected) { throw "Unsafe source path was accepted: $unsafePath" }
     }
 
+    if ($env:OS -eq 'Windows_NT') {
+        $junctionTarget = Join-Path $fixtureRoot 'junction-target'
+        New-Item -ItemType Directory -Path (Join-Path $junctionTarget 'nested') | Out-Null
+        [IO.File]::WriteAllText((Join-Path $junctionTarget 'record.txt'), 'junction root fixture')
+        [IO.File]::WriteAllText((Join-Path $junctionTarget 'nested\record.txt'), 'junction ancestor fixture')
+        $junctionAlias = Join-Path $fixtureRoot 'junction-alias'
+        New-Item -ItemType Junction -Path $junctionAlias -Target $junctionTarget | Out-Null
+        try {
+            $acceptedJunctionRoots = 0
+            foreach ($sourceRoot in @($junctionAlias, (Join-Path $junctionAlias 'nested'))) {
+                $rejected = $false
+                try { Assert-HaiInstallerSourceFileSafe -RepositoryRoot $sourceRoot -RelativePath 'record.txt' | Out-Null } catch { $rejected = $true }
+                if (-not $rejected) { $acceptedJunctionRoots++ }
+            }
+            if ($acceptedJunctionRoots -ne 0) { throw "Installer provenance accepted $acceptedJunctionRoots junction-root ancestry cases." }
+            Assert-HaiInstallerSourceFileSafe -RepositoryRoot $junctionTarget -RelativePath 'record.txt' | Out-Null
+        } finally {
+            # Delete only our exact junction entry, never its target recursively.
+            $expectedAlias = [IO.Path]::GetFullPath((Join-Path $fixtureRoot 'junction-alias'))
+            $alias = Get-Item -LiteralPath $junctionAlias -Force -ErrorAction Stop
+            if ($alias.FullName -ne $expectedAlias -or ($alias.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
+                throw 'Owned junction fixture changed; refusing cleanup.'
+            }
+            Remove-Item -LiteralPath $expectedAlias -Force
+        }
+    }
+
     $failure = Format-HaiInstallerCompilerFailure -ExitCode 7 -MaximumLines 2 -Output @('old diagnostic', 'error: missing file', 'compile stopped')
     if ($failure -notmatch 'exit code 7' -or $failure -match 'old diagnostic' -or
         $failure -notmatch 'error: missing file' -or $failure -notmatch 'compile stopped') {
