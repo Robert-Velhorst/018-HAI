@@ -8,12 +8,12 @@ This draft refreshes FastMCP, DeepEval, Deepteam, Docling and LM Evaluation Harn
 - Regenerate complete hashed graphs; keep requirements.txt byte-identical to requirements.lock. Container installation now consumes the same lock used by CI, including Docling, whose earlier Dockerfile independently resolved a smaller package list.
 - Pin four runner images and CI SDKs to Python 3.15.1. Deepteam 1.0.10 explicitly requires Python <3.14, so its existing runtime line advances to the current 3.13.17 patch. Migration to Python 3.15 remains unresolved for that package.
 - Preserve the official PyTorch CPU index and CPU variant. Public index selection matches pip highest-version behavior; generated hashes bind the selected artifacts. No private index or credential was introduced.
-- Hash-lock Cython 3.3.0, setuptools 84.2.1 and wheel 0.48.0 for build metadata. Disable automatic isolated build dependency downloads during application dependency installation. Remove Cython afterward; retain wheel where the application graph actually requires it.
-- Preserve existing application code, cases, environment privacy flags, non-root users, health checks and endpoint behavior. Existing hosted CI remains required.
+- Hash-lock Cython, setuptools, wheel and setuptools-scm build metadata tools. Pyclipper declares all four in its source pyproject.toml; omitting SCM metadata returned the incorrect version 0.0.0. Disable automatic isolated build dependency downloads during application dependency installation. Remove build-only tools afterward; retain wheel where the application graph actually requires it.
+- Preserve existing application code, cases, environment privacy flags, non-root users, health checks and endpoint behavior. Update two existing CI policy cases to the current Docling pin and canonical hash-lock install path, retaining all case names and assertions on CPU wheels, hashes and trusted CA versions. Existing hosted CI remains required.
 
 ## Local preparation evidence
 
-The five graphs contain 380 package entries and 216 distinct name/version pairs. Resolved version metadata and per-version PyPI advisory feeds were inspected. All selected releases have non-yanked files.
+The five application graphs contain 380 package entries. Application and build locks together contain 219 distinct name/version pairs. Resolved version metadata and per-version PyPI advisory feeds were inspected. All selected releases have non-yanked files.
 
 Dependency metadata resolution used pinned uv 0.13.5. Wheel-only resolution first failed on PyYAML/SQLitedict source distributions. Resolution then succeeded in an existing, digest-pinned Python 3.15.1 SDK container with only public requirements, owned outputs and public caches mounted. Dependency build-backend metadata could execute there; no application source, provider credentials or private repository content was mounted. No host SDK, application suite or new case was installed/executed locally.
 

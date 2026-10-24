@@ -7,7 +7,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential libyaml-dev libyaml-0-2 \
     && python -m pip install --no-cache-dir --only-binary :all: --require-hashes -r requirements-build.lock \
     && python -m pip install --no-cache-dir --no-build-isolation --require-hashes -r requirements.lock \
-    && python -m pip uninstall --yes cython \
+    && python -m pip uninstall --yes cython setuptools-scm \
     && apt-get purge -y --auto-remove build-essential libyaml-dev \
     && rm -rf /var/lib/apt/lists/*
 
