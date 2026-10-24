@@ -1,0 +1,9 @@
+FROM hai-acl-source-sdk:ci
+USER 0:0
+COPY inputs/qualify_installed_packages.py /review/qualify_installed_packages.py
+COPY outputs/qualification.json /review/build-qualification.json
+COPY outputs/*.deb /candidates/
+RUN python -I /review/qualify_installed_packages.py --verify-package-inputs \
+    && dpkg -i /candidates/libacl1_2.4.0-1_amd64.deb /candidates/acl_2.4.0-1_amd64.deb
+ENV HAI_DISPOSABLE_ACL_INSTALLED_SDK=1
+ENTRYPOINT ["python", "-I", "/review/qualify_installed_packages.py"]

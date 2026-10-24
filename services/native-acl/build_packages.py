@@ -47,13 +47,15 @@ def main():
             packages.append({'name':package.name,'sha256':sha(package.read_bytes()),'control_sha256':sha(fields.encode()),'contents_sha256':sha(contents.encode())})
         if not any(p['name'].startswith('libacl1_2.4.0-1_amd64') for p in packages):raise ValueError('Expected complete libacl1 runtime package absent')
         receipt['packages']=packages
-        for pattern in ['*.buildinfo','*.changes']:
+        for pattern in ['*.buildinfo','*.changes','*.udeb']:
             for item in work.glob(pattern):shutil.copyfile(item,output/item.name)
         # Retain the actual built source and logs, including the unchanged upstream cases.
         shutil.make_archive(str(output/'built-source'),'gztar',source.parent,source.name)
         counts=receipt['case_status_counts']
         receipt['all_upstream_cases_qualified']=bool(counts['PASS']) and all(counts[n]==0 for n in ['FAIL','SKIP','XFAIL','XPASS','ERROR'])
-        if not receipt['all_upstream_cases_qualified']:raise RuntimeError('Candidate packages retained; skipped, expected-failing or unknown upstream cases remain unqualified')
+        # This phase builds packages. The workflow's mandatory installed-package
+        # phase must execute every selected case, including the four root cases.
+        receipt['installed_package_case_qualification_required']=True
     finally:
         states=[]
         for entry in Path('/proc').iterdir():

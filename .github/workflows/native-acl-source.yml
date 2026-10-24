@@ -45,6 +45,24 @@ jobs:
             --mount type=bind,src="$HAI_SOURCE_ROOT/outputs",dst=/outputs \
             --env HAI_HOSTED_SOURCE_QUALIFICATION=github-hosted \
             hai-acl-source-sdk:ci
+      - name: Build disposable SDK with exact candidate packages
+        run: docker build --file services/native-acl/Dockerfile.test --tag hai-acl-installed-sdk:ci "$HAI_SOURCE_ROOT"
+      - name: Run all original Linux cases against installed candidates
+        timeout-minutes: 35
+        run: |
+          mkdir -p "$HAI_SOURCE_ROOT/installed-case-reports"
+          docker image inspect hai-acl-installed-sdk:ci > "$HAI_SOURCE_ROOT/installed-sdk-image-inspect.json"
+          docker run --init --rm --network none --read-only --user 0:0 --cap-drop ALL \
+            --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add FSETID \
+            --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges \
+            --memory 6g --cpus 2 --pids-limit 256 \
+            --tmpfs /root-cases:rw,exec,nosuid,nodev,size=5g,mode=1777 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+            --mount type=bind,src="$HAI_SOURCE_ROOT/inputs",dst=/inputs,readonly \
+            --mount type=bind,src="$HAI_SOURCE_ROOT/outputs",dst=/public-build,readonly \
+            --mount type=bind,src="$HAI_SOURCE_ROOT/installed-case-reports",dst=/case-reports \
+            --env HAI_HOSTED_SOURCE_QUALIFICATION=github-hosted \
+            hai-acl-installed-sdk:ci
       - name: Retain source, SDK identity, build and test evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
