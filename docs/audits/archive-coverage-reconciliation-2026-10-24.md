@@ -47,6 +47,29 @@ addition is already in the `added_file_changed` scope. See
 deletion lifecycle, not the semantic content gate on those replacements; it is
 not an instruction to remove current templates, models or authentication tests.
 
+## Go declaration follow-up
+
+A standard-library Go parser pass prioritizes all 251 changed Go additions
+across the two product cohorts. Its refined result is 39 variants whose archived
+declarations/imports remain represented, 173 with changed but no absent
+declaration identities, 36 with identities absent from the same file, and three
+historically unparsable snapshots. These are AST prioritization categories, not
+whole-file semantic completion or permission to restore malformed old code.
+
+Five absent production-helper identities now have assertion-level successor
+reviews in `archive-helper-successors-reconciliation-2026-10-24.md`: cookie
+persistence, criterion-specific evidence, MCP endpoint validation, A2A endpoint
+validation and A2A message parsing. The current implementations preserve or
+deliberately strengthen the relevant behavior; the archived helpers must not be
+restored wholesale merely because their names disappeared.
+
+All nine historical `Test...` identities absent from their original files in
+this cohort have individual dispositions in
+`archive-test-successors-reconciliation-2026-10-24.md`. They comprise renamed,
+expanded and intentionally superseded tests. Test fixtures/helpers and all other
+changed declarations remain separate review work. These receipts do not clear
+the 251 whole-file variants or make the retained archives deletion-eligible.
+
 ## One changed test variant
 
 The Promptfoo test file moved from exact to changed relative to the earlier
