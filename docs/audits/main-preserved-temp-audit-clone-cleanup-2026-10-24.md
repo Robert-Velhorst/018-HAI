@@ -1,5 +1,43 @@
 # Main-preserved temporary audit clone cleanup
 
+## D-drive audit working files: metadata retained
+
+The old D-drive audit snapshot `c9f74059b8fb57848b57ddd07519ff783b27fa2e`
+is an ancestor of reviewed main, with zero candidate-unique commits according
+to GitHub's comparison. Its full working-file set was checked against the
+committed snapshot: 3,244 regular files, 121 exact and 3,123 ordinary line-ending
+conversions. The index matched that snapshot, with no skipped/hidden flags,
+untracked files, ignored source files or reparse paths in the selected tree.
+
+The repository still contains other historical refs and private Git metadata.
+Those are not cleared by the current-head ancestry check. Therefore only the
+verified working files were removed; the entire `.git` directory remained.
+All 64 metadata files were hashed before cleanup and verified byte-identical
+afterward, including the private redaction map. No private values are exported.
+
+The first file-only batch stopped after an immediate visibility check still
+reported the just-treated file. A read-only inspection found exactly the
+acknowledged removed prefix plus that one attempted file absent, with every
+remaining file and every Git metadata hash unchanged. The removal of that path
+was never reissued. Only the 1,513 never-attempted paths were subsequently
+processed, with bounded observation of disappearance rather than repeated
+deletion. The final independent check accounts for all 3,244 missing working
+files and no unexpected source changes. There are no working files left.
+
+The removed files contained 38,440,873 logical bytes. Another 321 empty working
+directories were removed with nonrecursive deletion that refuses a directory
+if any child appears. The repository root and its Git directory remain.
+Observed D-drive free space increased from 4,723,310,592 to 5,658,640,384 bytes
+across both stages. This is an observed free-space change, not an assertion
+that unrelated concurrent activity had no effect. The drive's allocation-unit
+overhead makes logical file bytes and freed capacity different measures.
+
+The resulting 3,244 working-tree deletions are intentional storage cleanup,
+not a product change: never stage or commit them. This is not deletion of the
+complete repository or integration of its other historical/private data.
+No other project, database, transcript, container or original dirty checkout
+was removed in this step.
+
 ## Runtime-pin review copy
 
 The independent `018-hai-latest-stable-audit` clone was removed only after its
