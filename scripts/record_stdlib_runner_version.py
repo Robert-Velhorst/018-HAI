@@ -44,6 +44,43 @@ def main():
     if find_spec("pip") is not None or list(bundled.glob("*.whl")):
         raise ValueError("A package installer or bootstrap wheel remains")
     extra = {}
+    if sys.argv[1] == "wasi-runner":
+        fixtures = Path("/review/wasi-fixtures")
+        manifest_raw = (fixtures / "provenance.json").read_bytes()
+        if hashlib.sha256(manifest_raw).hexdigest() != "6868998be5cb802518ec287040e4a4eb728deb624383ef40d9f85ebeb1b3498c":
+            raise ValueError("Original Wasmtime case provenance changed")
+        manifest = json.loads(manifest_raw)
+        for item in manifest["files"]:
+            relative = PurePosixPath(item["file"])
+            if relative.is_absolute() or len(relative.parts) != 1:
+                raise ValueError("Unexpected upstream case path")
+            if hashlib.sha256((fixtures / item["file"]).read_bytes()).hexdigest() != item["sha256"]:
+                raise ValueError("An original Wasmtime fixture changed")
+        control = {"PATH": "/usr/local/bin:/usr/bin:/bin", "WASMTIME_WASI_PREVIEW0": "true",
+                   "WASMTIME_WASI_INHERIT_ENV": "false"}
+        def original_case(filename, env):
+            value = subprocess.run(["timeout", "5s", "/usr/local/bin/wasmtime", "run", str(fixtures / filename)],
+                                   stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                                   env=env, cwd="/tmp", timeout=6)
+            if len(value.stdout) > 65536 or len(value.stderr) > 65536:
+                raise ValueError("Unexpected original-case output size")
+            return value
+        baseline = original_case("hello_wasi_snapshot0.wat", {"PATH": control["PATH"]})
+        if baseline.returncode == 0 or "unknown import: `wasi_unstable::proc_exit`" not in baseline.stderr:
+            raise ValueError("The original Wasmtime preview0 default-failure assertion differs")
+        for filename in ["hello_wasi_snapshot0.wat", "hello_wasi_snapshot1.wat"]:
+            value = original_case(filename, control)
+            if value.returncode != 0 or value.stdout != "Hello, world!\n":
+                raise ValueError("The original Wasmtime hello-world assertion differs: " + filename)
+        privacy = original_case("print_env.wat", {**control, "THIS_WILL_NOT": "show up in the output"})
+        if privacy.returncode != 0 or privacy.stdout != "":
+            raise ValueError("The original no-inherited-guest-environment assertion differs")
+        extra["original_WASI_CLI_case_qualification"] = {
+            "source_commit": manifest["upstream_commit"], "fixture_files_unchanged": True,
+            "original_case_assertion_paths_executed": 4,
+            "default_preview0_rejection_preserved": True,
+            "fixed_environment_enables_preview0": True, "preview1_preserved": True,
+            "guest_environment_empty": True, "full_upstream_or_sandbox_acceptance": False}
     if sys.argv[1] == "gosec-runner":
         go = subprocess.check_output(["/usr/local/go/bin/go", "version"], text=True, timeout=10,
                                      env={"PATH": "/usr/local/go/bin:/usr/bin:/bin", "HOME": "/tmp",

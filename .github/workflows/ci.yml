@@ -196,11 +196,16 @@ jobs:
           HAI_VERSION_DIRECTORY: ${{ runner.temp }}/hai-runner-version-${{ matrix.name }}
         run: |
           mkdir -p "$HAI_VERSION_DIRECTORY"
+          wasi_fixture_mounts=()
+          if [ "${{ matrix.name }}" = wasi-runner ]; then
+            wasi_fixture_mounts+=(--mount "type=bind,src=$PWD/services/wasi-runner/upstream-fixtures,dst=/review/wasi-fixtures,readonly")
+          fi
           sha256sum scripts/record_stdlib_runner_version.py > "$HAI_VERSION_DIRECTORY/verifier.sha256"
           docker image inspect "hai-${{ matrix.name }}:ci" > "$HAI_VERSION_DIRECTORY/image-inspect.json"
           docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
             --security-opt no-new-privileges --memory 512m --cpus 1 --pids-limit 128 \
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+            "${wasi_fixture_mounts[@]}" \
             --mount type=bind,src="$PWD/scripts/record_stdlib_runner_version.py",dst=/review/version.py,readonly \
             --entrypoint python "hai-${{ matrix.name }}:ci" -I /review/version.py "${{ matrix.name }}" \
             > "$HAI_VERSION_DIRECTORY/runtime-version.json"
