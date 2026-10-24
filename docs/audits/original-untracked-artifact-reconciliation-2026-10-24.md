@@ -56,6 +56,18 @@ The runner-smoke program and its existing unit suite were exercised through inje
 
 The tests cover generated resource/network restrictions, synthetic offline settings, diagnostic redaction, failure handling and cleanup-command selection. Their mocked readiness messages do not mean a runner or container was actually started. No Docker container, installer, provider request, real readiness probe or recovery action ran, and the unit result is not live-image or operational cleanup acceptance.
 
+## Runner dependency source disposition
+
+The four original untracked DeepTeam and Promptfoo manifests/locks were compared with main and the prepared checkpoint. Each prepared dependency file equals reviewed main after line-ending normalization. No dependency installation or runner execution occurred.
+
+The DeepTeam lock changes from 68 to 69 named packages, with no original package name removed. Structured requirement and hash-record parsing identifies changes only to certifi, DeepTeam and sentry-sdk. DeepTeam is upgraded from 1.0.7 to 1.0.10; sentry-sdk becomes an explicit direct requirement. Every successor direct requirement resolves to its exact hash-locked version. Distribution files were not downloaded; hash-field validity is not distribution-integrity verification.
+
+The complete Promptfoo manifest delta is accounted for: Promptfoo 0.123.1 becomes 0.125.0, Node 24 becomes 26, npm 10 becomes 12, the Linux x64 libsql binary is explicit, and the get-uri/basic-ftp override is retained. No other manifest field changes. Both root dependency and engine declarations match their lock records.
+
+The old npm lock has 940 package slots and the successor has 660; 499 slot records differ. The removed transitive packages are not claimed to have identical functionality in the newer Promptfoo release. A static lock-graph check resolves 1593 original and 1128 successor dependency edges with no missing required targets, incompatible semantic-version ranges or unsupported range types. The explicit get-uri/basic-ftp override is checked separately. Removing Promptfoo or falsifying its version in in-memory negative controls is detected. Peer-dependency compatibility, package authenticity, install-script behavior, vulnerabilities and live provider evaluation are not proved by this check.
+
+These four files need no old-version restoration based on dependency declarations or lock-graph structure. This disposition does not clear the original working copy or its other source, logs, recovery evidence or history for deletion.
+
 ## Remaining work and retention
 
 The other historical failure roots have not been requalified by this three-root run. Untracked source differences, private runtime state, recovery artifacts, other checkouts and conversation archives still require their own integration and preservation decisions. All original files remain intact. This report is aggregate evidence only, not a substitute for the private raw records, main integration, publication authorization or deletion proof.

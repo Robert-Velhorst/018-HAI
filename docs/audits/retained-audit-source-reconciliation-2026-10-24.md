@@ -25,6 +25,12 @@ The existing main audit, `stable-runtime-dependencies-2026-10-23.md`, and merged
 
 This review therefore does not replace the supported runner with an incompatible dependency, suppress tests, or claim Jasmine 7 has been integrated. A maintained-runner and Zone migration must preserve the existing test coverage before adoption. The proposal's original head is included in the previously verified `archive/local-preservation-20261024/hai-dependency-review-history` tag; archival preservation is not main integration or deletion clearance.
 
+## Vercel removal proposal: one runtime delta remains
+
+Historical head `251ccae99c5762befa3a7e13d6211414b6093f86` changes two paths against its base. Its complete deployment-target document already matches reviewed main after line-ending normalization. However, its runtime provider declaration removes `vercel-ai-gateway`, which main still allows. The entire selected provider declaration matches main only after restoring that single entry; the source review does not infer this from a repository-wide string search.
+
+This runtime change is not integrated on main and is not silently discarded. A restriction on deployment hosting does not by itself establish that the inference-provider extension must be prohibited. The historical source remains intact while that intent and the repository's other refs are unresolved. No provider was disabled, no external service was called, and this copy is not cleared for deletion.
+
 ## Remaining boundary
 
 No source archive, database, transcript history or divergent checkout is cleared by this comparison. Full refs/reflogs, physical files, ignored data, shared metadata and consumers must still be accounted for before any copy is removed. No new dependency installation, app stack, container, agent or provider request was started for these source comparisons.
