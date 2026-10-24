@@ -3,6 +3,9 @@ name: Public runner dependency metadata
 on:
   pull_request:
     paths:
+      - services/agent-framework-runner/requirements.in
+      - services/guardrails-runner/requirements.in
+      - services/pydantic-ai-runner/requirements.in
       - services/garak-runner/requirements.in
       - services/evidently-runner/requirements.in
       - scripts/resolve_runner_lock_metadata.py
@@ -19,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [garak-runner, evidently-runner]
+        runner: [garak-runner, evidently-runner, agent-framework-runner, guardrails-runner, pydantic-ai-runner]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
