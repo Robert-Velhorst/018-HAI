@@ -61,6 +61,37 @@ client.chat.completions, but static inspection and CLI startup do not establish
 provider/binding compatibility. That upstream constraint conflict remains
 unresolved; no pip-check or complete vendor compatibility claim is made.
 
+## Evidently compatibility with Pandas 3.1
+
+At source 400643d the Garak job passed, but Evidently's existing contracts
+failed during import: upstream's legacy data_integrity_tests module imports
+infer_dtype_from_object from a private Pandas module removed in Pandas 3.1.
+Pandas remains at current stable 3.1.0. No cases or assertions are removed.
+
+The runner now carries a dtype adapter built on public Pandas/NumPy APIs and
+an explicit SDK-only installer that changes that single vendor import. It
+retains legacy datetime aliases, scalar dtype handling and specific-unit
+rejection. It does not add a symbol to Pandas globals. The installer accepts
+only Evidently 0.7.23 with original module SHA-256
+`a2754fa739125076375915530483ba6c38ec3035197db82e8a20a83e3b84f0d1`,
+or that exact module with the reviewed import already applied; other code or
+versions fail closed. The patched module SHA-256 is
+`f5ccfd3827869c952760149d263c3adece9ad71032bcc7b614125da0ce0b7784`.
+The installed distribution RECORD is updated for the changed file and CI/build
+logs retain original/patched and adapter hashes. This is an explicit local
+compatibility patch, not a claim that upstream shipped an unchanged fix.
+
+The installer runs in disposable CI SDKs and Docker builds before the existing
+contracts, not on the operator interpreter. Local verification only parsed
+AST/YAML, checked the exact wheel source/one-import transformation and retained
+existing application/case blob identities. Fresh hosted report execution,
+image and complete source qualification remain required. Full upstream legacy
+behavior beyond HAI's existing coverage remains unverified.
+
+References: [affected upstream import](https://github.com/evidentlyai/evidently/blob/v0.7.23/src/evidently/legacy/tests/data_integrity_tests.py),
+[previous Pandas dtype handling](https://github.com/pandas-dev/pandas/blob/v3.0.6/pandas/core/dtypes/common.py),
+[public dtype conversion](https://pandas.pydata.org/docs/reference/api/pandas.api.types.pandas_dtype.html).
+
 This does not resolve the other HAI runner graphs, existing SQLitedict advisory,
 all native image findings, provider acceptance or deployment boundaries.
 

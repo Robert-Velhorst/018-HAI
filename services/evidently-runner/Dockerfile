@@ -4,6 +4,8 @@ FROM python:3.14.9-slim-bookworm@sha256:945c2676dc2b18e0c1f16879244122c57c0ffede
 WORKDIR /app
 COPY requirements.lock ./
 RUN python -m pip install --no-cache-dir --only-binary :all: --require-hashes -r requirements.lock
+COPY compat_pandas.py apply_vendor_compat.py ./
+RUN python apply_vendor_compat.py --apply-to-sdk
 COPY app.py ./
 COPY test_app.py ./
 
