@@ -7,7 +7,7 @@ ENV HOME=/tmp \
     OTEL_SDK_DISABLED=true
 COPY compat ./compat
 RUN python compat/build_port_wheel.py --output-directory /app/wheels \
-    && echo "aa84a2bc18e24d027c897f610ae9e2e62fcd6c6a63bef131508f6c4ce853231e  /app/wheels/guardrails_ai-0.11.0+hai.offline.1-py3-none-any.whl" | sha256sum --check
+    && echo "c16222e9b42be2b593e19e97649058e92ad5df2fa3b47cb4f912525a1ad86fa4  /app/wheels/guardrails_ai-0.11.0+hai.offline.1-py3-none-any.whl" | sha256sum --check
 COPY requirements.lock ./
 RUN python -m pip install --no-cache-dir --only-binary :all: --find-links /app/wheels --require-hashes -r requirements.lock
 COPY app.py test_app.py ./

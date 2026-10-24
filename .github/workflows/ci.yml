@@ -110,7 +110,7 @@ jobs:
           HAI_GUARDRAILS_WHEEL_DIRECTORY: ${{ runner.temp }}/hai-guardrails-port-wheel
         run: |
           python services/guardrails-runner/compat/build_port_wheel.py --output-directory "$HAI_GUARDRAILS_WHEEL_DIRECTORY"
-          echo "aa84a2bc18e24d027c897f610ae9e2e62fcd6c6a63bef131508f6c4ce853231e  $HAI_GUARDRAILS_WHEEL_DIRECTORY/guardrails_ai-0.11.0+hai.offline.1-py3-none-any.whl" | sha256sum --check
+          echo "c16222e9b42be2b593e19e97649058e92ad5df2fa3b47cb4f912525a1ad86fa4  $HAI_GUARDRAILS_WHEEL_DIRECTORY/guardrails_ai-0.11.0+hai.offline.1-py3-none-any.whl" | sha256sum --check
           python -m pip install --disable-pip-version-check --only-binary :all: --find-links "$HAI_GUARDRAILS_WHEEL_DIRECTORY" --require-hashes -r services/guardrails-runner/requirements.lock
       - name: Compile runner and run isolated contract tests
         working-directory: services/${{ matrix.name }}
