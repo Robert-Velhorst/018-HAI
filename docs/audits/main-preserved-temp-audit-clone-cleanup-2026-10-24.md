@@ -1,5 +1,31 @@
 # Main-preserved temporary audit clone cleanup
 
+## C-drive shared Vercel audit working files: metadata retained
+
+The old shared audit owner also checks out main-ancestor snapshot
+`c9f74059b8fb57848b57ddd07519ff783b27fa2e`. Its 3,244 working files were read
+and compared with committed blobs: 111 exact and 3,133 ordinary line-ending
+conversions, with no extra physical source files or hidden index state.
+GitHub again confirmed zero candidate-unique commits relative to reviewed main.
+
+This is not an independent disposable repository: it owns a linked Go-review
+worktree at `0965019abdd11b44ff83c676fb52770359c655da`. The cleanup therefore
+excluded the complete shared Git directory and the linked worktree's physical
+source. Consumer checks covered both registered worktree paths. All 88 shared
+Git metadata files, including linked-worktree metadata, were hashed before
+cleanup and remained byte-identical afterward. Other refs and histories are
+retained and are not claimed integrated by the owner snapshot's ancestry.
+
+Only the owner's 3,244 working files were removed, totaling 38,444,043 logical
+bytes. An independent post-check found all intended absences and no remaining
+working files. A further 321 empty source directories were removed without
+recursive deletion; the owner root now contains only `.git`. The linked Go
+worktree was not removed. Free space observed across these stages changed from
+6,349,897,728 to 6,394,748,928 bytes; concurrent changes are not attributed
+exclusively to this cleanup. Do not stage or commit the owner's intentional
+working-tree deletions. Neither the shared repository nor its other worktree
+has been deleted in full.
+
 ## C-drive dependency audit working files: metadata retained
 
 The standalone dependency audit snapshot
