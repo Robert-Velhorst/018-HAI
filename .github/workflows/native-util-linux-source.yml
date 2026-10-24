@@ -1,0 +1,54 @@
+name: Fixed util-linux source qualification
+
+on:
+  pull_request:
+    paths:
+      - services/native-util-linux/**
+      - .github/workflows/native-util-linux-source.yml
+
+permissions:
+  contents: read
+
+jobs:
+  public-source:
+    name: Build fixed util-linux source and run upstream suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      HAI_SOURCE_ROOT: ${{ runner.temp }}/hai-util-linux-source
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.15.1"
+      - name: Prepare only pinned public source inputs
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          mkdir -p "$HAI_SOURCE_ROOT/inputs" "$HAI_SOURCE_ROOT/outputs"
+          python -I services/native-util-linux/fetch_source.py "$HAI_SOURCE_ROOT/inputs"
+          sha256sum "$HAI_SOURCE_ROOT/inputs/"* > "$HAI_SOURCE_ROOT/input-sha256.txt"
+          sudo chown 10001:10001 "$HAI_SOURCE_ROOT/outputs"
+      - name: Build isolated public-source SDK image
+        run: docker build --file services/native-util-linux/Dockerfile.sdk --tag hai-util-linux-source-sdk:ci services/native-util-linux
+      - name: Build full source and retain unchanged upstream case results
+        timeout-minutes: 45
+        run: |
+          docker image inspect hai-util-linux-source-sdk:ci > "$HAI_SOURCE_ROOT/sdk-image-inspect.json"
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 6g --cpus 2 --pids-limit 256 \
+            --tmpfs /build:rw,exec,nosuid,nodev,size=5g,mode=1777 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+            --mount type=bind,src="$HAI_SOURCE_ROOT/inputs",dst=/inputs,readonly \
+            --mount type=bind,src="$HAI_SOURCE_ROOT/outputs",dst=/outputs \
+            --env HAI_HOSTED_SOURCE_QUALIFICATION=github-hosted \
+            hai-util-linux-source-sdk:ci
+      - name: Retain source, SDK identity, build and test evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-util-linux-fixed-source-candidate
+          path: ${{ runner.temp }}/hai-util-linux-source
+          if-no-files-found: warn
