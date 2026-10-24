@@ -71,3 +71,33 @@ because GitHub reports a commit outside main's ancestry.
 
 Detailed follow-up receipts are retained separately from the original two-clone
 receipts. These checks do not clear any other checkout, archive or database.
+
+## Follow-up fleet audit clone
+
+The HAI-only child of the `codex-github-fleet-ngrok-20261019` temporary directory
+was checked against preserved snapshot
+`21ad54689f6ed9a78714ee433e8573461e6ea95a`. GitHub confirms that this snapshot is
+an ancestor of the same reviewed main with zero candidate-unique commits.
+Its 3,233 tracked files pass the committed-blob recovery check: 111 exact and
+3,122 ordinary line-ending conversions. No extra refs, reflog heads, untracked
+or ignored files, custom hooks, hidden index flags or shared worktrees were
+found. Git fsck reports no unaccounted local objects or errors within the
+partial clone; it does not claim that every promised remote blob was locally
+downloaded. All checked-out file bytes were read and verified.
+
+The first native removal preflight stopped before deletion because its metadata
+classifier did not yet recognize partial-clone settings. Inspection identified
+only `remote.origin.promisor=true` and `remote.origin.partialclonefilter=blob:none`.
+The explicit batch accepts those two exact values only; any other unclassified
+configuration still refuses removal. No policy-blocked deletion was retried and
+no alternative deletion mechanism or parent-directory removal was used.
+
+After fresh native preflight checks, the explicit HAI child directory was
+removed and confirmed absent. Its parent remained. The removed copy contained
+3,267 files and 48,143,291 logical bytes. Free space observed immediately before
+and after was 6,250,446,848 and 6,305,902,592 bytes; this is not a claim that all
+concurrent free-space changes came from this removal.
+
+The two follow-up removals together account for 6,540 files and 96,311,821 logical
+bytes. Other divergent, sparse, dirty, shared or incompletely reconciled copies
+remain intact. This is not completion of the full local-data removal objective.
