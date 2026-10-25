@@ -34,6 +34,11 @@ actual protected bytes and all original case output/diff files. This supports
 independent source comparison and diagnosis of known-failure output; no original
 case, expected result or known-failure label is changed or excluded.
 
+The retained ul diffs identify missing terminfo and lost terminal sequences.
+The SDK sets TERM=xterm and verifies its real infocmp entry before the unchanged
+suite. Original terminal fixtures remain protected; this is not a change to
+their expected output or a disposition of the remaining known failures.
+
 The workflow retains a compiled installation prefix and test evidence. It does
 not build or install replacement Debian packages. Debian's current source
 packaging requires debhelper >=14.1~, compat 14 and a newer debputy sequence;

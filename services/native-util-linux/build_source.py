@@ -41,7 +41,7 @@ def main():
     env = {"PATH": os.environ["PATH"], "HOME": "/build/home", "TMPDIR": "/build/tmp",
            "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "SOURCE_DATE_EPOCH": "0",
            "LD_LIBRARY_PATH": "/usr/local/lib64:/usr/local/lib",
-           "DEB_BUILD_MAINT_OPTIONS": "hardening=+bindnow", "TZ": "UTC"}
+           "DEB_BUILD_MAINT_OPTIONS": "hardening=+bindnow", "TZ": "UTC", "TERM": "xterm"}
     for flag in ["CFLAGS", "CPPFLAGS", "LDFLAGS"]:
         env[flag] = subprocess.check_output(["dpkg-buildflags", "--get", flag], env=env, text=True).strip()
     receipt = {"version": spec["version"], "source_sha256": spec["archive_sha256"],
@@ -50,6 +50,12 @@ def main():
                "vendor_case_exclusions_or_new_application_cases": False,
                "Debian_packages_built": False, "runtime_packages_installed": False,
                "complete_runtime_or_security_acceptance": False}
+    # The publisher's ul fixtures contain terminal capabilities. Keep their
+    # expected bytes and verify the real SDK terminfo entry instead of relying
+    # on the unset-TERM fallback, which reported "trouble reading terminfo".
+    terminal = subprocess.check_output(["infocmp", "-1", "xterm"], env=env)
+    receipt["terminal_profile"] = "xterm"
+    receipt["terminfo_entry_sha256"] = hashlib.sha256(terminal).hexdigest()
     protected = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in source.rglob("*")
                  if p.is_file() and not p.is_symlink()
                  and (p.suffix in {".c", ".h", ".sh", ".ac", ".am", ".in", ".py"}
