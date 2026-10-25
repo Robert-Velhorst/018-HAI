@@ -54,11 +54,26 @@ tool = str(Path(gopath) / 'bin/govulncheck')
 tool_info = record('govulncheck-buildinfo', ['go', 'version', '-m', tool])
 assert tool_info['returncode'] == 0
 scan = record('govulncheck-binary', [tool, '-mode=binary', '-json', str(out / 'trivy-published-binary')])
-summary = {'source_head': source['head'], 'binary': identity, 'tool_install': install,
+decoder = json.JSONDecoder()
+remaining = (out / 'govulncheck-binary.stdout').read_text(encoding='utf-8')
+messages = []
+while remaining.strip():
+    remaining = remaining.lstrip()
+    message, length = decoder.raw_decode(remaining)
+    messages.append(message)
+    remaining = remaining[length:]
+configs = [m['config'] for m in messages if 'config' in m]
+sboms = [m['SBOM'] for m in messages if 'SBOM' in m]
+findings = [m['finding'] for m in messages if 'finding' in m]
+assert len(configs) == 1 and configs[0]['scan_mode'] == 'binary' and configs[0]['scan_level'] == 'symbol'
+assert len(sboms) == 1 and sboms[0]['go_version'] == 'go1.27.3'
+summary = {'finding_records': len(findings), 'findings': findings,
+           'JSON_exit_code_alone_is_not_a_clean_scan': True,
+           'source_head': source['head'], 'binary': identity, 'tool_install': install,
            'binary_buildinfo': info, 'tool_buildinfo': tool_info, 'scan': scan,
            'raw_Trivy_gate_unchanged_and_still_required': True,
            'application_or_original_cases_modified': False,
            'package_level_investigation_not_an_advisory_waiver': True,
            'full_SDK_vendor_runtime_or_deployment_acceptance': False}
 (out / 'investigation.json').write_text(json.dumps(summary, indent=2))
-assert scan['returncode'] == 0, 'Binary-aware vulnerability investigation reports findings or failed; inspect retained evidence.'
+assert scan['returncode'] == 0 and not findings, 'Binary-aware vulnerability investigation reports findings or failed; inspect retained evidence.'
