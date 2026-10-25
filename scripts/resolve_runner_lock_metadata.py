@@ -15,6 +15,9 @@ import urllib.request
 import zipfile
 
 SDKS = {
+    "fastmcp-bridge": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
+    "deepeval-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
+    "deepteam-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "miniswe-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "lm-eval-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
     "crewai-runner": ("3.15.1", "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51"),
@@ -173,6 +176,10 @@ def main():
     command += ["--workdir", "/inputs", sdk, "sh", "-c",
                 'cp /tools/uv /sdk-tools/uv && chmod 700 /sdk-tools/uv && exec /sdk-tools/uv pip compile requirements.in --find-links /inputs --upgrade --generate-hashes --no-python-downloads --python-version "$1" --python-platform x86_64-unknown-linux-gnu --emit-index-url --only-binary numpy --only-binary scipy --only-binary pandas --only-binary pyarrow --only-binary tokenizers --output-file /outputs/requirements.lock',
                 "public-metadata-resolution", version]
+    if args.runner in {"fastmcp-bridge", "deepeval-runner", "deepteam-runner"}:
+        # Beta-only transitive packages are not current stable candidates.
+        command[-3] = command[-3].replace("--upgrade --generate-hashes",
+            "--upgrade --prerelease disallow --generate-hashes", 1)
     process = subprocess.run(command, capture_output=True, timeout=600, check=False)
     log = process.stdout + process.stderr
     (output / "resolution.log").write_bytes(log)
@@ -189,6 +196,28 @@ def main():
                "public_build_backend_metadata_execution_possible": True,
                "private_application_source_or_credentials_mounted": False,
                "application_tests_run": False, "host_sdk_installed": False}
+    if args.runner in {"fastmcp-bridge", "deepeval-runner", "deepteam-runner"} and process.returncode == 0:
+        # A compiled lock is not proof that the actual interpreter can install
+        # it. Retain normal pip's Requires-Python, dependency and hash checks.
+        # Public source metadata backends may load native build tools. Keep
+        # /tmp non-executable; give only this disposable check an executable
+        # build scratch mount, with the same non-root and resource limits.
+        install_command = [*command[:-6], "--tmpfs",
+            "/metadata-build:rw,exec,nosuid,nodev,size=768m,uid=10001,gid=10001,mode=0700",
+            "--env", "TMPDIR=/metadata-build", sdk, "python", "-m", "pip",
+            "--disable-pip-version-check", "install", "--dry-run", "--no-cache-dir",
+            "--require-hashes", "--find-links", "/inputs", "-r", "/outputs/requirements.lock"]
+        checked = subprocess.run(install_command, capture_output=True, timeout=600, check=False)
+        checked_log = checked.stdout + checked.stderr
+        (output/"normal-installer-check.log").write_bytes(checked_log)
+        receipt["normal_installer_dry_run_returncode"] = checked.returncode
+        receipt["normal_installer_dry_run_passed"] = checked.returncode == 0
+        receipt["normal_installer_check_log_sha256"] = hashlib.sha256(checked_log).hexdigest()
+        receipt["runtime_packages_installed_by_this_check"] = False
+        if checked.returncode:
+            (output/"receipt.json").write_text(json.dumps(receipt, indent=2)+"\n", encoding="utf-8")
+            print(checked_log.decode("utf-8", errors="replace")[-16000:])
+            raise SystemExit(checked.returncode)
     if args.runner == "lm-eval-runner" and process.returncode == 0:
         qualified = subprocess.run([sys.executable,
             str(root/"services/lm-eval-runner/compat/qualify_public_sdk.py"),
