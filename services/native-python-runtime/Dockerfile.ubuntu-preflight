@@ -1,0 +1,6 @@
+FROM ubuntu:26.10@sha256:93e29beff5257b2cdf1c024d831f6d2997e53655a653ff76a811fc9e6564a719
+# Inspect the complete supported base after normal signed repository updates.
+# This preflight does not contain a Python/application/native runtime port.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates
