@@ -59,8 +59,17 @@ def main():
         if digest(path.read_bytes()) != item['sha256']:
             raise ValueError('ABI package archive changed')
         paths.append(str(path))
-    Path('/build/home').mkdir(parents=True, exist_ok=True)
-    Path('/build/tmp').mkdir(parents=True, exist_ok=True)
+    work_directories = {}
+    for name in ['home', 'tmp']:
+        directory = Path('/build')/name
+        directory.mkdir(parents=True, exist_ok=True)
+        if directory.is_symlink() or not directory.is_dir():
+            raise RuntimeError('Require ordinary disposable test-user directories')
+        os.chown(directory, 10001, 10001)
+        status = directory.stat()
+        if (status.st_uid, status.st_gid) != (10001, 10001):
+            raise RuntimeError('The published case user must own its HOME and TMPDIR')
+        work_directories[str(directory)] = {'UID': status.st_uid, 'GID': status.st_gid}
     environment = {
         'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/build/home',
         'TMPDIR': '/build/tmp', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
@@ -76,6 +85,7 @@ def main():
         'producer_receipt_sha256': digest((candidates/'qualification.json').read_bytes()),
         'abi_receipt_sha256': digest(abi_raw), 'abi_candidate_packages': abi['candidate_packages'],
         'commands': [], 'manager_UID': os.getuid(), 'test_user': 'source-build',
+        'test_user_owned_work_directories': work_directories,
         'normal_installability_passed': False,
         'normal_dependency_and_complete_family_install_passed': False,
         'all_declared_installed_package_tests_passed': False,
