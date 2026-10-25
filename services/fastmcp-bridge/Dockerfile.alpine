@@ -1,7 +1,7 @@
 FROM python:3.15.1-alpine3.24@sha256:54448f67d7c31c39e5cdd3ea2d6382395ce142806c284425f8e897d78a0465b3 AS native-build
 WORKDIR /native-build
 RUN apk upgrade --no-cache \
-    && apk add --no-cache build-base bluez-dev perl pkgconf \
+    && apk add --no-cache build-base linux-headers bluez-dev perl pkgconf \
     && addgroup -g 10001 native-builder \
     && adduser -D -H -u 10001 -G native-builder native-builder \
     && chown native-builder:native-builder /native-build
@@ -27,7 +27,7 @@ COPY --from=native-build /native-build/sources.json /sources.json
 FROM python:3.15.1-alpine3.24@sha256:54448f67d7c31c39e5cdd3ea2d6382395ce142806c284425f8e897d78a0465b3 AS python-dependencies
 WORKDIR /app
 RUN apk upgrade --no-cache \
-    && apk add --no-cache --virtual .build-deps build-base cargo rust libffi-dev yaml-dev pkgconf pax-utils
+    && apk add --no-cache --virtual .build-deps build-base linux-headers cargo rust libffi-dev yaml-dev pkgconf pax-utils
 COPY --from=native-pack /native-pack/out/keys/hai-native-runtime.rsa.pub /etc/apk/keys/
 RUN --mount=type=bind,from=native-pack,source=/native-pack/out,target=/tmp/native-pack,readonly \
     apk verify /tmp/native-pack/hai-openssl4.apk /tmp/native-pack/hai-sqlite3.apk \
