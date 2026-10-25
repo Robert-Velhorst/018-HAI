@@ -40,10 +40,23 @@ ENV LD_LIBRARY_PATH=/opt/hai-native/lib \
     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
     SSL_CERT_DIR=/etc/ssl/certs
 COPY requirements-build.lock requirements.lock ./
+RUN addgroup -g 10001 dependency-builder \
+    && adduser -D -H -u 10001 -G dependency-builder dependency-builder \
+    && mkdir /opt/hai-venv \
+    && chown dependency-builder:dependency-builder /opt/hai-venv
+USER 10001:10001
+ENV HOME=/tmp
+RUN python -m venv /opt/hai-venv
+ENV VIRTUAL_ENV=/opt/hai-venv \
+    PATH=/opt/hai-venv/bin:$PATH
 RUN python -m pip install --no-cache-dir --only-binary :all: --require-hashes -r requirements-build.lock \
     && python -m pip install --no-cache-dir --no-build-isolation --require-hashes -r requirements.lock \
     && python -m pip uninstall --yes cython setuptools-scm wheel \
     && python -m pip uninstall --yes pip
+USER 0:0
+# Only installer cleanup and dependency metadata run here; compilation above
+# uses the same non-root identity as the native build stage.
+RUN /usr/local/bin/python -m pip uninstall --yes pip
 RUN python -I - <<'PY'
 import importlib.util,pathlib,re,subprocess,sysconfig
 bundled=pathlib.Path(sysconfig.get_path('stdlib'))/'ensurepip/_bundled'
@@ -51,10 +64,11 @@ for path in bundled.glob('*.whl'):
     path.unlink()
 assert importlib.util.find_spec('pip') is None
 assert not list(bundled.glob('*.whl'))
-raw=subprocess.check_output(['scanelf','--needed','--nobanner','--format','%n','--recursive','/usr/local','/opt/hai-native/lib'],text=True)
+raw=subprocess.check_output(['scanelf','--needed','--nobanner','--format','%n#p','--recursive','/usr/local','/opt/hai-venv','/opt/hai-native/lib'],text=True)
 names={name.strip() for line in raw.splitlines() for name in line.split(',') if name.strip() not in {'','-'}}
 assert all(re.fullmatch(r'[A-Za-z0-9_.+-]+',name) for name in names)
-dependencies=sorted('so:'+name for name in names if not any((pathlib.Path(root)/name).is_file() for root in ['/usr/local/lib','/opt/hai-native/lib']))
+provided={p.name for root in ['/usr/local','/opt/hai-venv','/opt/hai-native/lib'] for p in pathlib.Path(root).rglob('*') if p.is_file()}
+dependencies=sorted('so:'+name for name in names if name not in provided)
 pathlib.Path('/runtime-dependencies.txt').write_text('\n'.join(dependencies)+'\n')
 PY
 
@@ -68,10 +82,12 @@ RUN --mount=type=bind,from=native-pack,source=/native-pack/out,target=/tmp/nativ
 COPY --from=python-dependencies /runtime-dependencies.txt /usr/share/doc/hai-native/runtime-dependencies.txt
 RUN xargs -r apk add --no-cache < /usr/share/doc/hai-native/runtime-dependencies.txt
 COPY --chown=0:0 --from=python-dependencies /usr/local/ /usr/local/
+COPY --chown=0:0 --from=python-dependencies /opt/hai-venv/ /opt/hai-venv/
 COPY --chown=0:0 --from=native-build /native-build/out/provenance.json /native-build/out/CPython-LICENSE /usr/share/doc/hai-native/
 COPY --chown=0:0 --from=native-pack /native-pack/out/signing-provenance.json /usr/share/doc/hai-native/
 COPY --chown=0:0 app.py test_app.py requirements.lock native-runtime.profile.json ./
-ENV PATH=/usr/local/bin:$PATH \
+ENV PATH=/opt/hai-venv/bin:/usr/local/bin:$PATH \
+    VIRTUAL_ENV=/opt/hai-venv \
     HOME=/tmp \
     LD_LIBRARY_PATH=/opt/hai-native/lib \
     OPENSSL_MODULES=/opt/hai-native/lib/ossl-modules \
