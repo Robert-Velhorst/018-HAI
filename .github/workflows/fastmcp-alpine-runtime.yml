@@ -1,0 +1,141 @@
+name: FastMCP Alpine native runtime qualification
+
+on:
+  pull_request:
+    paths:
+      - services/fastmcp-bridge/**
+      - services/native-python-runtime/**
+      - scripts/record_fastmcp_alpine_runtime.py
+      - scripts/verify_fastmcp_alpine_image.py
+      - .github/workflows/fastmcp-alpine-runtime.yml
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.1'
+      - name: Bind all source and original-case inputs before building
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          export HAI_ALPINE_REVIEW="$RUNNER_TEMP/hai-fastmcp-alpine"
+          printf '%s\n' "HAI_ALPINE_REVIEW=$HAI_ALPINE_REVIEW" >> "$GITHUB_ENV"
+          mkdir -p "$HAI_ALPINE_REVIEW/"{input,reports,cache}
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          paths=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          record={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                  'tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+                  'tracked_file_sha256':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths if p and Path(p).is_file()},
+                  'manual_deployment_or_operator_data_accessed':False}
+          (Path(os.environ['HAI_ALPINE_REVIEW'])/'reports/source-identity.json').write_text(json.dumps(record,indent=2)+'\n')
+          PY
+      - name: Compile native clients unprivileged and verify signed APK exports
+        id: native
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress=plain --build-context hai-native-source=services/native-python-runtime \
+            --file services/fastmcp-bridge/Dockerfile.alpine --target native-export \
+            --output "type=local,dest=$HAI_ALPINE_REVIEW/reports/native-export" services/fastmcp-bridge \
+            2>&1 | tee "$HAI_ALPINE_REVIEW/reports/native-build.log"
+      - name: Build complete candidate with original committed locks
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress=plain --build-context hai-native-source=services/native-python-runtime \
+            --file services/fastmcp-bridge/Dockerfile.alpine --tag hai-fastmcp-alpine:candidate \
+            services/fastmcp-bridge 2>&1 | tee "$HAI_ALPINE_REVIEW/reports/build.log"
+      - name: Record actual native providers and all installed distributions offline
+        id: inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 512m --cpus 1 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+            --env HAI_RUNTIME_INVENTORY=1 \
+            --mount "type=bind,src=$PWD/scripts/record_fastmcp_alpine_runtime.py,dst=/review/runtime_inventory.py,readonly" \
+            --entrypoint python hai-fastmcp-alpine:candidate -I /review/runtime_inventory.py \
+            > "$HAI_ALPINE_REVIEW/reports/runtime-inventory.json"
+      - name: Run every original FastMCP case without edits or case filters
+        id: cases
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 1g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m \
+            --entrypoint python hai-fastmcp-alpine:candidate \
+            -m unittest discover -v -s /app -p 'test*.py' \
+            2>&1 | tee "$HAI_ALPINE_REVIEW/reports/all-original-cases.log"
+      - name: Run unchanged isolated container startup and health contract
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Preserve the existing harness image-name guard and prove both tags
+          # identify the same immutable candidate before starting the container.
+          docker tag hai-fastmcp-alpine:candidate hai-fastmcp-bridge:ci
+          candidate_id=$(docker image inspect --format '{{.Id}}' hai-fastmcp-alpine:candidate)
+          smoke_id=$(docker image inspect --format '{{.Id}}' hai-fastmcp-bridge:ci)
+          test "$candidate_id" = "$smoke_id"
+          printf '%s\n' "$candidate_id" > "$HAI_ALPINE_REVIEW/reports/smoke-image-id.txt"
+          python scripts/python_runner_container_smoke.py --runner fastmcp-bridge --image hai-fastmcp-bridge:ci \
+            2>&1 | tee "$HAI_ALPINE_REVIEW/reports/container-smoke.log"
+      - name: Save the exact complete runtime image and descriptor chain
+        id: archive
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker image inspect hai-fastmcp-alpine:candidate > "$HAI_ALPINE_REVIEW/reports/image-inspect.json"
+          docker image save hai-fastmcp-alpine:candidate -o "$HAI_ALPINE_REVIEW/input/image.tar"
+          python scripts/runner_image_archive_identity.py "$HAI_ALPINE_REVIEW/input/image.tar" "$HAI_ALPINE_REVIEW/reports/image-inspect.json" hai-fastmcp-alpine:candidate "$HAI_ALPINE_REVIEW/reports/image-identity.json" "$HAI_ALPINE_REVIEW/reports/image-config-id.txt"
+      - name: Scan complete OS and Python inventories at every severity
+        if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scan_status=0
+          docker run --rm --read-only --user "$(id -u):$(id -g)" --cap-drop ALL \
+            --security-opt no-new-privileges --memory 4g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=3g \
+            --mount "type=bind,src=$HAI_ALPINE_REVIEW/input,dst=/input,readonly" \
+            --mount "type=bind,src=$HAI_ALPINE_REVIEW/reports,dst=/reports" \
+            --mount "type=bind,src=$HAI_ALPINE_REVIEW/cache,dst=/cache" \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --input /input/image.tar --cache-dir /cache --scanners vuln \
+            --list-all-pkgs --ignorefile /dev/null --exit-code 1 --format json --timeout 10m \
+            --output /reports/image-security.json > "$HAI_ALPINE_REVIEW/reports/scan.log" 2>&1 || scan_status=$?
+          printf '%s\n' "$scan_status" > "$HAI_ALPINE_REVIEW/reports/scan.exit-status"
+          python scripts/verify_fastmcp_alpine_image.py "$HAI_ALPINE_REVIEW/reports/image-security.json" "$HAI_ALPINE_REVIEW/reports/image-identity.json" services/fastmcp-bridge \
+            > "$HAI_ALPINE_REVIEW/reports/verified-image.json"
+          test "$scan_status" -eq 0
+      - name: Retain complete compressed image even when another gate fails
+        if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gzip -1 -c "$HAI_ALPINE_REVIEW/input/image.tar" > "$HAI_ALPINE_REVIEW/reports/image.tar.gz"
+          sha256sum "$HAI_ALPINE_REVIEW/reports/image.tar.gz" > "$HAI_ALPINE_REVIEW/reports/image.tar.gz.sha256"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: fastmcp-alpine-runtime-evidence
+          path: ${{ runner.temp }}/hai-fastmcp-alpine/reports/
+          retention-days: 7
+          if-no-files-found: error

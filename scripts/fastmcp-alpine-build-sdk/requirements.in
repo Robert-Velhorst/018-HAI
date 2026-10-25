@@ -1,0 +1,6 @@
+cython==3.3.0
+setuptools==84.2.1
+wheel==0.48.0
+setuptools-scm==10.3.4
+maturin==1.15.0
+cffi==2.1.1

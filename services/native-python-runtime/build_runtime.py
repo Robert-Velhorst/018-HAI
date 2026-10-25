@@ -98,7 +98,7 @@ def package(root, name, version, source_name, architecture):
     return {"file": out.name, "sha256": hashlib.sha256(out.read_bytes()).hexdigest()}
 
 
-def build_openssl(spec, source, folder, architecture):
+def build_openssl(spec, source, folder, architecture, packager=package):
     command(["./Configure", "shared", "--prefix=" + str(PREFIX), "--libdir=lib",
              "--openssldir=/etc/ssl", "-Wl,-rpath," + str(PREFIX / "lib")], source)
     command(["make", "-j2"], source)
@@ -112,10 +112,10 @@ def build_openssl(spec, source, folder, architecture):
     doc = root / "usr/share/doc/hai-openssl4/copyright"
     copy_regular(source / "LICENSE.txt", doc)
     return {"source": spec, "libraries": libraries,
-            "package": package(root, "hai-openssl4", spec["version"], "openssl", architecture)}
+            "package": packager(root, "hai-openssl4", spec["version"], "openssl", architecture)}
 
 
-def build_sqlite(spec, source, folder, architecture):
+def build_sqlite(spec, source, folder, architecture, packager=package):
     library = SDK_PREFIX / "lib/libsqlite3.so.0"
     flags = ["-O2", "-fPIC", "-shared", "-Wl,-soname,libsqlite3.so.0",
              "-DSQLITE_THREADSAFE=1", "-DSQLITE_USE_URI=1", "-DSQLITE_ENABLE_COLUMN_METADATA",
@@ -139,7 +139,7 @@ def build_sqlite(spec, source, folder, architecture):
         raise RuntimeError("Missing SQLite source copyright notice")
     doc.write_text(notice[0] + "\nhttps://www.sqlite.org/copyright.html\n", encoding="utf-8")
     return {"source": spec, "cflags": flags, "library_sha256": digest,
-            "package": package(root, "hai-sqlite3", spec["version"], "sqlite3", architecture)}
+            "package": packager(root, "hai-sqlite3", spec["version"], "sqlite3", architecture)}
 
 
 def rebuild_python(spec, source):
