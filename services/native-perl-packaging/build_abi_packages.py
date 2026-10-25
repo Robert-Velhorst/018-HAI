@@ -80,6 +80,13 @@ def main():
                 entry['log_sha256'] = digest(log.read_bytes())
 
     try:
+        keyring_raw = Path('/usr/share/doc/hai-source-keyring-setup/qualification.json').read_bytes()
+        keyring = json.loads(keyring_raw)
+        if (not keyring.get('normal_authenticated_install_and_owned_keyring_passed')
+                or digest(Path(keyring['keyring_path']).read_bytes()) != keyring['keyring_sha256']):
+            raise RuntimeError('Require the normally installed official source-signing keyring')
+        report['official_source_keyring_receipt_sha256'] = digest(keyring_raw)
+        report['official_source_keyring'] = keyring
         runtime_path=Path('/usr/share/doc/hai-gcc-runtime-setup/runtime-qualification.json')
         runtime_raw=runtime_path.read_bytes();runtime=json.loads(runtime_raw)
         if not runtime.get('normal_authenticated_APT_and_exact_package_install_passed'):

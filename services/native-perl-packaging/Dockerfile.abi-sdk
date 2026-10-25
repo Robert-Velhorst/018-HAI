@@ -13,5 +13,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
 COPY --from=original-sdk /usr/share/keyrings/ /usr/share/keyrings/
 COPY install_runtime_packages.py runtime-sources.json /usr/share/hai-gcc-runtime/
 RUN HAI_GCC_RUNTIME_SDK_BUILD=github-hosted python -I /usr/share/hai-gcc-runtime/install_runtime_packages.py
+COPY install_source_keyring.py source-keyring.json /usr/share/hai-source-keyring/
+RUN HAI_GCC_RUNTIME_SDK_BUILD=github-hosted python -I /usr/share/hai-source-keyring/install_source_keyring.py
 ENV HAI_DISPOSABLE_PERL_ABI_SDK=1
 ENTRYPOINT ["python", "-I", "/abi-inputs/build_abi_packages.py"]
