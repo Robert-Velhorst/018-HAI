@@ -51,7 +51,13 @@ def main():
                "Debian_packages_built": False, "runtime_packages_installed": False,
                "complete_runtime_or_security_acceptance": False}
     protected = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in source.rglob("*")
-                 if p.is_file() and not p.is_symlink() and p.suffix in {".c", ".h", ".sh", ".ac", ".am", ".in", ".py"}}
+                 if p.is_file() and not p.is_symlink()
+                 and (p.suffix in {".c", ".h", ".sh", ".ac", ".am", ".in", ".py"}
+                      or p.relative_to(source).parts[0] == "tests")}
+    receipt["protected_original_source_and_case_sha256"] = {
+        p.relative_to(source).as_posix(): digest for p, digest in sorted(protected.items())}
+    receipt["protected_original_test_tree_files"] = sum(
+        p.relative_to(source).parts[0] == "tests" for p in protected)
 
     def run(name, args):
         start = time.monotonic()
@@ -91,6 +97,19 @@ def main():
                    if not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest() != digest]
         receipt["original_code_and_build_source_files_checked"] = len(protected)
         receipt["original_code_and_build_source_files_changed"] = changed
+        # Retain the actual protected bytes, including extensionless publisher
+        # cases/fixtures, for independent verification against the source archive.
+        with tarfile.open(output / "protected-original-source-and-cases.tar.gz", "w:gz") as tar:
+            for path in sorted(protected):
+                if path.is_file() and not path.is_symlink():
+                    tar.add(path, arcname=path.relative_to(source).as_posix(), recursive=False)
+        # Known-failure labels suppress console diffs in the original harness.
+        # Preserve its actual output/diff files without changing that harness.
+        with tarfile.open(output / "upstream-case-output-and-diffs.tar.gz", "w:gz") as tar:
+            for name in ["output", "diff"]:
+                path = source / "tests" / name
+                if path.is_dir():
+                    tar.add(path, arcname=name)
         for name in ["config.log", "config.status"]:
             if (source / name).exists():
                 shutil.copyfile(source / name, output / name)

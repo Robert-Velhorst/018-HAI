@@ -4,6 +4,7 @@ COPY --from=python-sdk /usr/local/ /usr/local/
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
        ca-certificates pkgconf libtool asciidoctor bc bison flex gettext \
+       e2fsprogs iproute2 sqlite3 \
        libaudit-dev libcap-ng-dev libcrypt-dev libcryptsetup-dev libncurses-dev \
        libpam0g-dev libreadline-dev libselinux-dev libsqlite3-dev libsystemd-dev \
        libudev-dev netbase socat systemd-dev zlib1g-dev \

@@ -21,6 +21,19 @@ options fail. The ordinary `make check` suite is run unchanged; skipped or
 unparsed results do not qualify all cases. Logs and original source hashes
 remain available when qualification fails.
 
+The prior hosted run retained 182 skip markers and eight known-failure markers,
+including missing `mkfs.ext2`, `ip` and `sqlite3` test commands. The SDK now
+installs their normal Debian packages (`e2fsprogs`, `iproute2` and `sqlite3`).
+This does not change the non-root UID, capabilities, network isolation, source
+configuration or upstream case selection. Privilege, device, namespace and
+disabled-feature skips still prevent complete qualification.
+
+Protection now includes every original file under the publisher's test tree,
+including extensionless cases and expected fixtures. The artifact retains those
+actual protected bytes and all original case output/diff files. This supports
+independent source comparison and diagnosis of known-failure output; no original
+case, expected result or known-failure label is changed or excluded.
+
 The workflow retains a compiled installation prefix and test evidence. It does
 not build or install replacement Debian packages. Debian's current source
 packaging requires debhelper >=14.1~, compat 14 and a newer debputy sequence;
