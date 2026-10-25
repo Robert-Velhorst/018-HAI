@@ -1,0 +1,15 @@
+{
+  "package": "debian-tag2upload-keyring",
+  "version": "1.2",
+  "architecture": "all",
+  "filename": "pool/main/d/debian-tag2upload-keyring/debian-tag2upload-keyring_1.2_all.deb",
+  "url": "https://deb.debian.org/debian/pool/main/d/debian-tag2upload-keyring/debian-tag2upload-keyring_1.2_all.deb",
+  "bytes": 5048,
+  "sha256": "6783d74cb547297c5dc231e89c2f3610d55f7628ba4b955fe33c41bc9556a6f8",
+  "source": "debian-tag2upload-keyring",
+  "keyring_path": "/usr/share/keyrings/debian-tag2upload.pgp",
+  "keyring_sha256": "0f66090efeb5c15c362545a352feb02089797515289bdc3e5c7c63cccc709a4b",
+  "primary_fingerprint": "374D8CE4DB96E9CBD4C0972A606D084E4683C079",
+  "distribution": "sid",
+  "scope": "Official source-signing data package in disposable ABI build SDK only; no operator or application installation"
+}

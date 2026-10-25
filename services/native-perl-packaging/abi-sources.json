@@ -1,0 +1,53 @@
+{
+  "purpose": "Rebuild both ABI-dependent modules for the actual installed Perl 5.44 candidate",
+  "expected_binary_packages": [
+    "libapt-pkg-perl",
+    "libtext-charwidth-perl"
+  ],
+  "sources": [
+    {
+      "source": "libapt-pkg-perl",
+      "version": "0.1.43",
+      "dsc": "libapt-pkg-perl_0.1.43.dsc",
+      "inputs": [
+        {
+          "name": "libapt-pkg-perl_0.1.43.dsc",
+          "url": "https://deb.debian.org/debian/pool/main/liba/libapt-pkg-perl/libapt-pkg-perl_0.1.43.dsc",
+          "bytes": 1716,
+          "sha256": "7ca4ce27a957be1baa2c99bbd42e0a1dd5377fad368aaea4099b3818c6245ac2"
+        },
+        {
+          "name": "libapt-pkg-perl_0.1.43.tar.xz",
+          "bytes": 43116,
+          "sha256": "436a49697edaf351a34ea5cd139168a70e3f9ab19dd2018b642c32dab32cb273",
+          "url": "https://deb.debian.org/debian/pool/main/liba/libapt-pkg-perl/libapt-pkg-perl_0.1.43.tar.xz"
+        }
+      ]
+    },
+    {
+      "source": "libtext-charwidth-perl",
+      "version": "0.04-12",
+      "dsc": "libtext-charwidth-perl_0.04-12.dsc",
+      "inputs": [
+        {
+          "name": "libtext-charwidth-perl_0.04-12.dsc",
+          "url": "https://deb.debian.org/debian/pool/main/libt/libtext-charwidth-perl/libtext-charwidth-perl_0.04-12.dsc",
+          "bytes": 2445,
+          "sha256": "c22cf0bf84997839735a1b22e6481714c0cec221130a9acc1e013e481a2c3824"
+        },
+        {
+          "name": "libtext-charwidth-perl_0.04.orig.tar.bz2",
+          "bytes": 8327,
+          "sha256": "2990c13c3f4a5479d7dbc5a94b86c23798cf0dc7df54ffe54e065f072558b6ed",
+          "url": "https://deb.debian.org/debian/pool/main/libt/libtext-charwidth-perl/libtext-charwidth-perl_0.04.orig.tar.bz2"
+        },
+        {
+          "name": "libtext-charwidth-perl_0.04-12.debian.tar.xz",
+          "bytes": 3092,
+          "sha256": "690117d55b5079c539581b5bb70642fcff5bb963b71a1dac592cf9c23313f1f9",
+          "url": "https://deb.debian.org/debian/pool/main/libt/libtext-charwidth-perl/libtext-charwidth-perl_0.04-12.debian.tar.xz"
+        }
+      ]
+    }
+  ]
+}
