@@ -1,0 +1,61 @@
+name: Evidently Ubuntu native runtime qualification
+
+on:
+  push:
+    branches: [fix/hai-evidently-ubuntu-runtime-20261025]
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.1'
+      - name: Bind all original source before native compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          export HAI_UBUNTU_NATIVE="$RUNNER_TEMP/hai-evidently-ubuntu-native"
+          printf '%s\n' "HAI_UBUNTU_NATIVE=$HAI_UBUNTU_NATIVE" >> "$GITHUB_ENV"
+          mkdir -p "$HAI_UBUNTU_NATIVE/reports"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          files=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          record={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+            'tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+            'tracked_file_sha256':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in files if p and Path(p).is_file()},
+            'no_operator_data_accessed':True,'full_native_or_application_acceptance':False}
+          (Path(os.environ['HAI_UBUNTU_NATIVE'])/'reports/source-identity.json').write_text(json.dumps(record,indent=2)+'\n')
+          PY
+      - name: Build the current base with normal signed repository updates
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress=plain --file services/native-python-runtime/Dockerfile.ubuntu-preflight \
+            --tag hai-ubuntu-base:current services/native-python-runtime \
+            2>&1 | tee "$HAI_UBUNTU_NATIVE/reports/base-build.log"
+      - name: Compile complete CPython and native clients as UID10001
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress=plain --build-context hai-native-source=services/native-python-runtime \
+            --build-context hai-ubuntu-base=docker-image://hai-ubuntu-base:current \
+            --file services/evidently-runner/Dockerfile.ubuntu --target native-export \
+            --output "type=local,dest=$HAI_UBUNTU_NATIVE/reports/native-export" services/evidently-runner \
+            2>&1 | tee "$HAI_UBUNTU_NATIVE/reports/native-build.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: evidently-ubuntu-complete-native-export
+          path: ${{ runner.temp }}/hai-evidently-ubuntu-native/reports/
+          retention-days: 7
+          if-no-files-found: error
