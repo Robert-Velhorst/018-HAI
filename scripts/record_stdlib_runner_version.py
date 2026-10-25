@@ -86,6 +86,37 @@ def main():
             "default_preview0_rejection_preserved": True,
             "fixed_environment_enables_preview0": True, "preview1_preserved": True,
             "guest_environment_empty": True, "full_upstream_or_sandbox_acceptance": False}
+    if sys.argv[1] in {"gitleaks-runner", "grype-runner", "syft-runner", "wasi-runner", "whispercpp-runner"}:
+        native = json.loads(Path("/usr/share/doc/hai-native/provenance.json").read_text())
+        if (native["openssl"]["source"]["version"] != "4.1.0"
+                or native["sqlite"]["source"]["version"] != "3.54.1"
+                or native["cpython"]["source"]["version"] != "3.15.1"
+                or native["build_uid"] != 10001
+                or not re.search(r"\b16\.2\.0\b", native["compiler"])
+                or native["original_SDK_modules_modified"]
+                or native["operator_database_opened"] or native["host_sdk_changed"]
+                or not ssl.OPENSSL_VERSION.startswith("OpenSSL 4.1.0 ")
+                or sqlite3.sqlite_version != "3.54.1"):
+            raise ValueError("Current native client provenance or active bindings differ")
+        allowed_libraries = {"/opt/hai-native/lib/libssl.so.4", "/opt/hai-native/lib/libcrypto.so.4",
+                             "/opt/hai-native/lib/ossl-modules/legacy.so"}
+        if set(native["openssl"]["libraries"]) != allowed_libraries:
+            raise ValueError("Unexpected native client payload scope")
+        for filename, digest in native["openssl"]["libraries"].items():
+            if hashlib.sha256(Path(filename).read_bytes()).hexdigest() != digest:
+                raise ValueError("A retained OpenSSL payload differs")
+        if hashlib.sha256(Path("/opt/hai-native/lib/libsqlite3.so.0").read_bytes()).hexdigest() != native["sqlite"]["library_sha256"]:
+            raise ValueError("The retained SQLite payload differs")
+        if len(native["cpython"]["modules"]) != 2:
+            raise ValueError("Expected the two original-source CPython TLS/hash modules")
+        for filename, identity in native["cpython"]["modules"].items():
+            if (Path(filename).name != filename or not filename.startswith(("_ssl.", "_hashlib."))
+                    or not filename.endswith(".so")):
+                raise ValueError("Unexpected native module output path")
+            path = Path(sysconfig.get_config_var("DESTSHARED")) / filename
+            if hashlib.sha256(path.read_bytes()).hexdigest() != identity["sha256"]:
+                raise ValueError("The installed CPython native module differs")
+        extra["native_client_provenance"] = native
     if sys.argv[1] == "gosec-runner":
         go = subprocess.check_output(["/usr/local/go/bin/go", "version"], text=True, timeout=10,
                                      env={"PATH": "/usr/local/go/bin:/usr/bin:/bin", "HOME": "/tmp",

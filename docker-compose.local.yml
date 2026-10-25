@@ -875,6 +875,7 @@ services:
       context: ./services/gitleaks-runner
       additional_contexts:
         hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
+        hai-native-source: ./services/native-python-runtime
     profiles: ["security-scanning"]
     restart: unless-stopped
     environment:
@@ -931,6 +932,7 @@ services:
       context: ./services/syft-runner
       additional_contexts:
         hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
+        hai-native-source: ./services/native-python-runtime
     profiles: ["security-scanning"]
     restart: unless-stopped
     environment:
@@ -960,6 +962,7 @@ services:
       context: ./services/grype-runner
       additional_contexts:
         hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
+        hai-native-source: ./services/native-python-runtime
     profiles: ["security-scanning"]
     restart: unless-stopped
     environment:
@@ -1695,6 +1698,7 @@ services:
       context: ./services/whispercpp-runner
       additional_contexts:
         hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
+        hai-native-source: ./services/native-python-runtime
     profiles: ["local-transcription"]
     restart: unless-stopped
     environment:
@@ -1732,6 +1736,7 @@ services:
       context: ./services/wasi-runner
       additional_contexts:
         hai-native-acl: ${HAI_ACL_CANDIDATE_CONTEXT:-./.build/native-acl/runtime-candidate}
+        hai-native-source: ./services/native-python-runtime
     profiles: ["wasi"]
     restart: unless-stopped
     environment:
