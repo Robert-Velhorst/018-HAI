@@ -252,6 +252,27 @@ jobs:
             --mount "type=bind,src=$PWD/$inventory,dst=/review/runtime_inventory.py,readonly" \
             --entrypoint python "$HAI_ALPINE_IMAGE" -I /review/runtime_inventory.py \
             > "$HAI_SCAN_DIRECTORY/reports/runtime-inventory.json"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          reports=Path(os.environ['HAI_SCAN_DIRECTORY'])/'reports'
+          exported=reports/'native-export'
+          inventory=json.loads((reports/'runtime-inventory.json').read_text())
+          provenance=json.loads((exported/'native-provenance.json').read_text())
+          signatures=json.loads((exported/'signing-provenance.json').read_text())
+          assert inventory['native_provenance']==provenance
+          assert inventory['signing_provenance']==signatures
+          assert provenance['build_uid']==signatures['native_compilation_uid']==10001
+          assert not signatures['private_key_exported'] and not signatures['signature_checks_bypassed']
+          digest=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+          assert digest(exported/'keys/hai-native-runtime.rsa.pub')==signatures['public_key_sha256']
+          for name,record in signatures['packages'].items():
+              assert digest(exported/(name+'.apk'))==record['sha256']
+              assert record['signature_verified'] and record['untrusted_signature_rejected']
+          for name,record in provenance['cpython']['modules'].items():
+              assert digest(exported/'lib-dynload'/name)==record['sha256']
+              assert inventory['all_native_extension_sha256']['/usr/local/lib/python3.15/lib-dynload/'+name]==record['sha256']
+          PY
           docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
             --security-opt no-new-privileges --memory 1g --cpus 2 --pids-limit 128 \
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m \
