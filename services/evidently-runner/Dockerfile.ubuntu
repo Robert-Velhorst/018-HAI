@@ -5,12 +5,12 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
        python3 build-essential libbluetooth-dev perl pkg-config libbz2-dev \
-       libexpat1-dev libffi-dev libgdbm-dev liblzma-dev libncurses-dev \
-       libreadline-dev libssl-dev tk-dev uuid-dev zlib1g-dev libzstd-dev \
+       libexpat1-dev libffi-dev libgdbm-dev libgdbm-compat-dev liblzma-dev libncurses-dev \
+       libreadline-dev libssl-dev libmpdec-dev tk-dev uuid-dev zlib1g-dev libzstd-dev \
     && groupadd --gid 10001 native-builder \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin native-builder \
     && chown 10001:10001 /native-build
-COPY --from=hai-native-source build_runtime.py build_ubuntu_runtime.py sources.json ./
+COPY --from=hai-native-source build_runtime.py build_ubuntu_runtime.py sources.json ubuntu-native-reference.json ./
 COPY native-runtime.profile.json ./profile.json
 USER 10001:10001
 ENV HOME=/tmp
@@ -20,3 +20,100 @@ FROM scratch AS native-export
 COPY --from=native-build /native-build/out/ /
 COPY --from=native-build /native-build/install/ /installed/
 COPY --from=native-build /native-build/sources.json /sources.json
+
+FROM native-build AS python-dependencies
+USER 0:0
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cargo rustc libyaml-dev libffi-dev pkg-config \
+    && cp -a /native-build/install/usr/local/. /usr/local/ \
+    && dpkg -i /native-build/out/hai-openssl4.deb /native-build/out/hai-sqlite3.deb \
+    && mkdir -p /app /opt/hai-venv \
+    && chown 10001:10001 /app /opt/hai-venv
+WORKDIR /app
+ENV LD_LIBRARY_PATH=/opt/hai-native/lib:/usr/local/lib \
+    OPENSSL_DIR=/native-build/install/opt/hai-native \
+    OPENSSL_STATIC=0 \
+    OPENSSL_MODULES=/opt/hai-native/lib/ossl-modules \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_DIR=/etc/ssl/certs \
+    PYTHONDONTWRITEBYTECODE=1
+COPY compat ./compat
+COPY requirements-build.ubuntu.lock requirements.lock compat_pandas.py apply_vendor_compat.py ./
+USER 10001:10001
+RUN /usr/local/bin/python3.15 -m venv /opt/hai-venv
+ENV VIRTUAL_ENV=/opt/hai-venv PATH=/opt/hai-venv/bin:/usr/local/bin:$PATH
+RUN python compat/build_port_wheel.py --output-directory /app/wheels \
+    && echo "2db131ed9ddfc1dc15a25635c8a6e58d51e608fe7459c504f091c5bd2168bd52  /app/wheels/dynaconf-3.3.5+hai.evidently.1-py3-none-any.whl" | sha256sum -c \
+    && python compat/build_evidently_wheel.py --output-directory /app/wheels \
+    && echo "e604b98d65f00e043ffdf1a2c33a059050f131848f79c04b17d0a2d38bdbc72c  /app/wheels/evidently-0.7.23+hai.plotly.1-py3-none-any.whl" | sha256sum -c
+RUN python -m pip install --no-cache-dir --only-binary :all: --require-hashes -r requirements-build.ubuntu.lock \
+    && python -m pip install --no-cache-dir --no-build-isolation --no-binary cryptography --only-binary scikit-learn \
+       --report /app/installation-report.json \
+       --find-links /app/wheels --require-hashes -r requirements.lock \
+    && python apply_vendor_compat.py --apply-to-sdk \
+    && python -m pip uninstall --yes cython setuptools-scm vcs-versioning wheel maturin \
+    && python -m pip uninstall --yes pip
+USER 0:0
+RUN /usr/local/bin/python3.15 -m pip uninstall --yes pip
+RUN /usr/local/bin/python3.15 -I - <<'PY'
+from pathlib import Path
+import importlib.util,json,re,subprocess,sysconfig
+bundled=Path(sysconfig.get_path('stdlib'))/'ensurepip/_bundled'
+for path in bundled.glob('*.whl'):
+    path.unlink()
+assert importlib.util.find_spec('pip') is None and not list(bundled.glob('*.whl'))
+roots=[Path('/usr/local'),Path('/opt/hai-venv'),Path('/opt/hai-native')]
+paths=[Path('/usr/local/bin/python3.15')]
+paths += [p for root in roots for p in root.rglob('*') if p.is_file() and (p.name.endswith('.so') or '.so.' in p.name)]
+providers=set()
+observed={}
+for path in paths:
+    result=subprocess.run(['ldd',str(path)],text=True,capture_output=True,check=True)
+    if 'not found' in result.stdout:
+        raise RuntimeError('Every linked native library must have an actual provider: '+str(path))
+    libraries=[]
+    for line in result.stdout.splitlines():
+        match=re.search(r'=> (/\S+)',line) or re.match(r'\s*(/\S+)',line)
+        if not match:
+            continue
+        library=Path(match[1]).resolve(strict=True)
+        libraries.append(str(library))
+        if any(library.is_relative_to(root) for root in roots):
+            continue
+        owner=subprocess.check_output(['dpkg-query','--search',str(library)],text=True).strip()
+        if '\n' in owner or ': /' not in owner:
+            raise RuntimeError('Unknown or ambiguous system library provider: '+str(library))
+        name=owner.split(': /',1)[0]
+        if not re.fullmatch(r'[a-z0-9][a-z0-9+.-]*(?::[a-z0-9]+)?',name):
+            raise RuntimeError('Unexpected package identity')
+        providers.add(name)
+    observed[str(path)]=libraries
+Path('/runtime-dependencies.txt').write_text('\n'.join(sorted(providers))+'\n')
+Path('/runtime-dependency-provenance.json').write_text(json.dumps({'all_linked_paths':observed,
+    'runtime_packages':sorted(providers),'unknown_dependencies_ignored':False},indent=2)+'\n')
+PY
+
+FROM hai-ubuntu-base AS runtime
+WORKDIR /app
+COPY --from=python-dependencies /runtime-dependencies.txt /usr/share/doc/hai-native/runtime-dependencies.txt
+COPY --from=python-dependencies /runtime-dependency-provenance.json /usr/share/doc/hai-native/runtime-dependency-provenance.json
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+    && xargs -r apt-get install -y --no-install-recommends < /usr/share/doc/hai-native/runtime-dependencies.txt
+RUN --mount=type=bind,from=native-build,source=/native-build/out,target=/tmp/native-pack,readonly \
+    dpkg -i /tmp/native-pack/hai-openssl4.deb /tmp/native-pack/hai-sqlite3.deb
+COPY --chown=0:0 --from=python-dependencies /usr/local/ /usr/local/
+COPY --chown=0:0 --from=python-dependencies /opt/hai-venv/ /opt/hai-venv/
+COPY --chown=0:0 --from=python-dependencies /app/compat_pandas.py /app/apply_vendor_compat.py ./
+COPY --chown=0:0 --from=python-dependencies /app/installation-report.json /usr/share/doc/hai-native/installation-report.json
+COPY --chown=0:0 --from=native-build /native-build/out/provenance.json /native-build/out/CPython-LICENSE /usr/share/doc/hai-native/
+COPY --chown=0:0 app.py test_app.py requirements.lock native-runtime.profile.json ./
+ENV PATH=/opt/hai-venv/bin:/usr/local/bin:$PATH \
+    VIRTUAL_ENV=/opt/hai-venv HOME=/tmp \
+    LD_LIBRARY_PATH=/opt/hai-native/lib:/usr/local/lib \
+    OPENSSL_MODULES=/opt/hai-native/lib/ossl-modules \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt SSL_CERT_DIR=/etc/ssl/certs \
+    PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DO_NOT_TRACK=1
+USER 10001:10001
+EXPOSE 8080
+CMD ["python", "app.py"]

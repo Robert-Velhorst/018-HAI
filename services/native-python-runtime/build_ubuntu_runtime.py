@@ -79,6 +79,11 @@ def main():
             raise RuntimeError('Actual complete native runtime does not match source profile')
         modules={p.name:hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted((installed/'lib/python3.15/lib-dynload').glob('*.so'))}
+        reference=json.loads((root/'ubuntu-native-reference.json').read_text())
+        stems={name.split('.')[0] for name in modules}
+        missing=set(reference['required_original_extension_names'])-stems
+        if missing or set(reference['required_original_stdlib_names'])-set(probe['stdlib_names']):
+            raise RuntimeError('Previously qualified original native/stdlib features were lost: '+str(sorted(missing)))
         # The full installed CPython tree, including its original test data, is
         # exported unchanged. This build is not full upstream suite acceptance.
         if not modules or not any(n.startswith('_ssl.') for n in modules) or not any(n.startswith('_sqlite3.') for n in modules):
@@ -87,6 +92,8 @@ def main():
         cpython={'source':manifest['cpython']['3.15.1'],'modules':modules,
             'python_executable_sha256':hashlib.sha256(executable.read_bytes()).hexdigest(),
             'full_install_preserved':True,'source_or_case_edits':False}
+        cpython['feature_reference']=reference
+        cpython['all_original_native_extension_names_preserved']=True
     result={'profile':profile,'architecture':architecture,'os_release':release,'build_uid':os.geteuid(),
         'openssl':tls,'sqlite':database,'cpython':cpython,'runtime':probe,
         'compiler':subprocess.check_output(['cc','--version'],text=True).splitlines()[0],
