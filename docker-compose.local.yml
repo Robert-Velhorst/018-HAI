@@ -873,6 +873,8 @@ services:
   gitleaks-runner:
     build:
       context: ./services/gitleaks-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["security-scanning"]
     restart: unless-stopped
     environment:
@@ -927,6 +929,8 @@ services:
   syft-runner:
     build:
       context: ./services/syft-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["security-scanning"]
     restart: unless-stopped
     environment:
@@ -954,6 +958,8 @@ services:
   grype-runner:
     build:
       context: ./services/grype-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["security-scanning"]
     restart: unless-stopped
     environment:
@@ -1670,6 +1676,8 @@ services:
   whispercpp-runner:
     build:
       context: ./services/whispercpp-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["local-transcription"]
     restart: unless-stopped
     environment:
@@ -1705,6 +1713,8 @@ services:
   wasi-runner:
     build:
       context: ./services/wasi-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["wasi"]
     restart: unless-stopped
     environment:
