@@ -1,0 +1,121 @@
+name: FastMCP public base preflight
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/fastmcp-base-preflight.yml
+      - scripts/record_python_base_preflight.py
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    name: Public base inventory (${{ matrix.family }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - family: alpine
+            image: python:3.15.1-alpine3.24@sha256:54448f67d7c31c39e5cdd3ea2d6382395ce142806c284425f8e897d78a0465b3
+          - family: debian
+            image: python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51
+    env:
+      PREFLIGHT_IMAGE: ${{ matrix.image }}
+      PREFLIGHT_FAMILY: ${{ matrix.family }}
+      PREFLIGHT_DIRECTORY: ${{ runner.temp }}/fastmcp-base-preflight
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.1'
+      - name: Record exact source and pull the immutable public base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          mkdir -p "$PREFLIGHT_DIRECTORY/"{input,reports,cache}
+          python - <<'PY'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          paths = subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          record = {'head': subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                    'tree': subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+                    'tracked_file_sha256': {p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths if p and Path(p).is_file()},
+                    'selected_image':os.environ['PREFLIGHT_IMAGE'], 'scope':'Base inventory only; no runner/native acceptance'}
+          (Path(os.environ['PREFLIGHT_DIRECTORY'])/'reports/source-identity.json').write_text(json.dumps(record,indent=2)+'\n')
+          PY
+          docker pull "$PREFLIGHT_IMAGE" > "$PREFLIGHT_DIRECTORY/reports/pull.log" 2>&1
+      - name: Inventory all standard-library modules and native payloads offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 512m --cpus 1 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+            --env HAI_IMAGE_BASE_PREFLIGHT=1 --env PYTHONDONTWRITEBYTECODE=1 \
+            --mount "type=bind,src=$PWD/scripts/record_python_base_preflight.py,dst=/review/base_preflight.py,readonly" \
+            --entrypoint python "$PREFLIGHT_IMAGE" -I /review/base_preflight.py \
+            > "$PREFLIGHT_DIRECTORY/reports/python-base-inventory.json"
+      - name: Save complete base and link all image descriptors
+        id: archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker image tag "$PREFLIGHT_IMAGE" hai-fastmcp-base:preflight
+          docker image inspect hai-fastmcp-base:preflight > "$PREFLIGHT_DIRECTORY/reports/image-inspect.json"
+          docker image save hai-fastmcp-base:preflight -o "$PREFLIGHT_DIRECTORY/input/image.tar"
+          python scripts/runner_image_archive_identity.py "$PREFLIGHT_DIRECTORY/input/image.tar" "$PREFLIGHT_DIRECTORY/reports/image-inspect.json" hai-fastmcp-base:preflight "$PREFLIGHT_DIRECTORY/reports/image-identity.json" "$PREFLIGHT_DIRECTORY/reports/image-config-id.txt"
+      - name: Scan all base packages and every reported severity without exceptions
+        shell: bash
+        run: |
+          set -euo pipefail
+          scan_status=0
+          docker run --rm --read-only --user "$(id -u):$(id -g)" --cap-drop ALL \
+            --security-opt no-new-privileges --memory 4g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=3g \
+            --mount "type=bind,src=$PREFLIGHT_DIRECTORY/input,dst=/input,readonly" \
+            --mount "type=bind,src=$PREFLIGHT_DIRECTORY/reports,dst=/reports" \
+            --mount "type=bind,src=$PREFLIGHT_DIRECTORY/cache,dst=/cache" \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --input /input/image.tar --cache-dir /cache --scanners vuln \
+            --list-all-pkgs --ignorefile /dev/null --exit-code 1 --format json --timeout 10m \
+            --output /reports/image-security.json > "$PREFLIGHT_DIRECTORY/reports/scan.log" 2>&1 || scan_status=$?
+          printf '%s\n' "$scan_status" > "$PREFLIGHT_DIRECTORY/reports/scan.exit-status"
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          out=Path(os.environ['PREFLIGHT_DIRECTORY'])/'reports'
+          scan=json.loads((out/'image-security.json').read_text())
+          identity=json.loads((out/'image-identity.json').read_text())
+          assert scan['Metadata']['ImageID']==identity['config_id']
+          assert scan['Metadata']['OS']['Family']==os.environ['PREFLIGHT_FAMILY']
+          assert not scan['Metadata']['OS'].get('EOSL',False)
+          rows=scan.get('Results',[])
+          assert rows and all(row.get('Packages') for row in rows)
+          assert any(row.get('Class')=='os-pkgs' for row in rows)
+          findings=[v for row in rows for field in ['Vulnerabilities','ExperimentalModifiedFindings'] for v in row.get(field,[]) or []]
+          result={'image_id':identity['config_id'],'family':os.environ['PREFLIGHT_FAMILY'],
+                  'all_reported_findings':len(findings),'scope':'Factory base only; no application, native profile or vendor-suite acceptance'}
+          (out/'scan-summary.json').write_text(json.dumps(result,indent=2)+'\n')
+          assert not findings, 'Public base has reported findings; retain every original result'
+          PY
+          test "$scan_status" -eq 0
+      - name: Retain the complete base archive for independent inspection
+        if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gzip -1 -c "$PREFLIGHT_DIRECTORY/input/image.tar" > "$PREFLIGHT_DIRECTORY/reports/image.tar.gz"
+          sha256sum "$PREFLIGHT_DIRECTORY/reports/image.tar.gz" > "$PREFLIGHT_DIRECTORY/reports/image.tar.gz.sha256"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: fastmcp-public-base-${{ matrix.family }}
+          path: ${{ runner.temp }}/fastmcp-base-preflight/reports/
+          retention-days: 7
+          if-no-files-found: error
