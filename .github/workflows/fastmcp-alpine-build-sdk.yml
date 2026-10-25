@@ -1,0 +1,83 @@
+name: Resolve FastMCP Alpine source-build SDK
+
+on:
+  push:
+    branches: [resolve/hai-fastmcp-alpine-build-sdk-20261025]
+  pull_request:
+    paths:
+      - scripts/fastmcp-alpine-build-sdk/**
+      - .github/workflows/fastmcp-alpine-build-sdk.yml
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.1'
+      - name: Record the exact public SDK inputs and complete source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          export HAI_BUILD_LOCK_REVIEW="$RUNNER_TEMP/hai-fastmcp-build-lock"
+          printf '%s\n' "HAI_BUILD_LOCK_REVIEW=$HAI_BUILD_LOCK_REVIEW" >> "$GITHUB_ENV"
+          mkdir -p "$HAI_BUILD_LOCK_REVIEW"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          paths=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          record={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                  'tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+                  'tracked_file_sha256':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths if p and Path(p).is_file()},
+                  'scope':'SDK metadata resolution only; no application/native/vendor acceptance'}
+          (Path(os.environ['HAI_BUILD_LOCK_REVIEW'])/'source-identity.json').write_text(json.dumps(record,indent=2)+'\n')
+          PY
+      - name: Install the publisher-hash-pinned current stable resolver
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --index-url https://pypi.org/simple --require-hashes \
+            -r scripts/fastmcp-alpine-build-sdk/resolver.lock \
+            2>&1 | tee "$HAI_BUILD_LOCK_REVIEW/resolver-install.log"
+          uv --version > "$HAI_BUILD_LOCK_REVIEW/resolver-version.txt"
+      - name: Resolve normal stable musl build dependencies without overrides
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv --no-config pip compile scripts/fastmcp-alpine-build-sdk/requirements.in \
+            --index-url https://pypi.org/simple --prerelease disallow --upgrade \
+            --generate-hashes --no-build --no-python-downloads \
+            --python-version 3.15.1 --python-platform x86_64-unknown-linux-musl \
+            --output-file "$HAI_BUILD_LOCK_REVIEW/requirements-build.alpine.lock" \
+            2>&1 | tee "$HAI_BUILD_LOCK_REVIEW/resolution.log"
+          cp scripts/fastmcp-alpine-build-sdk/requirements.in "$HAI_BUILD_LOCK_REVIEW/requirements.in"
+          cp scripts/fastmcp-alpine-build-sdk/public-inputs.json "$HAI_BUILD_LOCK_REVIEW/public-inputs.json"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,re
+          out=Path(os.environ['HAI_BUILD_LOCK_REVIEW'])
+          payload=(out/'requirements-build.alpine.lock').read_bytes()
+          versions=dict(re.findall(r'(?m)^([\w.-]+)==([^\s;\\]+)',payload.decode()))
+          assert versions and all(re.fullmatch(r'\d+(?:\.\d+)*(?:\.post\d+)?',v) for v in versions.values())
+          for name,version in re.findall(r'(?m)^([\w.-]+)==([^\s;\\]+)',(out/'requirements.in').read_text()):
+              assert versions[name]==version
+          assert all('--hash=sha256:' in block for block in payload.decode().split('\n\n') if re.search(r'(?m)^[\w.-]+==',block))
+          (out/'resolution-summary.json').write_text(json.dumps({'selected_versions':versions,
+              'lock_sha256':hashlib.sha256(payload).hexdigest(),'prereleases_or_overrides':False,
+              'scope':'Metadata only; source-build/runtime/vendor qualification remains required'},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: fastmcp-alpine-build-sdk-lock
+          path: ${{ runner.temp }}/hai-fastmcp-build-lock/
+          retention-days: 7
+          if-no-files-found: error
