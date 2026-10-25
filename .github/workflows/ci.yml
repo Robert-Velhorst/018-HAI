@@ -278,6 +278,65 @@ jobs:
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m \
             --entrypoint python "$HAI_ALPINE_IMAGE" -m unittest discover -v -s /app -p 'test*.py' \
             2>&1 | tee "$HAI_SCAN_DIRECTORY/reports/all-original-cases.log"
+      - name: Verify adopted Ubuntu source, native providers and all original container cases
+        if: matrix.name == 'evidently-runner'
+        shell: bash
+        env:
+          HAI_SCAN_DIRECTORY: ${{ runner.temp }}/hai-image-security-evidently-runner
+        run: |
+          set -euo pipefail
+          mkdir -p "$HAI_SCAN_DIRECTORY/reports"
+          test "$(docker image inspect --format '{{.Config.User}}' hai-evidently-runner:ci)" = 10001:10001
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          root=Path('services/evidently-runner')
+          base=Path('services/native-python-runtime/Dockerfile.ubuntu-preflight').read_bytes()
+          tag=b'FROM ubuntu:26.10@sha256:93e29beff5257b2cdf1c024d831f6d2997e53655a653ff76a811fc9e6564a719\n'
+          assert base.count(tag)==1
+          assembled=base.replace(tag,tag[:-1]+b' AS hai-ubuntu-base\n',1)+b'\n'+(root/'Dockerfile.ubuntu').read_bytes()
+          assert (root/'Dockerfile').read_bytes()==assembled
+          files=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          record={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+              'tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+              'tracked_file_sha256':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in files if p and Path(p).is_file()},
+              'default_recipe_is_exact_qualified_base_and_candidate_assembly':True,
+              'manual_deployment_or_operator_data_accessed':False}
+          (Path(os.environ['HAI_SCAN_DIRECTORY'])/'reports/source-identity.json').write_text(json.dumps(record,indent=2)+'\n')
+          PY
+          docker build --progress=plain --build-context hai-native-source=services/native-python-runtime \
+            --file services/evidently-runner/Dockerfile --target native-export \
+            --output "type=local,dest=$HAI_SCAN_DIRECTORY/reports/native-export" services/evidently-runner \
+            2>&1 | tee "$HAI_SCAN_DIRECTORY/reports/native-export.log"
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 1g --cpus 1 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m --env HAI_RUNTIME_INVENTORY=1 \
+            --mount "type=bind,src=$PWD/scripts/record_evidently_ubuntu_runtime.py,dst=/review/runtime_inventory.py,readonly" \
+            --entrypoint python hai-evidently-runner:ci -I /review/runtime_inventory.py \
+            > "$HAI_SCAN_DIRECTORY/reports/runtime-inventory.json"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          reports=Path(os.environ['HAI_SCAN_DIRECTORY'])/'reports'
+          exported=reports/'native-export'
+          inventory=json.loads((reports/'runtime-inventory.json').read_text())
+          provenance=json.loads((exported/'provenance.json').read_text())
+          assert inventory['native_provenance']==provenance and provenance['build_uid']==10001
+          digest=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+          assert digest(exported/'installed/usr/local/bin/python3.15')==provenance['cpython']['python_executable_sha256']
+          for name,expected in provenance['cpython']['modules'].items():
+              assert digest(exported/'installed/usr/local/lib/python3.15/lib-dynload'/name)==expected
+              assert inventory['all_native_extension_sha256'][name]==expected
+          assert provenance['cpython']['all_original_native_extension_names_preserved']
+          for name,expected in provenance['openssl']['libraries'].items():
+              assert digest(exported/'installed'/name.lstrip('/'))==expected
+          assert digest(exported/'installed/opt/hai-native/lib/libsqlite3.so.0')==provenance['sqlite']['library_sha256']
+          PY
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 2g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m \
+            --entrypoint python hai-evidently-runner:ci -m unittest discover -v -s /app -p 'test*.py' \
+            2>&1 | tee "$HAI_SCAN_DIRECTORY/reports/all-original-cases.log"
       - name: Start and health-check isolated runner container
         timeout-minutes: 2
         working-directory: services/${{ matrix.name }}
@@ -311,7 +370,11 @@ jobs:
             guardrails-runner) image_policy=scripts/verify_guardrails_alpine_image.py ;;
             *) image_policy=scripts/verify_runner_image_security.py ;;
           esac
-          python "$image_policy" "$HAI_SCAN_DIRECTORY/reports/image-security.json" "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "services/${{ matrix.name }}" > "$HAI_SCAN_DIRECTORY/reports/verified-image.json"
+          if [ "${{ matrix.name }}" = evidently-runner ]; then
+            python scripts/verify_evidently_ubuntu_image.py "$HAI_SCAN_DIRECTORY/reports/image-security.json" "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "$HAI_SCAN_DIRECTORY/reports/runtime-inventory.json" services/evidently-runner > "$HAI_SCAN_DIRECTORY/reports/verified-image.json"
+          else
+            python "$image_policy" "$HAI_SCAN_DIRECTORY/reports/image-security.json" "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "services/${{ matrix.name }}" > "$HAI_SCAN_DIRECTORY/reports/verified-image.json"
+          fi
           test "$scan_status" -eq 0
       - name: Preserve complete adopted Alpine image even if another gate fails
         if: always() && contains(fromJSON('["fastmcp-bridge","guardrails-runner"]'), matrix.name)
@@ -326,6 +389,21 @@ jobs:
             docker image inspect "$HAI_SCAN_IMAGE" > "$HAI_SCAN_DIRECTORY/reports/image-inspect.json"
             docker image save "$HAI_SCAN_IMAGE" -o "$HAI_SCAN_DIRECTORY/input/image.tar"
             python scripts/runner_image_archive_identity.py "$HAI_SCAN_DIRECTORY/input/image.tar" "$HAI_SCAN_DIRECTORY/reports/image-inspect.json" "$HAI_SCAN_IMAGE" "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "$HAI_SCAN_DIRECTORY/reports/image-config-id.txt"
+          fi
+          gzip -1 -c "$HAI_SCAN_DIRECTORY/input/image.tar" > "$HAI_SCAN_DIRECTORY/reports/image.tar.gz"
+          sha256sum "$HAI_SCAN_DIRECTORY/reports/image.tar.gz" > "$HAI_SCAN_DIRECTORY/reports/image.tar.gz.sha256"
+      - name: Preserve complete adopted Ubuntu image even if another gate fails
+        if: always() && matrix.name == 'evidently-runner'
+        shell: bash
+        env:
+          HAI_SCAN_DIRECTORY: ${{ runner.temp }}/hai-image-security-evidently-runner
+        run: |
+          set -euo pipefail
+          mkdir -p "$HAI_SCAN_DIRECTORY/input" "$HAI_SCAN_DIRECTORY/reports"
+          if [ ! -f "$HAI_SCAN_DIRECTORY/input/image.tar" ]; then
+            docker image inspect hai-evidently-runner:ci > "$HAI_SCAN_DIRECTORY/reports/image-inspect.json"
+            docker image save hai-evidently-runner:ci -o "$HAI_SCAN_DIRECTORY/input/image.tar"
+            python scripts/runner_image_archive_identity.py "$HAI_SCAN_DIRECTORY/input/image.tar" "$HAI_SCAN_DIRECTORY/reports/image-inspect.json" hai-evidently-runner:ci "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "$HAI_SCAN_DIRECTORY/reports/image-config-id.txt"
           fi
           gzip -1 -c "$HAI_SCAN_DIRECTORY/input/image.tar" > "$HAI_SCAN_DIRECTORY/reports/image.tar.gz"
           sha256sum "$HAI_SCAN_DIRECTORY/reports/image.tar.gz" > "$HAI_SCAN_DIRECTORY/reports/image.tar.gz.sha256"
