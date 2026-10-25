@@ -55,6 +55,27 @@ Primary records: [OpenSSL releases](https://openssl-library.org/source/),
 [SQLite source/checksums](https://www.sqlite.org/download.html), and
 [official Python image definitions](https://github.com/docker-library/python).
 
+## Standard-library wrapper client extension
+
+The Gitleaks, Grype, Syft, WASI and Whisper wrappers now reuse this unchanged
+builder and source manifest. Each additional SDK uses the pinned GCC 16.2.0
+image and exact Python 3.15.1 SDK, builds as UID 10001, and exports only the
+existing OpenSSL/SQLite client packages, CPython TLS/hash modules and provenance.
+The retained version command requires active OpenSSL 4.1.0 and SQLite 3.54.1,
+all exported library/module hashes, compiler identity and the non-root build
+receipt. Compose supplies the same named public context as CI. Original wrapper
+source, cases, upstream WASI fixtures, container security controls, binary pins
+and all whole-image scanner policies remain in place. Whisper additionally
+retains both existing media runtime library directories after the native client
+directory in its loader path.
+
+These changes do not replace the Debian OS libraries for other system clients,
+remove any package or raw advisory, update a live database, or establish full
+upstream/native/sandbox/image acceptance. Current hosted builds, existing
+cases and strict image scans remain required. The prior WASI run verified four
+unchanged assertion paths with the old client libraries; it does not qualify
+these newly changed image inputs.
+
 ## OpenSSL 4 binding and CA policy
 
 The exact CPython 3.14.9 source lacks the OpenSSL 4 removed-method guards
