@@ -98,6 +98,13 @@ RUN ["python", "-I", "-c", "import importlib.util,json,pathlib,sysconfig; bundle
 COPY app.py test_app.py ./
 RUN groupadd --gid 10001 hai \
     && useradd --uid 10001 --gid hai --no-create-home --shell /usr/sbin/nologin hai
+# Install the same-run source-qualified ACL candidate after all other package work.
+RUN --mount=type=bind,from=hai-native-acl,source=/,target=/tmp/hai-acl,readonly \
+    python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl \
+    && dpkg '--path-include=/usr/share/doc/libacl1/*' -i /tmp/hai-acl/libacl1_2.4.0-1_amd64.deb \
+    && python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl --installed \
+    && mkdir -p /usr/share/doc/hai-acl \
+    && cp /tmp/hai-acl/qualification.json /usr/share/doc/hai-acl/qualification.json
 USER 10001:10001
 RUN --network=none python -m unittest discover -v -s . -p 'test_app.py'
 RUN python -c "import json,ortools,google.protobuf; from importlib.metadata import version; value={'ortools':version('ortools'),'ortools_module':ortools.__version__,'protobuf':google.protobuf.__version__}; assert value['ortools']==value['ortools_module']=='9.15.6755+hai.protobuf7.1' and value['protobuf']=='7.36.2'; print(json.dumps(value))"

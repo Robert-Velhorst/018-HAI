@@ -60,6 +60,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     TRANSFORMERS_OFFLINE=1 \
     DATASETS_OFFLINE=1
 
+# Install the same-run source-qualified ACL candidate after all other package work.
+RUN --mount=type=bind,from=hai-native-acl,source=/,target=/tmp/hai-acl,readonly \
+    python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl \
+    && dpkg '--path-include=/usr/share/doc/libacl1/*' -i /tmp/hai-acl/libacl1_2.4.0-1_amd64.deb \
+    && python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl --installed \
+    && mkdir -p /usr/share/doc/hai-acl \
+    && cp /tmp/hai-acl/qualification.json /usr/share/doc/hai-acl/qualification.json
 EXPOSE 8080
 
 RUN python -c "import json,platform,ssl,sqlite3; from importlib.metadata import distributions; print(json.dumps({'python':platform.python_version(),'openssl':ssl.OPENSSL_VERSION,'sqlite':sqlite3.sqlite_version,'distributions':{d.metadata['Name']:d.version for d in distributions()}})); print(open('/etc/os-release',encoding='utf-8').read())"

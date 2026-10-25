@@ -33,6 +33,13 @@ RUN ["python", "-I", "-c", "import importlib.util,json,pathlib,sysconfig; bundle
 COPY --from=syft /syft /usr/local/bin/syft
 COPY app.py /app/app.py
 RUN groupadd --gid 10002 hai && useradd --uid 10002 --gid hai --no-create-home --shell /usr/sbin/nologin hai
+# Install the same-run source-qualified ACL candidate after all other package work.
+RUN --mount=type=bind,from=hai-native-acl,source=/,target=/tmp/hai-acl,readonly \
+    python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl \
+    && dpkg '--path-include=/usr/share/doc/libacl1/*' -i /tmp/hai-acl/libacl1_2.4.0-1_amd64.deb \
+    && python -I /tmp/hai-acl/verify_candidate.py /tmp/hai-acl --installed \
+    && mkdir -p /usr/share/doc/hai-acl \
+    && cp /tmp/hai-acl/qualification.json /usr/share/doc/hai-acl/qualification.json
 USER 10002:10002
 EXPOSE 8080
 ENTRYPOINT ["python", "/app/app.py"]
