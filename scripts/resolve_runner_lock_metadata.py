@@ -192,6 +192,23 @@ def main():
                "public_build_backend_metadata_execution_possible": True,
                "private_application_source_or_credentials_mounted": False,
                "application_tests_run": False, "host_sdk_installed": False}
+    if args.runner in {"fastmcp-bridge", "deepeval-runner", "deepteam-runner"} and process.returncode == 0:
+        # A compiled lock is not proof that the actual interpreter can install
+        # it. Retain normal pip's Requires-Python, dependency and hash checks.
+        install_command = [*command[:-6], sdk, "python", "-m", "pip",
+            "--disable-pip-version-check", "install", "--dry-run", "--no-cache-dir",
+            "--require-hashes", "--find-links", "/inputs", "-r", "/outputs/requirements.lock"]
+        checked = subprocess.run(install_command, capture_output=True, timeout=600, check=False)
+        checked_log = checked.stdout + checked.stderr
+        (output/"normal-installer-check.log").write_bytes(checked_log)
+        receipt["normal_installer_dry_run_returncode"] = checked.returncode
+        receipt["normal_installer_dry_run_passed"] = checked.returncode == 0
+        receipt["normal_installer_check_log_sha256"] = hashlib.sha256(checked_log).hexdigest()
+        receipt["runtime_packages_installed_by_this_check"] = False
+        if checked.returncode:
+            (output/"receipt.json").write_text(json.dumps(receipt, indent=2)+"\n", encoding="utf-8")
+            print(checked_log.decode("utf-8", errors="replace")[-16000:])
+            raise SystemExit(checked.returncode)
     if args.runner == "lm-eval-runner" and process.returncode == 0:
         qualified = subprocess.run([sys.executable,
             str(root/"services/lm-eval-runner/compat/qualify_public_sdk.py"),

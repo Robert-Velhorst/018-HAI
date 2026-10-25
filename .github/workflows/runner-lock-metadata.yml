@@ -74,6 +74,7 @@ jobs:
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/receipt.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/resolution.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/normal-installer-check.log
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/*.whl
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/evidently-port-build.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/evidently-port-build.log
