@@ -17,7 +17,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 
-ENGINE = "whisper.cpp v1.9.1"
+ENGINE = "whisper.cpp v1.9.5"
 INTAKE_ROOT = Path("/intake")
 MODEL_ROOT = Path("/models")
 MAX_REQUEST_BYTES = 1024

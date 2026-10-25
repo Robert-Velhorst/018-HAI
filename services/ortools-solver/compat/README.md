@@ -85,3 +85,36 @@ call sites. Preserve the existing error, signed/unsigned range and cast checks.
 Two exact hash-bound source edits fix the observed missing symbols without
 restoring an obsolete compatibility macro or downgrading SWIG/Python. Compilation
 and the unchanged scheduling cases still require hosted qualification.
+
+## Routing typemap integer conversion
+
+The subsequent build reached the generated routing bindings and exposed the
+same obsolete API in routing_types.swig. One exact hash-bound replacement uses
+PyLong_AsLong in the source IndexT input typemap, preserving its conversion and
+index construction. Generated wrapper files are not edited. A complete archive
+search found this site and the two already ported python-swig.h sites; the
+modified source contains no remaining PyInt_AsLong calls. All nine modified
+source files across three components verify against their original archives.
+Native compilation, existing cases and strict scans still require hosted proof.
+
+## Remaining public Python integer APIs
+
+The d1f6bfe build progressed past the AsLong errors, then failed because
+routing/vector typemaps still used PyInt_Check. The three complete upstream
+integer API source files now use public PyLong_Check, PyLong_AsLong and
+PyLong_FromLong directly. The obsolete SWIG-2 FromLong macro alias is removed;
+OR-Tools' own FromIndexT helper and generated wrappers are unchanged. Conversion,
+signed/unsigned range checks, solver semantics and existing cases are retained.
+All ten changed files across three components verify against original/resulting
+hashes. This is a source port, not a compatibility guard or warning suppression.
+New-source compilation and runtime/image qualification remain required.
+
+## Consistent module and distribution identity
+
+The release-suffix definition precedes both module and package generation in
+CMake. The original RELEASE/rc1 conditional is preserved; the supported release
+profile identifies the modified port consistently. Previously __init__.py was
+configured before PYTHON_RELEASE existed, although the later wheel metadata
+correctly contained the suffix. The strict installed module/distribution version
+assertions remain unchanged. No generated wheel is rewritten, solver behavior
+changed or existing case assertion relaxed. All ten source-patch hashes verify.
