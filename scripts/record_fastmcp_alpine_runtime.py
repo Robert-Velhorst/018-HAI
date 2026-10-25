@@ -51,12 +51,12 @@ def main():
         'signing_provenance': signing, 'uid': os.geteuid(),
         'operator_database_accessed': False, 'all_components_current': False,
         'full_CPython_or_vendor_suite_acceptance': False, 'deployment_acceptance': False}
-    try:
-        from cryptography.hazmat.bindings.openssl.binding import Binding
-        binding = Binding()
-        result['cryptography_bundled_openssl'] = binding.ffi.string(binding.lib.OpenSSL_version(0)).decode()
-    except ImportError:
-        result['cryptography_bundled_openssl'] = None
+    if not any(d['name'].lower() == 'cryptography' for d in distributions):
+        raise RuntimeError('The locked cryptography package is absent')
+    from cryptography.hazmat.backends.openssl.backend import backend
+    result['cryptography_openssl'] = backend.openssl_version_text()
+    if not result['cryptography_openssl'].startswith('OpenSSL 4.1.0 '):
+        raise RuntimeError('Cryptography must also use the current pinned OpenSSL provider')
     print(json.dumps(result, indent=2))
 
 
