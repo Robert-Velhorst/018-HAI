@@ -53,7 +53,7 @@ def main():
     environment = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/build/home',
                    'TMPDIR': '/build/tmp', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
                    'TZ': 'UTC', 'DEBIAN_FRONTEND': 'noninteractive',
-                   'LD_LIBRARY_PATH': '/usr/local/lib64:/usr/local/lib'}
+                   'LD_LIBRARY_PATH': '/usr/lib/x86_64-linux-gnu:/usr/local/lib64:/usr/local/lib'}
     report = {'scope': 'Normal target-Perl installation in a separate build SDK, then both unchanged published XS recipes',
               'producer_receipt_sha256': digest(producer_raw), 'sources': spec['sources'],
               'commands': [], 'candidate_packages': [], 'all_source_and_build_gates_passed': False,
@@ -80,6 +80,15 @@ def main():
                 entry['log_sha256'] = digest(log.read_bytes())
 
     try:
+        runtime_path=Path('/usr/share/doc/hai-gcc-runtime-setup/runtime-qualification.json')
+        runtime_raw=runtime_path.read_bytes();runtime=json.loads(runtime_raw)
+        if not runtime.get('normal_authenticated_APT_and_exact_package_install_passed'):
+            raise RuntimeError('Require the real normally installed GCC 16 runtime packages')
+        for item in runtime['owned_runtime_files'].values():
+            if digest(Path(item['path']).read_bytes())!=item['sha256']:
+                raise RuntimeError('Owned compiler runtime changed')
+        report['official_compiler_runtime_receipt_sha256']=digest(runtime_raw)
+        report['official_compiler_runtime']=runtime
         run('initial-package-relations', ['dpkg-query', '-W', '-f=${binary:Package}\t${Version}\t${Depends}\t${Provides}\n'])
         run('bootstrap-installability', ['apt-get', '--simulate', '--no-remove', 'install', *paths])
         run('bootstrap-complete-install', ['apt-get', '-y', '--no-remove', 'install', *paths], timeout=600)

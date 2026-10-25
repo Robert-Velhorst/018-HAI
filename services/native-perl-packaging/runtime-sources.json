@@ -1,0 +1,47 @@
+{
+  "distribution": "sid",
+  "upstream_release": "16.2.0",
+  "version": "16.2.0-3",
+  "architecture": "amd64",
+  "repository": "https://deb.debian.org/debian",
+  "packages": [
+    {
+      "package": "gcc-16-base",
+      "version": "16.2.0-3",
+      "architecture": "amd64",
+      "source": "gcc-16",
+      "depends": null,
+      "breaks": "gnat (<< 7)",
+      "filename": "pool/main/g/gcc-16/gcc-16-base_16.2.0-3_amd64.deb",
+      "bytes": 38676,
+      "sha256": "7dcc6404b44ad8a9d58e83c1e987eecb4d6a24623a92438eeb11829ed1129635",
+      "url": "https://deb.debian.org/debian/pool/main/g/gcc-16/gcc-16-base_16.2.0-3_amd64.deb"
+    },
+    {
+      "package": "libgcc-s1",
+      "version": "16.2.0-3",
+      "architecture": "amd64",
+      "source": "gcc-16",
+      "depends": "gcc-16-base (= 16.2.0-3), libc6 (>= 2.35)",
+      "breaks": null,
+      "filename": "pool/main/g/gcc-16/libgcc-s1_16.2.0-3_amd64.deb",
+      "bytes": 74048,
+      "sha256": "e716dc8baad27e884c45ff83a76955047a7a9e33a80e94f9459ee996ebb800b0",
+      "url": "https://deb.debian.org/debian/pool/main/g/gcc-16/libgcc-s1_16.2.0-3_amd64.deb"
+    },
+    {
+      "package": "libstdc++6",
+      "version": "16.2.0-3",
+      "architecture": "amd64",
+      "source": "gcc-16",
+      "depends": "gcc-16-base (= 16.2.0-3), libc6 (>= 2.38), libgcc-s1 (>= 4.3)",
+      "breaks": "gcc-4.3 (<< 4.3.6-1), gcc-4.4 (<< 4.4.6-4), gcc-4.5 (<< 4.5.3-2)",
+      "filename": "pool/main/g/gcc-16/libstdc++6_16.2.0-3_amd64.deb",
+      "bytes": 823236,
+      "sha256": "7c9e1a89e6c0b9202699957b469c06d0b86f5c97e86c1ff912b6502ddd8793b6",
+      "url": "https://deb.debian.org/debian/pool/main/g/gcc-16/libstdc++6_16.2.0-3_amd64.deb"
+    }
+  ],
+  "scope": "Only official GCC base, support and C++ runtime packages inside disposable SDK/testbed images",
+  "normal_APT_archive_signature_package_integrity_dependency_and_no_remove_gates_required": true
+}

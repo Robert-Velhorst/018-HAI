@@ -65,7 +65,7 @@ def main():
         'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/build/home',
         'TMPDIR': '/build/tmp', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
         'TZ': 'UTC', 'DEBIAN_FRONTEND': 'noninteractive',
-        'LD_LIBRARY_PATH': '/usr/local/lib64:/usr/local/lib',
+        'LD_LIBRARY_PATH': '/usr/lib/x86_64-linux-gnu:/usr/local/lib64:/usr/local/lib',
     }
     expected = {'hello', 'perl-base-self-contained', 'compression', 'db', 'gdbm',
                 'ndbm', 'storable', 'embed', 'control', 'released_versions',
@@ -108,6 +108,14 @@ def main():
                 entry['log_sha256'] = digest(log.read_bytes())
 
     try:
+        runtime_raw=Path('/usr/share/doc/hai-gcc-runtime-setup/runtime-qualification.json').read_bytes()
+        runtime=json.loads(runtime_raw)
+        if not runtime.get('normal_authenticated_APT_and_exact_package_install_passed'):
+            raise RuntimeError('Require the same real owned GCC 16 runtime family in the final testbed')
+        for item in runtime['owned_runtime_files'].values():
+            if digest(Path(item['path']).read_bytes())!=item['sha256']:
+                raise RuntimeError('Final testbed compiler runtime changed')
+        report['official_compiler_runtime_receipt_sha256']=digest(runtime_raw)
         report['initial_installed_package_versions'] = run(
             'initial-package-inventory', ['dpkg-query', '-W', '-f=${binary:Package}\t${Version}\n'], 30)
         # This normal resolver check must succeed without removing SDK packages.
