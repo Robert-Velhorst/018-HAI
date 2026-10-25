@@ -1,3 +1,5 @@
 *
 !build_runtime.py
+!build_alpine_runtime.py
+!package_alpine_runtime.py
 !sources.json
