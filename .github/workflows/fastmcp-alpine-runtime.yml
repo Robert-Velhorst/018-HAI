@@ -84,7 +84,18 @@ jobs:
             2>&1 | tee "$HAI_ALPINE_REVIEW/reports/all-original-cases.log"
       - name: Run unchanged isolated container startup and health contract
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: python scripts/python_runner_container_smoke.py --runner fastmcp-bridge --image hai-fastmcp-alpine:candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Preserve the existing harness image-name guard and prove both tags
+          # identify the same immutable candidate before starting the container.
+          docker tag hai-fastmcp-alpine:candidate hai-fastmcp-bridge:ci
+          candidate_id=$(docker image inspect --format '{{.Id}}' hai-fastmcp-alpine:candidate)
+          smoke_id=$(docker image inspect --format '{{.Id}}' hai-fastmcp-bridge:ci)
+          test "$candidate_id" = "$smoke_id"
+          printf '%s\n' "$candidate_id" > "$HAI_ALPINE_REVIEW/reports/smoke-image-id.txt"
+          python scripts/python_runner_container_smoke.py --runner fastmcp-bridge --image hai-fastmcp-bridge:ci \
+            2>&1 | tee "$HAI_ALPINE_REVIEW/reports/container-smoke.log"
       - name: Save the exact complete runtime image and descriptor chain
         id: archive
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
