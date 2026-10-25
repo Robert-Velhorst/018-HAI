@@ -51,7 +51,7 @@ ENV VIRTUAL_ENV=/opt/hai-venv \
 # Build the already-reviewed offline port without importing its vendor modules.
 # The original lock binds the exact ported wheel and every published dependency.
 RUN python -I /app/compat/build_port_wheel.py --output-directory /opt/hai-wheels \
-    && echo "c16222e9b42be2b593e19e97649058e92ad5df2fa3b47cb4f912525a1ad86fa4  /opt/hai-wheels/guardrails_ai-0.11.0+hai.offline.1-py3-none-any.whl" | sha256sum --check \
+    && echo "c16222e9b42be2b593e19e97649058e92ad5df2fa3b47cb4f912525a1ad86fa4  /opt/hai-wheels/guardrails_ai-0.11.0+hai.offline.1-py3-none-any.whl" | sha256sum -c \
     && python -m pip install --no-cache-dir --only-binary :all: --find-links /opt/hai-wheels --require-hashes -r requirements.lock \
     && python -m pip uninstall --yes pip
 USER 0:0
