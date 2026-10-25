@@ -3,6 +3,9 @@ name: Public runner dependency metadata
 on:
   pull_request:
     paths:
+      - services/fastmcp-bridge/requirements.in
+      - services/deepeval-runner/requirements.in
+      - services/deepteam-runner/requirements.in
       - services/miniswe-runner/requirements-port.in
       - services/miniswe-runner/compat/**
       - services/lm-eval-runner/requirements.in
@@ -37,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [miniswe-runner, lm-eval-runner, garak-runner, evidently-runner, agent-framework-runner, guardrails-runner, pydantic-ai-runner, crewai-runner, ortools-runtime, ortools-build]
+        runner: [miniswe-runner, lm-eval-runner, garak-runner, evidently-runner, agent-framework-runner, guardrails-runner, pydantic-ai-runner, crewai-runner, ortools-runtime, ortools-build, fastmcp-bridge, deepeval-runner, deepteam-runner]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
