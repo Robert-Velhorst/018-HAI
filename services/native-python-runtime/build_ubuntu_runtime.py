@@ -59,7 +59,7 @@ def main():
              'LDFLAGS':'-L'+str(shared.SDK_PREFIX/'lib')+' -Wl,-rpath,/opt/hai-native/lib -Wl,-rpath,/usr/local/lib'}
         shared.command(['./configure','--prefix=/usr/local','--enable-shared',
             '--with-ensurepip=install','--with-openssl='+str(shared.SDK_PREFIX),
-            '--with-openssl-rpath=/opt/hai-native/lib'],python,env=env)
+            '--with-openssl-rpath='+str(shared.SDK_PREFIX/'lib')],python,env=env)
         shared.command(['make','-j2'],python,env=env,timeout=1800)
         shared.command(['make','install','DESTDIR='+str(shared.INSTALL)],python,env=env,timeout=1200)
         installed=shared.INSTALL/'usr/local'
@@ -92,6 +92,8 @@ def main():
         cpython={'source':manifest['cpython']['3.15.1'],'modules':modules,
             'python_executable_sha256':hashlib.sha256(executable.read_bytes()).hexdigest(),
             'full_install_preserved':True,'source_or_case_edits':False}
+        cpython['staged_OpenSSL_directory']=str(shared.SDK_PREFIX)
+        cpython['final_runtime_library_path']='/opt/hai-native/lib:/usr/local/lib'
         cpython['feature_reference']=reference
         cpython['all_original_native_extension_names_preserved']=True
     result={'profile':profile,'architecture':architecture,'os_release':release,'build_uid':os.geteuid(),
