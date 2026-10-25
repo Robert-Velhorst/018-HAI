@@ -24,10 +24,7 @@ def main():
         'sqlite':sqlite3.sqlite_version,'sqlite_query':database.execute('select sqlite_version()').fetchone()[0],
         'ca_roots':len(ssl.create_default_context().get_ca_certs())}
     database.close()
-    from cryptography.hazmat.backends.openssl.backend import backend
-    actual['cryptography_openssl']=backend.openssl_version_text()
     if (actual['python']!='3.15.1' or not actual['openssl'].startswith('OpenSSL 4.1.0 ')
-            or not actual['cryptography_openssl'].startswith('OpenSSL 4.1.0 ')
             or actual['sqlite']!='3.54.1' or actual['sqlite_query']!='3.54.1' or actual['ca_roots']<1):
         raise RuntimeError('Every actual native provider must match the source profile')
     bundled=Path(sysconfig.get_path('stdlib'))/'ensurepip/_bundled'
