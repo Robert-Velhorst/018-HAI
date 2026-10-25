@@ -25,7 +25,6 @@ jobs:
     env:
       PREFLIGHT_IMAGE: ${{ matrix.image }}
       PREFLIGHT_FAMILY: ${{ matrix.family }}
-      PREFLIGHT_DIRECTORY: ${{ runner.temp }}/fastmcp-base-preflight
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -38,6 +37,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$RUNNER_ENVIRONMENT" = github-hosted
+          export PREFLIGHT_DIRECTORY="$RUNNER_TEMP/fastmcp-base-preflight"
+          printf '%s\n' "PREFLIGHT_DIRECTORY=$PREFLIGHT_DIRECTORY" >> "$GITHUB_ENV"
           mkdir -p "$PREFLIGHT_DIRECTORY/"{input,reports,cache}
           python - <<'PY'
           import hashlib,json,os,subprocess
