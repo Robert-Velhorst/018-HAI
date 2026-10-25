@@ -17,16 +17,23 @@ def main():
     assert not os_info.get('EOSL', False)
     assert inventory['os_release']['ID'] == 'ubuntu'
     assert inventory['os_release']['VERSION_ID'] == '26.10'
+    assert inventory['lsb_release']['DISTRIB_ID']=='Ubuntu'
+    assert inventory['lsb_release']['DISTRIB_RELEASE']==inventory['os_release']['VERSION_ID']
+    assert inventory['lsb_release']['DISTRIB_CODENAME']==inventory['os_release']['UBUNTU_CODENAME']
     log = log_path.read_text().lower()
     assert 'unsupported' not in log and 'not supported' not in log
     findings = []
     installed = {}
     os_count = 0
+    go_stdlib_versions=set()
     assert scan.get('Results')
     for row in scan['Results']:
         assert row.get('Packages'), 'Complete package inventory is required'
         for field in ['Vulnerabilities', 'ExperimentalModifiedFindings']:
             findings.extend(row.get(field) or [])
+        if row.get('Type')=='gobinary':
+            assert row['Target']=='usr/bin/pebble'
+            go_stdlib_versions.update(p['Version'] for p in row['Packages'] if p['Name']=='stdlib')
         if row.get('Class') == 'os-pkgs':
             os_count += len(row['Packages'])
             for package in row['Packages']:
@@ -36,6 +43,7 @@ def main():
                 if package.get('Epoch') not in {None, 0, '0'}:
                     version = str(package['Epoch']) + ':' + version
                 installed.setdefault(package['Name'].split(':')[0], set()).add(version)
+    assert go_stdlib_versions=={'v1.27.3'}
     assert os_count and inventory['installed_packages']
     for name, version in inventory['installed_packages'].items():
         assert version in installed.get(name.split(':')[0], set()), name

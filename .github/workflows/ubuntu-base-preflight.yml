@@ -66,6 +66,14 @@ jobs:
             --entrypoint dpkg-query hai-ubuntu-base:preflight --show \
             '--showformat=${db:Status-Abbrev}\t${binary:Package}\t${Version}\n' \
             > "$HAI_UBUNTU_REVIEW/reports/dpkg.tsv"
+          docker run --rm --network none --read-only --user 65534:65534 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 256m --cpus 1 --pids-limit 64 \
+            --entrypoint cat hai-ubuntu-base:preflight /etc/lsb-release \
+            > "$HAI_UBUNTU_REVIEW/reports/lsb-release.txt"
+          docker run --rm --network none --read-only --user 65534:65534 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 256m --cpus 1 --pids-limit 64 \
+            --entrypoint sha256sum hai-ubuntu-base:preflight /usr/bin/pebble \
+            > "$HAI_UBUNTU_REVIEW/reports/pebble.sha256"
           python - <<'PY'
           from pathlib import Path
           import json,os,shlex
@@ -76,14 +84,27 @@ jobs:
                   k,v=line.split('=',1)
                   values=shlex.split(v)
                   release[k]=values[0] if values else ''
+          legacy={}
+          for line in (out/'lsb-release.txt').read_text().splitlines():
+              if '=' in line:
+                  k,v=line.split('=',1)
+                  values=shlex.split(v)
+                  legacy[k]=values[0] if values else ''
+          pebble=json.loads(Path('scripts/ubuntu-base-preflight/pebble-release.json').read_text())
+          actual_pebble=(out/'pebble.sha256').read_text().split()[0]
+          assert actual_pebble==pebble['binary_sha256']
+          assert legacy['DISTRIB_ID']=='Ubuntu' and legacy['DISTRIB_RELEASE']==release['VERSION_ID']
+          assert legacy['DISTRIB_CODENAME']==release['UBUNTU_CODENAME']
+          (out/'pebble-release.json').write_text(json.dumps(pebble,indent=2)+'\n')
           packages={}
           for line in (out/'dpkg.tsv').read_text().splitlines():
               state,name,version=line.split('\t',2)
-              if state.startswith('ii'):
+              if len(state)>1 and state[1]=='i':
                   packages[name]=version
           assert release['ID']=='ubuntu' and release['VERSION_ID']=='26.10' and packages
           (out/'base-inventory.json').write_text(json.dumps({'os_release':release,
-              'installed_packages':packages,'base_preflight_only':True,
+              'installed_packages':packages,'lsb_release':legacy,
+              'current_publisher_pebble_binary_sha256':actual_pebble,'base_preflight_only':True,
               'operator_data_accessed':False},indent=2)+'\n')
           PY
       - name: Save the complete image and verify descriptor identities
