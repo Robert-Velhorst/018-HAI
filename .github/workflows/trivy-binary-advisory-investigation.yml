@@ -1,0 +1,30 @@
+name: Trivy published binary advisory investigation
+
+on:
+  push:
+    branches: [audit/hai-trivy-openpgp-binary-20261025]
+
+permissions:
+  contents: read
+
+jobs:
+  binary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Bind image and release binary and inspect all binary vulnerability symbols
+        run: python3 -I scripts/investigate_trivy_binary_advisory.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: trivy-published-binary-advisory-evidence
+          path: ${{ runner.temp }}/trivy-openpgp-evidence/
+          retention-days: 7
+          if-no-files-found: error
