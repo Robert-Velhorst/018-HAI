@@ -1,6 +1,7 @@
 """Prepare the complete hash-bound public SDK and transparent manifest overlays."""
 from pathlib import Path, PurePosixPath
 import hashlib
+import io
 import json
 import os
 import tarfile
@@ -59,11 +60,49 @@ def main():
         if hashlib.sha256(payload).hexdigest()!=overlay['proposed_sha256']:
             raise ValueError('Reviewed overlay bytes differ')
         (source/name).write_bytes(payload);hashes[name]=overlay['proposed_sha256']
+    parent_proofs=[]
+    for parent in spec.get('parent_ports',[]):
+        destination=source/parent['destination']
+        if destination.exists() or not destination.resolve().is_relative_to(source):
+            raise ValueError('Parent source must occupy a new owned SDK directory')
+        with urllib.request.urlopen(parent['archive_url'],timeout=60) as response:
+            archive_bytes=response.read(16*1024*1024+1)
+        if len(archive_bytes)>16*1024*1024 or hashlib.sha256(archive_bytes).hexdigest()!=parent['archive_sha256']:
+            raise ValueError('Original parent archive identity differs')
+        parent_original={}
+        with tarfile.open(fileobj=io.BytesIO(archive_bytes),mode='r:gz') as tar:
+            for member in tar:
+                if member.isdir():continue
+                parts=PurePosixPath(member.name).parts
+                if not member.isfile() or member.name.startswith('/') or '..' in parts or len(parts)<2:
+                    raise ValueError('Unexpected parent archive member')
+                name='/'.join(parts[1:])
+                if name in parent_original or member.size>8*1024*1024:
+                    raise ValueError('Duplicate or oversized parent member')
+                parent_original[name]=hashlib.sha256(tar.extractfile(member).read()).hexdigest()
+        if parent_original!=parent['original_payload_sha256']:
+            raise ValueError('Complete original parent source differs')
+        if set(parent_original)!=set(parent['proposed_payload_sha256']):
+            raise ValueError('Original parent payloads must all be retained')
+        changed=[]
+        for name,original_hash in parent_original.items():
+            payload=(inputs/parent['input_directory']/name).read_bytes()
+            actual=hashlib.sha256(payload).hexdigest()
+            if actual!=parent['proposed_payload_sha256'][name]:raise ValueError('Proposed parent bytes differ')
+            if actual!=original_hash:changed.append(name)
+            path=destination/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(payload)
+            hashes[parent['destination']+'/'+name]=actual
+        if sorted(changed)!=sorted(parent['changed_files']):
+            raise ValueError('Original parent code/cases/license changed unexpectedly')
+        parent_proofs.append({'name':parent['name'],'private_version':parent['private_version'],
+            'original_archive_sha256':parent['archive_sha256'],'payloads':len(parent_original),
+            'changed_files':changed,'original_code_cases_helpers_assertions_and_license_unchanged':True})
     (reports/'publisher-Cargo.lock').write_bytes((source/'litellm-rust/Cargo.lock').read_bytes())
     (reports/'publisher-source-identity.json').write_text(json.dumps({
         'source_head':os.environ['GITHUB_SHA'],'publisher_commit':spec['commit'],
         'publisher_archive_sha256':spec['archive_sha256'],'original_payload_sha256':original,
         'proposed_payload_sha256':hashes,'overlay_count':len(spec['overlays']),
+        'parent_ports':parent_proofs,
         'original_cases_helpers_assertions_and_source_unchanged_except_declared_manifests':True,
         'metadata_only_not_compilation_or_suite_acceptance':True},indent=2)+'\n')
     print(json.dumps({'publisher_payloads_verified':len(hashes),'overlays':len(spec['overlays'])}))

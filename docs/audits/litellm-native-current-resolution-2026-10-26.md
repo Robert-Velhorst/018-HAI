@@ -38,3 +38,16 @@ remains pending and unapplied. All application/runtime locks and recipes are
 unchanged. Local work was archive/hash/TOML/AST review; no Cargo, Rust compiler,
 application, package manager, vendor helper or case ran locally. No merge or
 manual deployment is included.
+
+The first hosted normal resolver failed because current public Pythonize 0.29.0
+still depends on PyO3 ^0.29, conflicting with current PyO3 0.30.1's native link
+identity. An explicit direct parent port, `pythonize 0.29.0+hai.pyo330.1`, now
+occupies `litellm-rust/compat/pythonize` inside the isolated SDK candidate.
+Its complete public crate archive is checksum-bound and all 21 payloads remain;
+only Cargo.toml/Cargo.toml.orig change the private version, normal/dev PyO3
+requirements and compiler minimum. All 19 other payloads, Rust source, original
+case files, fixtures and licence are byte-identical. The SDK host references the
+parent by ordinary dependency path. No Cargo patch/replace or native-link check
+bypass is used. The parent original lock is retained as publisher evidence;
+only the real workspace resolver output can qualify the actual graph.
+This source preparation is not API, compilation or original-suite acceptance.

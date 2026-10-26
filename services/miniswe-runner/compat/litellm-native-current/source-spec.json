@@ -194,8 +194,75 @@
       "path": "rust-toolchain.toml",
       "original_sha256": "e879701472a698533f43f54989bbf5f3101eb0503472159d32633f3bb8a13fdf",
       "proposed_sha256": "d13306be0ecda81ce779baa290ffb417380d525928477f16200884b5169cca33"
+    },
+    {
+      "path": "litellm-rust/crates/host-python/Cargo.toml",
+      "original_sha256": "9e700ff07bb05f853ee05613440a3c9137fdf98ec912860c69b0621dd0bf81ae",
+      "proposed_sha256": "e43b593263ac8404cd68d67f83e796c691a1df7b27f5fac094cd38b83b2bf1e8"
     }
   ],
   "canonical_runtime_or_original_SDK_guard_adoption": false,
-  "publisher_license_sha256": "b170d6bf8e8835dd357e011681db028f4d51e2fb0ea892058f56e01fb39b8273"
+  "publisher_license_sha256": "b170d6bf8e8835dd357e011681db028f4d51e2fb0ea892058f56e01fb39b8273",
+  "parent_ports": [
+    {
+      "name": "pythonize",
+      "public_version": "0.29.0",
+      "private_version": "0.29.0+hai.pyo330.1",
+      "archive_url": "https://static.crates.io/crates/pythonize/pythonize-0.29.0.crate",
+      "archive_sha256": "6ec376e1216e0c929a74964ce2020012a1a39f32d80e78aa688721219ea7fb89",
+      "input_directory": "parents/pythonize",
+      "destination": "litellm-rust/compat/pythonize",
+      "original_payload_sha256": {
+        ".cargo_vcs_info.json": "4686ec600ec18fa0acca286fb042b92c756a25b86521a69a2ca981d4c79b97d5",
+        ".github/FUNDING.yml": "19a135ac466985e856d0f7944863c30c6bea81c6cf7759f91b29e1fcbd323932",
+        ".github/dependabot.yml": "59fcc42aabbfdfda3298afd61511eae169571eb49e5bc6ceb993eea0464c4250",
+        ".github/workflows/ci.yml": "8ff5a9d590bb5b7854771b37a87be9b6168ce56a698181f784afe612c7dcf4ed",
+        ".github/workflows/release.yml": "ff0b51e05d1d9255fe89d57bb2d52ab88a1a891ee8d46f9930b82acefd022b9d",
+        ".gitignore": "f5fece39944eee2dd58689aa33811a0b028136e064e4d797f399aa15e7ab7f99",
+        "CHANGELOG.md": "2657631886031e613b36e6b8e6786e37505976a0b8db8a5bd8d168cf5cd5e5bf",
+        "Cargo.lock": "4a29d0c118b5f475a95f2117e2fdbeadc48944e142a021ec1e5e3807ac03b1e0",
+        "Cargo.toml": "873bd5fd4e63ebcf487c5f32e67e2b88e0975f017201086a21e2481da01653cd",
+        "Cargo.toml.orig": "a3ec8448da81ceb0d51b854a6ef2c3f802e2847cf87552f1e2761aa5802e8dcd",
+        "LICENSE": "49a358eef117e2e5ffadd0df4e8243447adbcd9894f9dd8b4180775c5f88c7ce",
+        "README.md": "a8a553d1d3a247b0f77d8d14fb6d31c786cadaef57b26dfd373037b027ce32b3",
+        "src/de.rs": "24c905ed53e9f60ed83588d8c67275ad2fb5cdd40c374200d1cadff045ec6ddf",
+        "src/error.rs": "9d27b71ebd397c44c504dc71acddf92090205e3c7c809a69ec9b7751abab0c27",
+        "src/lib.rs": "bf65bccfa983be5873430089df19287d2bcc679cead190f5545895ff210e5f22",
+        "src/ser.rs": "40f0d55f5563967c57a7d67d6efca793f5102e3e063c2546ed1fe009fb09a660",
+        "tests/test_arbitrary_precision.rs": "c1e0d51b11f4260f1761341f2a25345fed6f25325a03a387e0aeaf3a43c65ebe",
+        "tests/test_collections.rs": "ef1a79c9efc5d6316d58513d9bdf7e913d312bc026cd23a9767d1cc664e97e0e",
+        "tests/test_custom_types.rs": "a81a624260c52d69b7ce891fff62b6ec588b3d3337383e3a02bdd04fd4136585",
+        "tests/test_structs.rs": "eff023ab624e16f266075e5733575a17d423920466a9b8b46a9b06f49c4a7ad5",
+        "tests/test_with_serde_path_to_err.rs": "94fb4535c2935d56a782455e7ecdd127fae205ed9c10938a96b137529f59604c"
+      },
+      "proposed_payload_sha256": {
+        ".cargo_vcs_info.json": "4686ec600ec18fa0acca286fb042b92c756a25b86521a69a2ca981d4c79b97d5",
+        ".github/FUNDING.yml": "19a135ac466985e856d0f7944863c30c6bea81c6cf7759f91b29e1fcbd323932",
+        ".github/dependabot.yml": "59fcc42aabbfdfda3298afd61511eae169571eb49e5bc6ceb993eea0464c4250",
+        ".github/workflows/ci.yml": "8ff5a9d590bb5b7854771b37a87be9b6168ce56a698181f784afe612c7dcf4ed",
+        ".github/workflows/release.yml": "ff0b51e05d1d9255fe89d57bb2d52ab88a1a891ee8d46f9930b82acefd022b9d",
+        ".gitignore": "f5fece39944eee2dd58689aa33811a0b028136e064e4d797f399aa15e7ab7f99",
+        "CHANGELOG.md": "2657631886031e613b36e6b8e6786e37505976a0b8db8a5bd8d168cf5cd5e5bf",
+        "Cargo.lock": "4a29d0c118b5f475a95f2117e2fdbeadc48944e142a021ec1e5e3807ac03b1e0",
+        "Cargo.toml": "ac6e4b1ca01f08085ed35494217a7deea39ee3cd5c567b1a7144512cdcdca705",
+        "Cargo.toml.orig": "e87493ee5786e788d3e2502cec793c6a63a9c22182cd4da2c28c4af98137aee3",
+        "LICENSE": "49a358eef117e2e5ffadd0df4e8243447adbcd9894f9dd8b4180775c5f88c7ce",
+        "README.md": "a8a553d1d3a247b0f77d8d14fb6d31c786cadaef57b26dfd373037b027ce32b3",
+        "src/de.rs": "24c905ed53e9f60ed83588d8c67275ad2fb5cdd40c374200d1cadff045ec6ddf",
+        "src/error.rs": "9d27b71ebd397c44c504dc71acddf92090205e3c7c809a69ec9b7751abab0c27",
+        "src/lib.rs": "bf65bccfa983be5873430089df19287d2bcc679cead190f5545895ff210e5f22",
+        "src/ser.rs": "40f0d55f5563967c57a7d67d6efca793f5102e3e063c2546ed1fe009fb09a660",
+        "tests/test_arbitrary_precision.rs": "c1e0d51b11f4260f1761341f2a25345fed6f25325a03a387e0aeaf3a43c65ebe",
+        "tests/test_collections.rs": "ef1a79c9efc5d6316d58513d9bdf7e913d312bc026cd23a9767d1cc664e97e0e",
+        "tests/test_custom_types.rs": "a81a624260c52d69b7ce891fff62b6ec588b3d3337383e3a02bdd04fd4136585",
+        "tests/test_structs.rs": "eff023ab624e16f266075e5733575a17d423920466a9b8b46a9b06f49c4a7ad5",
+        "tests/test_with_serde_path_to_err.rs": "94fb4535c2935d56a782455e7ecdd127fae205ed9c10938a96b137529f59604c"
+      },
+      "changed_files": [
+        "Cargo.toml",
+        "Cargo.toml.orig"
+      ],
+      "source_cases_helpers_assertions_and_license_unchanged": true
+    }
+  ]
 }
