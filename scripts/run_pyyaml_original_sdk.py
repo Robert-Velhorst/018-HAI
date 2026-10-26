@@ -1,9 +1,14 @@
 """Run original public PyYAML cases only on a disposable hosted SDK image."""
 from pathlib import Path
+import argparse
+import base64
+import csv
 import hashlib
 import importlib.metadata
+import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,11 +23,65 @@ def verify_source(root, expected):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--final-runtime', action='store_true')
+    args = parser.parse_args()
     if (sys.platform != 'linux' or os.environ.get('HAI_DISPOSABLE_PUBLIC_SDK') != '1'
             or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted'):
         raise RuntimeError('Vendor execution requires the disposable hosted SDK image')
     source = Path('/publisher-src')
     reports = Path('/reports')
+    runtime_report = Path('/app/installation-report.json')
+    test_report = Path('/app/pyyaml-test-sdk-installation-report.json')
+    bundle_hashes = {}
+    image_id = None
+    if args.final_runtime:
+        image_id = os.environ.get('HAI_RUNTIME_IMAGE_ID', '')
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}', image_id) or os.geteuid() != 10001:
+            raise ValueError('Expected the immutable final runtime image and non-root user')
+        bundle = Path('/review/pytest-sdk')
+        site = bundle / 'lib/python3.15/site-packages'
+        expected = {'_pytest', 'pytest', 'py.py', '__pycache__', 'pluggy', 'iniconfig', 'pytest-9.1.1.dist-info',
+            'pluggy-1.7.0.dist-info', 'iniconfig-2.3.1.dist-info'}
+        if {p.name for p in site.iterdir()} != expected:
+            raise ValueError('Test bundle must not supply PyYAML or other runtime packages')
+        if {p.name for p in (bundle / 'bin').iterdir()} != {'pytest', 'py.test'}:
+            raise ValueError('Both original SDK CLI scripts must be retained')
+        if {p.name for p in (site / '__pycache__').iterdir()} != {'py.cpython-315.pyc'}:
+            raise ValueError('Only pytest-owned top-level bytecode belongs in the bundle')
+        for path in sorted(bundle.rglob('*')):
+            if path.is_symlink():raise ValueError('Unexpected test-bundle link')
+            if path.is_file():bundle_hashes[str(path.relative_to(bundle))] = hashlib.sha256(path.read_bytes()).hexdigest()
+        recorded = set()
+        for distribution in ['pytest-9.1.1', 'pluggy-1.7.0', 'iniconfig-2.3.1']:
+            record_path = site / (distribution + '.dist-info/RECORD')
+            for row in csv.reader(record_path.read_text().splitlines()):
+                if len(row) != 3:
+                    raise ValueError('Unexpected installed SDK RECORD row')
+                relative, digest, size = row
+                path = (site / relative).resolve(strict=True)
+                if not path.is_relative_to(bundle) or not path.is_file():
+                    raise ValueError('Installed SDK RECORD escapes or omits a payload')
+                name = str(path.relative_to(bundle))
+                if name in recorded:
+                    raise ValueError('Installed SDK distributions overlap')
+                recorded.add(name)
+                data = path.read_bytes()
+                if size and len(data) != int(size):
+                    raise ValueError('Installed SDK payload size differs from RECORD')
+                if digest:
+                    actual = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b'=').decode()
+                    if digest != 'sha256=' + actual:
+                        raise ValueError('Installed SDK payload hash differs from RECORD')
+                elif path != record_path and not path.name.endswith('.pyc'):
+                    raise ValueError('Unexpected unhashed installed SDK payload')
+        if recorded != set(bundle_hashes) - {'installation-report.json'}:
+            raise ValueError('Complete installed SDK RECORD inventory must be retained')
+        sys.path.insert(0, str(site))
+        if not Path(importlib.util.find_spec('pytest').origin).is_relative_to(site):
+            raise ValueError('The reviewed test-tool package must supply pytest')
+        runtime_report = Path('/usr/share/doc/hai-native/installation-report.json')
+        test_report = bundle / 'installation-report.json'
     identity = json.loads((source / 'hai-source-identity.json').read_text())
     expected = identity['payload_sha256']
     verify_source(source, expected)
@@ -30,7 +89,7 @@ def main():
         raise ValueError('Expected complete publisher source')
     if importlib.metadata.version('pytest') != '9.1.1':
         raise ValueError('Current stable pytest SDK identity differs')
-    installation = json.loads(Path('/app/installation-report.json').read_text())
+    installation = json.loads(runtime_report.read_text())
     installed = installation['install']
     if len(installed) != 83:
         raise ValueError('Expected all original runtime installation entries')
@@ -47,10 +106,12 @@ def main():
     if 'not found' in linkage.stdout or 'libyaml' not in linkage.stdout:
         raise ValueError('The actual LibYAML provider must resolve')
     (reports / 'native-linkage.log').write_text(linkage.stdout + linkage.stderr)
-    shutil.copyfile('/app/installation-report.json', reports / 'runtime-installation-report.json')
-    shutil.copyfile('/app/pyyaml-test-sdk-installation-report.json', reports / 'test-sdk-installation-report.json')
+    shutil.copyfile(runtime_report, reports / 'runtime-installation-report.json')
+    shutil.copyfile(test_report, reports / 'test-sdk-installation-report.json')
     shutil.copyfile(source / 'hai-source-identity.json', reports / 'publisher-source-identity.json')
     environment = dict(os.environ, PYYAML_FORCE_LIBYAML='1', PYTHONDONTWRITEBYTECODE='1')
+    if args.final_runtime:environment['PYTHONPATH'] = str(site)
+    extension_before = hashlib.sha256(extension.read_bytes()).hexdigest()
     results = {}
     with tempfile.TemporaryDirectory(prefix='hai-original-pyyaml-') as name:
         checkout = Path(name) / 'publisher'
@@ -77,6 +138,10 @@ def main():
         'skipped': sum(c.find('skipped') is not None for c in cases)}
     qualified = (all(r['returncode'] == 0 for r in results.values())
         and counts['reported'] > 0 and counts['failed'] == counts['errors'] == 0)
+    if args.final_runtime:
+        qualified = qualified and counts['reported'] == 2608 and counts['skipped'] == 0
+    if hashlib.sha256(extension.read_bytes()).hexdigest() != extension_before:
+        raise ValueError('Installed extension bytes changed during SDK cases')
     record = {'source_head': os.environ['GITHUB_SHA'],
         'publisher_commit': identity['publisher_commit'], 'source_payloads_verified': len(expected),
         'original_runtime_distribution_versions_verified': len(installed),
@@ -84,6 +149,10 @@ def main():
         'installed_PyYAML': importlib.metadata.version('PyYAML'),
         'actual_extension_path': str(extension),
         'actual_extension_sha256': hashlib.sha256(extension.read_bytes()).hexdigest(),
+        'execution_context': 'complete-final-runtime' if args.final_runtime else 'separate-SDK-stage',
+        'immutable_runtime_image_id': image_id,
+        'actual_Python_executable_sha256': hashlib.sha256(Path(sys.executable).resolve().read_bytes()).hexdigest(),
+        'isolated_test_tool_bundle_file_sha256': bundle_hashes,
         'actual_LibYAML_version': yaml._yaml.get_version_string(),
         'installed_distributions': {d.metadata['Name']: d.version for d in importlib.metadata.distributions()},
         'results': results, 'original_default_suite_counts': counts,

@@ -72,7 +72,22 @@ RUN PYYAML_FORCE_CYTHON=1 PYYAML_FORCE_LIBYAML=1 python -m pip install --verbose
 # The SDK check inherits exactly the runtime installation, with its native
 # extension required. Test tools stay in this separate disposable build stage.
 FROM python-installed AS pyyaml-sdk
-RUN python -m pip install --no-cache-dir --report /app/pyyaml-test-sdk-installation-report.json pytest==9.1.1
+RUN python -m pip install --no-cache-dir --report /app/pyyaml-test-sdk-installation-report.json pytest==9.1.1 pluggy==1.7.0 iniconfig==2.3.1
+
+FROM scratch AS pyyaml-test-tools-export
+# Full installed package directories, metadata/licences and both CLI scripts.
+# No PyYAML or other runtime distribution is exported into this test-only bundle.
+COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/_pytest/ /lib/python3.15/site-packages/_pytest/
+COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/pytest/ /lib/python3.15/site-packages/pytest/
+COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/py.py /lib/python3.15/site-packages/py.py
+COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/__pycache__/py.cpython-315.pyc /lib/python3.15/site-packages/__pycache__/py.cpython-315.pyc
+COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/pluggy/ /lib/python3.15/site-packages/pluggy/
+COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/iniconfig/ /lib/python3.15/site-packages/iniconfig/
+COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/pytest-9.1.1.dist-info/ /lib/python3.15/site-packages/pytest-9.1.1.dist-info/
+COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/pluggy-1.7.0.dist-info/ /lib/python3.15/site-packages/pluggy-1.7.0.dist-info/
+COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/iniconfig-2.3.1.dist-info/ /lib/python3.15/site-packages/iniconfig-2.3.1.dist-info/
+COPY --from=pyyaml-sdk /opt/hai-venv/bin/pytest /opt/hai-venv/bin/py.test /bin/
+COPY --from=pyyaml-sdk /app/pyyaml-test-sdk-installation-report.json /installation-report.json
 
 FROM python-installed AS python-dependencies
 RUN python -m pip uninstall --yes pip
