@@ -60,7 +60,18 @@ def main():
         'botocore':'1.43.118+hai.dateutil3.1','filelock':'4.2.4'}
     if any(versions.get(k)!=v for k,v in expected.items()):
         raise RuntimeError('Mini-SWE and its source-bound parent identities differ')
+    import yaml
+    import yaml._yaml
+    yaml_extension=Path(yaml._yaml.__file__).resolve(strict=True)
+    if (not yaml.__with_libyaml__ or versions.get('pyyaml')!='6.0.3'
+            or not yaml_extension.is_relative_to(Path('/opt/hai-venv'))
+            or yaml._yaml.get_version_string()!='0.2.5'):
+        raise RuntimeError('The final runtime must preserve the current real PyYAML/LibYAML native feature')
+    yaml_native={'extension_path':str(yaml_extension),
+        'extension_sha256':hashlib.sha256(yaml_extension.read_bytes()).hexdigest(),
+        'libyaml_version':yaml._yaml.get_version_string(), 'required_native_feature_present':True}
     print(json.dumps({'actual':actual,'os_release':release,'installed_OS_packages':packages,
+        'pyyaml_native':yaml_native,
         'python_distributions':distributions,'all_native_extension_sha256':modules,
         'stdlib_module_names':sorted(sys.stdlib_module_names),'native_provenance':provenance,
         'source_file_sha256':{name:hashlib.sha256((Path('/app')/name).read_bytes()).hexdigest()

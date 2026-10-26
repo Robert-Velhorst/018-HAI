@@ -1,0 +1,73 @@
+name: Mini-SWE PyYAML native SDK
+
+on:
+  push:
+    branches: [fix/hai-miniswe-pyyaml-native-20261026]
+
+permissions:
+  contents: read
+
+jobs:
+  original-sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.1'
+      - name: Bind the complete current project source
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          mkdir -p "$RUNNER_TEMP/hai-pyyaml-reports"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          files=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          receipt={'head':os.environ['GITHUB_SHA'],
+            'tracked_file_sha256':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest()
+              for p in files if p and Path(p).is_file()},
+            'new_application_cases_authored':False}
+          (Path(os.environ['RUNNER_TEMP'])/'hai-pyyaml-reports/source-identity.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          PY
+      - name: Verify complete public PyYAML source and original cases
+        run: python scripts/prepare_pyyaml_sdk_source.py --output "$RUNNER_TEMP/hai-pyyaml-publisher"
+      - name: Prepare existing source-bound wheels and unchanged vendor cases
+        env:
+          HAI_MINISWE_PREPARATION: ${{ runner.temp }}/hai-miniswe-runtime
+        run: |
+          set -euo pipefail
+          python scripts/resolve_runner_lock_metadata.py --runner miniswe-runner --output "$HAI_MINISWE_PREPARATION"
+          python services/miniswe-runner/compat/prepare_runtime_context.py --output "$HAI_MINISWE_PREPARATION"
+      - name: Compile required LibYAML extension in the real runtime installation
+        run: |
+          set -euo pipefail
+          docker build --progress=plain --build-context hai-native-source=services/native-python-runtime \
+            --build-context "hai-miniswe-wheels=$RUNNER_TEMP/hai-miniswe-runtime/inputs" \
+            --file services/miniswe-runner/Dockerfile --target pyyaml-sdk \
+            --tag hai-miniswe-pyyaml-sdk:ci services/miniswe-runner \
+            2>&1 | tee "$RUNNER_TEMP/hai-pyyaml-reports/sdk-build.log"
+      - name: Run original full default publisher suite and smoke without network
+        run: |
+          set -euo pipefail
+          # This is an empty disposable public-fixture reports directory.
+          chmod 0777 "$RUNNER_TEMP/hai-pyyaml-reports"
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 4g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=2g \
+            --env HAI_DISPOSABLE_PUBLIC_SDK=1 --env RUNNER_ENVIRONMENT --env GITHUB_SHA \
+            --env PYTHONDONTWRITEBYTECODE=1 \
+            --mount "type=bind,src=$RUNNER_TEMP/hai-pyyaml-publisher,dst=/publisher-src,readonly" \
+            --mount "type=bind,src=$RUNNER_TEMP/hai-pyyaml-reports,dst=/reports" \
+            --mount "type=bind,src=$PWD/scripts/run_pyyaml_original_sdk.py,dst=/review/run_pyyaml_original_sdk.py,readonly" \
+            --entrypoint python hai-miniswe-pyyaml-sdk:ci -I /review/run_pyyaml_original_sdk.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: miniswe-pyyaml-native-original-sdk
+          path: ${{ runner.temp }}/hai-pyyaml-reports/
+          retention-days: 7
+          if-no-files-found: error
