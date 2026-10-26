@@ -1,0 +1,39 @@
+{
+  "publisher": "nodejs/node",
+  "tag": "v26.12.1",
+  "commit": "bc2e01dcf6acd5cf7d169b5f26cf89abaaeb41f1",
+  "tag_object_sha": "998bb99d9c0d6bcdb2ef1fe9d3583bf9bfbd8ccd",
+  "tag_signer_fingerprint": "5BE8A3F6C8A5C01D106C0AD820B1A390B168D356",
+  "official_key_repository_commit": "481637f813e912c4aa3622d7964ab426c97b8e8d",
+  "signer_key_sha256": "5115095e2f8010c75da052ecb1cfb3af630e084f0f8daa93a863557b01b0f90a",
+  "active_keyring_sha256": "140f2ad5260fd62773b6243ce8e1d3009645d558f121b8262c55e383dc285932",
+  "expected_python": "3.15.1",
+  "expected_openssl": "4.1.0",
+  "expected_sqlite": "3.54.1",
+  "rust_toolchain": "1.99.1",
+  "publisher_sqlite_gyp_sha256": "66d47d8ed22d8828d372f7b611cdd05d4636a1c644d26d4be72f7f1faddcd665",
+  "all_original_Node_SQLite_defines": [
+    "SQLITE_DEFAULT_MEMSTATUS=0",
+    "SQLITE_ENABLE_COLUMN_METADATA",
+    "SQLITE_ENABLE_DBSTAT_VTAB",
+    "SQLITE_ENABLE_FTS3",
+    "SQLITE_ENABLE_FTS3_PARENTHESIS",
+    "SQLITE_ENABLE_FTS5",
+    "SQLITE_ENABLE_GEOPOLY",
+    "SQLITE_ENABLE_MATH_FUNCTIONS",
+    "SQLITE_ENABLE_PERCENTILE",
+    "SQLITE_ENABLE_PREUPDATE_HOOK",
+    "SQLITE_ENABLE_RBU",
+    "SQLITE_ENABLE_RTREE",
+    "SQLITE_ENABLE_SESSION"
+  ],
+  "retained_bundled_source_versions": {
+    "OpenSSL": "3.5.9",
+    "SQLite": "3.54.0",
+    "npm": "11.20.0",
+    "ICU": "78.3",
+    "undici": "8.12.2",
+    "amaro": "1.1.11"
+  },
+  "all_bundled_components_independently_latest": false
+}
