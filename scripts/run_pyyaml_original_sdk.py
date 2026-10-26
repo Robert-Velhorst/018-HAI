@@ -1,6 +1,8 @@
 """Run original public PyYAML cases only on a disposable hosted SDK image."""
 from pathlib import Path
 import argparse
+import base64
+import csv
 import hashlib
 import importlib.metadata
 import importlib.util
@@ -39,15 +41,42 @@ def main():
             raise ValueError('Expected the immutable final runtime image and non-root user')
         bundle = Path('/review/pytest-sdk')
         site = bundle / 'lib/python3.15/site-packages'
-        expected = {'_pytest', 'pytest', 'py.py', 'pluggy', 'iniconfig', 'pytest-9.1.1.dist-info',
+        expected = {'_pytest', 'pytest', 'py.py', '__pycache__', 'pluggy', 'iniconfig', 'pytest-9.1.1.dist-info',
             'pluggy-1.7.0.dist-info', 'iniconfig-2.3.1.dist-info'}
         if {p.name for p in site.iterdir()} != expected:
             raise ValueError('Test bundle must not supply PyYAML or other runtime packages')
         if {p.name for p in (bundle / 'bin').iterdir()} != {'pytest', 'py.test'}:
             raise ValueError('Both original SDK CLI scripts must be retained')
+        if {p.name for p in (site / '__pycache__').iterdir()} != {'py.cpython-315.pyc'}:
+            raise ValueError('Only pytest-owned top-level bytecode belongs in the bundle')
         for path in sorted(bundle.rglob('*')):
             if path.is_symlink():raise ValueError('Unexpected test-bundle link')
             if path.is_file():bundle_hashes[str(path.relative_to(bundle))] = hashlib.sha256(path.read_bytes()).hexdigest()
+        recorded = set()
+        for distribution in ['pytest-9.1.1', 'pluggy-1.7.0', 'iniconfig-2.3.1']:
+            record_path = site / (distribution + '.dist-info/RECORD')
+            for row in csv.reader(record_path.read_text().splitlines()):
+                if len(row) != 3:
+                    raise ValueError('Unexpected installed SDK RECORD row')
+                relative, digest, size = row
+                path = (site / relative).resolve(strict=True)
+                if not path.is_relative_to(bundle) or not path.is_file():
+                    raise ValueError('Installed SDK RECORD escapes or omits a payload')
+                name = str(path.relative_to(bundle))
+                if name in recorded:
+                    raise ValueError('Installed SDK distributions overlap')
+                recorded.add(name)
+                data = path.read_bytes()
+                if size and len(data) != int(size):
+                    raise ValueError('Installed SDK payload size differs from RECORD')
+                if digest:
+                    actual = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b'=').decode()
+                    if digest != 'sha256=' + actual:
+                        raise ValueError('Installed SDK payload hash differs from RECORD')
+                elif path != record_path and not path.name.endswith('.pyc'):
+                    raise ValueError('Unexpected unhashed installed SDK payload')
+        if recorded != set(bundle_hashes) - {'installation-report.json'}:
+            raise ValueError('Complete installed SDK RECORD inventory must be retained')
         sys.path.insert(0, str(site))
         if not Path(importlib.util.find_spec('pytest').origin).is_relative_to(site):
             raise ValueError('The reviewed test-tool package must supply pytest')
