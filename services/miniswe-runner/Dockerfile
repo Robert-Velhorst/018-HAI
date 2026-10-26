@@ -31,7 +31,7 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
        python3 build-essential libbluetooth-dev perl pkg-config libbz2-dev \
        libexpat1-dev libffi-dev libgdbm-dev libgdbm-compat-dev liblzma-dev libncurses-dev \
-       libreadline-dev libssl-dev libmpdec-dev tk-dev uuid-dev zlib1g-dev libzstd-dev \
+       libreadline-dev libssl-dev libmpdec-dev tk-dev uuid-dev zlib1g-dev libzstd-dev libyaml-dev \
     && groupadd --gid 10001 native-builder \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin native-builder \
     && chown 10001:10001 /native-build
@@ -46,7 +46,7 @@ COPY --from=native-build /native-build/out/ /
 COPY --from=native-build /native-build/install/ /installed/
 COPY --from=native-build /native-build/sources.json /sources.json
 
-FROM native-build AS python-dependencies
+FROM native-build AS python-installed
 USER 0:0
 RUN cp -a /native-build/install/usr/local/. /usr/local/ \
     && dpkg -i /native-build/out/hai-openssl4.deb /native-build/out/hai-sqlite3.deb \
@@ -66,9 +66,16 @@ USER 10001:10001
 ENV HOME=/tmp
 RUN /usr/local/bin/python3.15 -m venv /opt/hai-venv
 ENV VIRTUAL_ENV=/opt/hai-venv PATH=/opt/hai-venv/bin:/usr/local/bin:$PATH
-RUN python -m pip install --no-cache-dir --only-binary numpy,scipy,pandas,pyarrow,tokenizers \
-    --report /app/installation-report.json --find-links /opt/hai-wheels --require-hashes -r requirements.lock \
-    && python -m pip uninstall --yes pip
+RUN PYYAML_FORCE_CYTHON=1 PYYAML_FORCE_LIBYAML=1 python -m pip install --verbose --no-cache-dir --only-binary numpy,scipy,pandas,pyarrow,tokenizers \
+    --report /app/installation-report.json --find-links /opt/hai-wheels --require-hashes -r requirements.lock
+
+# The SDK check inherits exactly the runtime installation, with its native
+# extension required. Test tools stay in this separate disposable build stage.
+FROM python-installed AS pyyaml-sdk
+RUN python -m pip install --no-cache-dir --report /app/pyyaml-test-sdk-installation-report.json pytest==9.1.1
+
+FROM python-installed AS python-dependencies
+RUN python -m pip uninstall --yes pip
 USER 0:0
 RUN /usr/local/bin/python3.15 -m pip uninstall --yes pip
 RUN /usr/local/bin/python3.15 -I - <<'PY'
