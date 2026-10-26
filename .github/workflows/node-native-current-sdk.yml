@@ -58,7 +58,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run --rm --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges \
+          docker run --rm --init --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges \
             --memory 6g --cpus 2 --pids-limit 1024 \
             --env RUNNER_ENVIRONMENT --env GITHUB_SHA --env HAI_DISPOSABLE_NATIVE_NODE_SDK=1 \
             --mount "type=bind,src=$HAI_NODE_REPORTS,dst=/reports" hai-node-native-sdk:ci \
