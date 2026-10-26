@@ -30,6 +30,13 @@ inspection can compare the tested extension and executable to the archive.
 No network, operator-data/database mount, root runtime or new permissions are
 introduced; execution uses the existing disposable hosted non-root boundary.
 
+The initial hosted attempt at dd87cc4 built and scanned the final image but
+stopped before collecting publisher cases: the Docker local export's parent
+directories were inaccessible to UID10001. The workflow now grants read/search
+access only to that public test-tool export before mounting it read-only.
+Runtime UID, image definition, source cases, assertions and qualification gates are
+unchanged. The failed attempt remains evidence; it does not qualify the suite.
+
 Local preparation is limited to AST, source/archive/hash and whitespace checks.
 No application/compiler/package-manager/scanner/vendor helper or case executes
 locally. Hosted success and independent source/tool/image reconciliation remain

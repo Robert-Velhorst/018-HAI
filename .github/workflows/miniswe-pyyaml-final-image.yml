@@ -103,6 +103,9 @@ jobs:
             --file services/miniswe-runner/Dockerfile.ubuntu --target pyyaml-test-tools-export \
             --output "type=local,dest=$HAI_UBUNTU_NATIVE/reports/pyyaml-test-tools" services/miniswe-runner \
             2>&1 | tee "$HAI_UBUNTU_NATIVE/reports/pyyaml-test-tool-build.log"
+          # Docker's local exporter may create owner-only parent directories.
+          # This bundle contains only public SDK files and remains mounted read-only.
+          chmod -R a+rX "$HAI_UBUNTU_NATIVE/reports/pyyaml-test-tools"
           python scripts/prepare_pyyaml_sdk_source.py --output "$RUNNER_TEMP/hai-pyyaml-final-publisher"
       - name: Run all original PyYAML cases in the actual complete final runtime
         id: pyyaml_cases
