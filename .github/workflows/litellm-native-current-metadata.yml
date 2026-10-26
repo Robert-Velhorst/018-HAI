@@ -1,0 +1,47 @@
+name: LiteLLM current native dependency resolution
+
+on:
+  push:
+    branches: [fix/hai-litellm-native-current-20261026]
+
+permissions:
+  contents: read
+
+jobs:
+  complete-resolution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.1'
+      - name: Bind all current project source before SDK resolution
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          mkdir -p "$RUNNER_TEMP/hai-litellm-native-reports"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          files=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          record={'head':os.environ['GITHUB_SHA'],'tracked_file_sha256':{
+              p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in files if p and Path(p).is_file()},
+              'metadata_resolution_not_compilation_or_original_case_execution':True}
+          (Path(os.environ['RUNNER_TEMP'])/'hai-litellm-native-reports/project-source-identity.json').write_text(json.dumps(record,indent=2)+'\n')
+          PY
+      - name: Verify complete publisher source and reviewed current manifest overlays
+        run: python scripts/prepare_litellm_native_current_source.py
+      - name: Install the reviewed public stable Rust SDK normally
+        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+      - name: Resolve the full normal Cargo graph and require current stable public crates
+        run: python scripts/resolve_litellm_native_current_metadata.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: litellm-native-current-complete-resolution
+          path: ${{ runner.temp }}/hai-litellm-native-reports/
+          retention-days: 7
+          if-no-files-found: error

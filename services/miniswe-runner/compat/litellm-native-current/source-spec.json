@@ -1,0 +1,268 @@
+{
+  "publisher": "BerriAI/litellm",
+  "commit": "ea7ca16dbc3904d9e59a9505f379a2ca3091821f",
+  "archive_url": "https://codeload.github.com/BerriAI/litellm/tar.gz/ea7ca16dbc3904d9e59a9505f379a2ca3091821f",
+  "archive_sha256": "017210ac6e994de3bc007f578e0f86256a124a54a04e80cf88a5ac5d3e5e659e",
+  "source_blob_count": 14294,
+  "source_total_bytes": 225828829,
+  "rust_toolchain": "1.99.1",
+  "direct_manifest_version_edits": 126,
+  "workspace_minimum_Rust_raised_from": "1.88",
+  "workspace_minimum_Rust_raised_to": "1.99.1",
+  "overlays": [
+    {
+      "path": "litellm-rust/Cargo.toml",
+      "original_sha256": "d6f9e1a82c62e26614b609b129ae9f3ef42616984c8032c37ab52d6558c27cee",
+      "proposed_sha256": "fba657848372ea892234c147476710b8ddca177bcb7983f25dc9b9dd5f7f1576"
+    },
+    {
+      "path": "litellm-rust/crates/auth-aws/Cargo.toml",
+      "original_sha256": "be21a293494943a63a35bdef31d80b6acf20e17dd2be949f4d2a1f02b5712d10",
+      "proposed_sha256": "276da90d4e4d8adb9795bf459069e914930e596e79f33f7a126291e69d3c5fe2"
+    },
+    {
+      "path": "litellm-rust/crates/auth-azure/Cargo.toml",
+      "original_sha256": "c6683cc5c6244662c49b255eb6d2c8eed6b40f81e069fd775acd3c493978e45a",
+      "proposed_sha256": "9964200ef673f67e915f61087c9b25f07628491837e1c0f1814867c9695f308a"
+    },
+    {
+      "path": "litellm-rust/crates/cache-azure-blob/Cargo.toml",
+      "original_sha256": "d39edf450ad907a7808adc78b62b0ff8f7899f4ccb6ff5bfd35ca6620507aed8",
+      "proposed_sha256": "eed7a3bbad0cf437182da1627542a569900fa0e7ba7f99a65de0a00a274f517f"
+    },
+    {
+      "path": "litellm-rust/crates/cache-disk/Cargo.toml",
+      "original_sha256": "89469156979c73b1d76803513181d9da76b1f472e879c92c2b670a67588c50f6",
+      "proposed_sha256": "bcd9b9f4011311dd3c7e8438b65d62a1c0627d6b423425106873d437113837d4"
+    },
+    {
+      "path": "litellm-rust/crates/cache-qdrant-semantic/Cargo.toml",
+      "original_sha256": "ccee367dbf500f79207efe84cf2e160c5495787f015870c649becf285f308f0e",
+      "proposed_sha256": "838990f44d3e4c798204147b483ffd80859fbb5678c544c1b78a6d4e8f98c1a2"
+    },
+    {
+      "path": "litellm-rust/crates/cache-redis-semantic/Cargo.toml",
+      "original_sha256": "013d6caa123a1da8a9555b47c10ab4960e9cbcf8d5332750dc42ebc54f59dd78",
+      "proposed_sha256": "e295f73b59f559b5979f8ec14c328b657d572b126b4f007fd185fd973a94b18d"
+    },
+    {
+      "path": "litellm-rust/crates/cache-redis/Cargo.toml",
+      "original_sha256": "465a5cbd28a3da88ff0d033462dcf582070870c16f9b79ed2a393b1604bc784a",
+      "proposed_sha256": "1bd8f9a894b52d71f0ff04686829121742c4677f631618bba14d18f0cbc60022"
+    },
+    {
+      "path": "litellm-rust/crates/cache-response/Cargo.toml",
+      "original_sha256": "033822f4334318c2bee64bdac13d2036f61b37851e261c47ed106a7ba6ab33b1",
+      "proposed_sha256": "3ac8f7b0924bc867e9e2023e14615fc1e1262296c524c707f76991fc8026bb53"
+    },
+    {
+      "path": "litellm-rust/crates/cache-s3/Cargo.toml",
+      "original_sha256": "056cc5d96d1902f706b73d037bcdf368139d536cf2ea5d1c91f1241fe6354931",
+      "proposed_sha256": "600fe069d988cd777e7415e709cfbdfab5c16edd7a76e87cdf88a45af2d15283"
+    },
+    {
+      "path": "litellm-rust/crates/cache-valkey-semantic/Cargo.toml",
+      "original_sha256": "060aae253f3799e021e0622ae4333935d5e6dc2e52151443358079ad975341fe",
+      "proposed_sha256": "e976ddcca7ef4d8728abece9cb0b0c3b2e3ecbe0185cd0a9060cb6047efa4de8"
+    },
+    {
+      "path": "litellm-rust/crates/core-utils/Cargo.toml",
+      "original_sha256": "a95689895702ccb5a9075a21450b7ac0b0aa31c1c0bb4970c6564c4449e43efe",
+      "proposed_sha256": "f06493b2c19608f2e526653e5be460baaf847cd5dbf7ecf6bb8fb5c19d4de839"
+    },
+    {
+      "path": "litellm-rust/crates/framer/Cargo.toml",
+      "original_sha256": "848cfadad3b8893ce20239a9c1ac4bfe4f4681b55a8104fad453f78e2f9e8d6c",
+      "proposed_sha256": "ae9bc0742eaaff85692651a4f4afac4a791e9e6ebc96d1d0faf7c4a47cceb97b"
+    },
+    {
+      "path": "litellm-rust/crates/gateway-mcp/Cargo.toml",
+      "original_sha256": "526eda8c52b7e46059240d09f759a9521cec0eff641011b0f81e1fb3b450af44",
+      "proposed_sha256": "625a3c281f98180471b7138a90a836deafc9e9d39e2898a3a4c1e0d974bd697d"
+    },
+    {
+      "path": "litellm-rust/crates/gateway-ui/Cargo.toml",
+      "original_sha256": "020e773ace92c4fc927e127bbc2d674dffe54cebce049f683c9a0602b2556789",
+      "proposed_sha256": "d5c22bb965bd450b003521060045d511caacae4f51a8a79107c613107c776638"
+    },
+    {
+      "path": "litellm-rust/crates/gateway/Cargo.toml",
+      "original_sha256": "23d9510118e0ef239fbdd605c6f461c6914b4531a6f59a8366381f91ffb90946",
+      "proposed_sha256": "13970041a4d8ee60a621d3e82cbfb344290185e81697fc522a80a01172267160"
+    },
+    {
+      "path": "litellm-rust/crates/http/Cargo.toml",
+      "original_sha256": "a85b532fc1261bf89cc7459b0a2e01b59960844ef6a1990c3fabcb861b723248",
+      "proposed_sha256": "6c0653c5e462113e8bdce09db8b405fd5c3ca6469bef0f80fe9a2a915c3be9b2"
+    },
+    {
+      "path": "litellm-rust/crates/inference/Cargo.toml",
+      "original_sha256": "c928ed2333501e16a51e866124f5c6c43fdd96432c72382a3e60a93056c0041d",
+      "proposed_sha256": "196af6574350b2cb72d993821ae3da18c76f395ba6be820143731ea7a7eb0172"
+    },
+    {
+      "path": "litellm-rust/crates/lens/Cargo.toml",
+      "original_sha256": "0cf2d0757288b35968c689572626121c9351ecf5452207b9917897359aa2e587",
+      "proposed_sha256": "631a6cd5a992a4af6201bd337ec9cd6ffc4462756358c7fc04fffb5b1b70bcd9"
+    },
+    {
+      "path": "litellm-rust/crates/llms-types/Cargo.toml",
+      "original_sha256": "7dbbba1ad8fa60295aefc0b406f34aa1561efecfe8e0d7a74ede9d85031ff60f",
+      "proposed_sha256": "252cb305aa7f3c864eafa23da9c53bff469b47bbd78604087c3ee06889290df8"
+    },
+    {
+      "path": "litellm-rust/crates/llms/Cargo.toml",
+      "original_sha256": "33385f830fe1301ef53165c35685bf7f38e28fb4dccbd8a06e24ef9d67bde4ef",
+      "proposed_sha256": "32d4aaece36d52406a5415bf3938d39fd4b772ea84897abb51803eaea0edb542"
+    },
+    {
+      "path": "litellm-rust/crates/model-catalog/Cargo.toml",
+      "original_sha256": "3553301f6d01de9d66f10b7d02504294427d3c04861c94910c0476cc0488141a",
+      "proposed_sha256": "16330deebd352b7447de6c2ed837000327d03e683082f3959318172dc8f3763d"
+    },
+    {
+      "path": "litellm-rust/crates/python-bridge/Cargo.toml",
+      "original_sha256": "3a009b916b9456ccbad14e857235bb206b38bef2e8bc55f2f9cc42b821d2c143",
+      "proposed_sha256": "8a740ba102d4c0a24934d4d91da7f44a29d4d300f2af3a098a3ca75ba98f2278"
+    },
+    {
+      "path": "litellm-rust/crates/python-compat/Cargo.toml",
+      "original_sha256": "d1d5880b9dcc7f6f168267d1c1972c3e732a084e16786357037a69a509ac9560",
+      "proposed_sha256": "9f102ff45718a956c1c9c50f21ed428b84cb28c349103ebc7fe66c2537464f95"
+    },
+    {
+      "path": "litellm-rust/crates/secrets-aws/Cargo.toml",
+      "original_sha256": "5fbf099b4cc88795e2064db827f1b4249551e261ea1b602fcfc0a15a09d4e29a",
+      "proposed_sha256": "df33fda97f1083dc059299a7f3556f1a1862df5949a7a58da48058ccc00482a4"
+    },
+    {
+      "path": "litellm-rust/crates/secrets-azure/Cargo.toml",
+      "original_sha256": "b286dd533cd02f5296a98ea415a2635fbc4282b221044775125c03481807727c",
+      "proposed_sha256": "043634aa7d318e6b8fb2e9d6345fc02bcaa38f58fececc4efabc98778effe701"
+    },
+    {
+      "path": "litellm-rust/crates/secrets-cyberark/Cargo.toml",
+      "original_sha256": "8e1215a7ea85ce9af2826d297e00e4be921df32427f4c17141957d6b9a2467b9",
+      "proposed_sha256": "c4532f4799d0eda96687c9c466346a87421c3814c0455ece6d738fe6d2adce20"
+    },
+    {
+      "path": "litellm-rust/crates/secrets-google/Cargo.toml",
+      "original_sha256": "bdde683084485a2d39bc0931bd69ab0b447721e298ff3b2d8f2368ec327a9831",
+      "proposed_sha256": "89ad9ac02419f131eb0bf302e73f7bb48ec29fb4da67598d6656ef1edd98fbed"
+    },
+    {
+      "path": "litellm-rust/crates/secrets-hashicorp/Cargo.toml",
+      "original_sha256": "03cc6708c1f6ca3ffdf9c1861558085678c111a11aa280136c502b469c02ff13",
+      "proposed_sha256": "b99974b22a6f5ca073717fe11ca863164880516b6344f0d188cc56da91a571a3"
+    },
+    {
+      "path": "litellm-rust/crates/secrets/Cargo.toml",
+      "original_sha256": "1ac2afd26fd8a8cdef0969505e462aaa44d7b4c49221f049dea3d571f7fa8c98",
+      "proposed_sha256": "bd73d60632cfb6d51fd41ec1028847ea45a5c5cf729c9021e01df635a1d070fc"
+    },
+    {
+      "path": "litellm-rust/crates/testkit/Cargo.toml",
+      "original_sha256": "22ae2f5b62e55ee28a36f1849830fdcc587e5bf06c8b0cff6b54ee30c555efb3",
+      "proposed_sha256": "00048e869a2fdd621f2cb36fa635d61c9666fab3b30aaa105e251eff2c43a61f"
+    },
+    {
+      "path": "litellm-rust/crates/token-counter-tiktoken/Cargo.toml",
+      "original_sha256": "692643d567d953533394d439ac154a46fd034e70c85a634fbff83ade38aba4ab",
+      "proposed_sha256": "537871f2352f22c7c273b12ec28fac69e33115ee0e9affc54c2edd700b488800"
+    },
+    {
+      "path": "litellm-rust/crates/token-counter/Cargo.toml",
+      "original_sha256": "ba71fc9344ea02bf2fcde671698106987531baf611f84e4084873603f8a0ce5d",
+      "proposed_sha256": "f3069a93c3ba626fb3b6d2249febb23714f704502867e2219dcefbe343a2f927"
+    },
+    {
+      "path": "litellm-rust/crates/traces-clickhouse/Cargo.toml",
+      "original_sha256": "037a44d4599d95a1c6a1206d2937c188e3e91eac6f0f0c438eace23b6f6225d7",
+      "proposed_sha256": "930a49390cf3a37b1606b110f1c620da672be1370b4b8f1179e12df7e1d86908"
+    },
+    {
+      "path": "litellm-rust/crates/traces/Cargo.toml",
+      "original_sha256": "1a86185bd303fca1dbd97525053fdfeb444a843bea08b124ded286fe1a69c57a",
+      "proposed_sha256": "da82628a0f18a6db9f9f49dd7d1cb2dc975e83f1948d91c05f125ec4d27c59c4"
+    },
+    {
+      "path": "litellm-rust/crates/tracing/Cargo.toml",
+      "original_sha256": "c3c5624d4cd466f30d5e1928f1a1369df10ff67724654bd7efc53be32f1d8f09",
+      "proposed_sha256": "924a36c5901001601c61b37ce051321627d543e2666455e21e2553f541353de2"
+    },
+    {
+      "path": "rust-toolchain.toml",
+      "original_sha256": "e879701472a698533f43f54989bbf5f3101eb0503472159d32633f3bb8a13fdf",
+      "proposed_sha256": "d13306be0ecda81ce779baa290ffb417380d525928477f16200884b5169cca33"
+    },
+    {
+      "path": "litellm-rust/crates/host-python/Cargo.toml",
+      "original_sha256": "9e700ff07bb05f853ee05613440a3c9137fdf98ec912860c69b0621dd0bf81ae",
+      "proposed_sha256": "e43b593263ac8404cd68d67f83e796c691a1df7b27f5fac094cd38b83b2bf1e8"
+    }
+  ],
+  "canonical_runtime_or_original_SDK_guard_adoption": false,
+  "publisher_license_sha256": "b170d6bf8e8835dd357e011681db028f4d51e2fb0ea892058f56e01fb39b8273",
+  "parent_ports": [
+    {
+      "name": "pythonize",
+      "public_version": "0.29.0",
+      "private_version": "0.29.0+hai.pyo330.1",
+      "archive_url": "https://static.crates.io/crates/pythonize/pythonize-0.29.0.crate",
+      "archive_sha256": "6ec376e1216e0c929a74964ce2020012a1a39f32d80e78aa688721219ea7fb89",
+      "input_directory": "parents/pythonize",
+      "destination": "litellm-rust/compat/pythonize",
+      "original_payload_sha256": {
+        ".cargo_vcs_info.json": "4686ec600ec18fa0acca286fb042b92c756a25b86521a69a2ca981d4c79b97d5",
+        ".github/FUNDING.yml": "19a135ac466985e856d0f7944863c30c6bea81c6cf7759f91b29e1fcbd323932",
+        ".github/dependabot.yml": "59fcc42aabbfdfda3298afd61511eae169571eb49e5bc6ceb993eea0464c4250",
+        ".github/workflows/ci.yml": "8ff5a9d590bb5b7854771b37a87be9b6168ce56a698181f784afe612c7dcf4ed",
+        ".github/workflows/release.yml": "ff0b51e05d1d9255fe89d57bb2d52ab88a1a891ee8d46f9930b82acefd022b9d",
+        ".gitignore": "f5fece39944eee2dd58689aa33811a0b028136e064e4d797f399aa15e7ab7f99",
+        "CHANGELOG.md": "2657631886031e613b36e6b8e6786e37505976a0b8db8a5bd8d168cf5cd5e5bf",
+        "Cargo.lock": "4a29d0c118b5f475a95f2117e2fdbeadc48944e142a021ec1e5e3807ac03b1e0",
+        "Cargo.toml": "873bd5fd4e63ebcf487c5f32e67e2b88e0975f017201086a21e2481da01653cd",
+        "Cargo.toml.orig": "a3ec8448da81ceb0d51b854a6ef2c3f802e2847cf87552f1e2761aa5802e8dcd",
+        "LICENSE": "49a358eef117e2e5ffadd0df4e8243447adbcd9894f9dd8b4180775c5f88c7ce",
+        "README.md": "a8a553d1d3a247b0f77d8d14fb6d31c786cadaef57b26dfd373037b027ce32b3",
+        "src/de.rs": "24c905ed53e9f60ed83588d8c67275ad2fb5cdd40c374200d1cadff045ec6ddf",
+        "src/error.rs": "9d27b71ebd397c44c504dc71acddf92090205e3c7c809a69ec9b7751abab0c27",
+        "src/lib.rs": "bf65bccfa983be5873430089df19287d2bcc679cead190f5545895ff210e5f22",
+        "src/ser.rs": "40f0d55f5563967c57a7d67d6efca793f5102e3e063c2546ed1fe009fb09a660",
+        "tests/test_arbitrary_precision.rs": "c1e0d51b11f4260f1761341f2a25345fed6f25325a03a387e0aeaf3a43c65ebe",
+        "tests/test_collections.rs": "ef1a79c9efc5d6316d58513d9bdf7e913d312bc026cd23a9767d1cc664e97e0e",
+        "tests/test_custom_types.rs": "a81a624260c52d69b7ce891fff62b6ec588b3d3337383e3a02bdd04fd4136585",
+        "tests/test_structs.rs": "eff023ab624e16f266075e5733575a17d423920466a9b8b46a9b06f49c4a7ad5",
+        "tests/test_with_serde_path_to_err.rs": "94fb4535c2935d56a782455e7ecdd127fae205ed9c10938a96b137529f59604c"
+      },
+      "proposed_payload_sha256": {
+        ".cargo_vcs_info.json": "4686ec600ec18fa0acca286fb042b92c756a25b86521a69a2ca981d4c79b97d5",
+        ".github/FUNDING.yml": "19a135ac466985e856d0f7944863c30c6bea81c6cf7759f91b29e1fcbd323932",
+        ".github/dependabot.yml": "59fcc42aabbfdfda3298afd61511eae169571eb49e5bc6ceb993eea0464c4250",
+        ".github/workflows/ci.yml": "8ff5a9d590bb5b7854771b37a87be9b6168ce56a698181f784afe612c7dcf4ed",
+        ".github/workflows/release.yml": "ff0b51e05d1d9255fe89d57bb2d52ab88a1a891ee8d46f9930b82acefd022b9d",
+        ".gitignore": "f5fece39944eee2dd58689aa33811a0b028136e064e4d797f399aa15e7ab7f99",
+        "CHANGELOG.md": "2657631886031e613b36e6b8e6786e37505976a0b8db8a5bd8d168cf5cd5e5bf",
+        "Cargo.lock": "4a29d0c118b5f475a95f2117e2fdbeadc48944e142a021ec1e5e3807ac03b1e0",
+        "Cargo.toml": "ac6e4b1ca01f08085ed35494217a7deea39ee3cd5c567b1a7144512cdcdca705",
+        "Cargo.toml.orig": "e87493ee5786e788d3e2502cec793c6a63a9c22182cd4da2c28c4af98137aee3",
+        "LICENSE": "49a358eef117e2e5ffadd0df4e8243447adbcd9894f9dd8b4180775c5f88c7ce",
+        "README.md": "a8a553d1d3a247b0f77d8d14fb6d31c786cadaef57b26dfd373037b027ce32b3",
+        "src/de.rs": "24c905ed53e9f60ed83588d8c67275ad2fb5cdd40c374200d1cadff045ec6ddf",
+        "src/error.rs": "9d27b71ebd397c44c504dc71acddf92090205e3c7c809a69ec9b7751abab0c27",
+        "src/lib.rs": "bf65bccfa983be5873430089df19287d2bcc679cead190f5545895ff210e5f22",
+        "src/ser.rs": "40f0d55f5563967c57a7d67d6efca793f5102e3e063c2546ed1fe009fb09a660",
+        "tests/test_arbitrary_precision.rs": "c1e0d51b11f4260f1761341f2a25345fed6f25325a03a387e0aeaf3a43c65ebe",
+        "tests/test_collections.rs": "ef1a79c9efc5d6316d58513d9bdf7e913d312bc026cd23a9767d1cc664e97e0e",
+        "tests/test_custom_types.rs": "a81a624260c52d69b7ce891fff62b6ec588b3d3337383e3a02bdd04fd4136585",
+        "tests/test_structs.rs": "eff023ab624e16f266075e5733575a17d423920466a9b8b46a9b06f49c4a7ad5",
+        "tests/test_with_serde_path_to_err.rs": "94fb4535c2935d56a782455e7ecdd127fae205ed9c10938a96b137529f59604c"
+      },
+      "changed_files": [
+        "Cargo.toml",
+        "Cargo.toml.orig"
+      ],
+      "source_cases_helpers_assertions_and_license_unchanged": true
+    }
+  ]
+}
