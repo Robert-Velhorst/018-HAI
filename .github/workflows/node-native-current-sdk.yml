@@ -1,0 +1,73 @@
+name: Original Node SDK with current native providers
+
+on:
+  push:
+    branches: [ci/hai-node-current-native-sdk-20261026]
+
+permissions:
+  contents: read
+
+jobs:
+  node-native-sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.1'
+      - name: Bind complete project source before compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          reports="$RUNNER_TEMP/hai-node-native-sdk-reports"
+          mkdir -p "$reports"
+          chmod 0777 "$reports"
+          printf '%s\n' "HAI_NODE_REPORTS=$reports" >> "$GITHUB_ENV"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          names=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          record={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+            'tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+            'tracked_file_sha256':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in names if p and Path(p).is_file()},
+            'operator_data_read':False,'application_or_deployment_acceptance':False}
+          (Path(os.environ['RUNNER_TEMP'])/'hai-node-native-sdk-reports/source-identity.json').write_text(json.dumps(record,indent=2)+'\n')
+          PY
+      - name: Build unchanged complete current native support SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress=plain --build-context hai-native-source=services/native-python-runtime \
+            --file services/miniswe-runner/Dockerfile.ubuntu --target native-build \
+            --tag hai-node-native-support:ci services/miniswe-runner \
+            2>&1 | tee "$HAI_NODE_REPORTS/native-support-build.log"
+          docker image inspect hai-node-native-support:ci > "$HAI_NODE_REPORTS/native-support-image.json"
+      - name: Build isolated original Node SDK execution image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress=plain --file services/node-native-sdk/Dockerfile \
+            --tag hai-node-native-sdk:ci services/node-native-sdk \
+            2>&1 | tee "$HAI_NODE_REPORTS/node-SDK-image-build.log"
+          docker image inspect hai-node-native-sdk:ci > "$HAI_NODE_REPORTS/node-SDK-image.json"
+      - name: Verify signatures and run original configure build and CI cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges \
+            --memory 6g --cpus 2 --pids-limit 1024 \
+            --env RUNNER_ENVIRONMENT --env GITHUB_SHA --env HAI_DISPOSABLE_NATIVE_NODE_SDK=1 \
+            --mount "type=bind,src=$HAI_NODE_REPORTS,dst=/reports" hai-node-native-sdk:ci \
+            2>&1 | tee "$HAI_NODE_REPORTS/node-SDK-execution.log"
+      - name: Retain public source identities native diagnostics and original case reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: node-current-native-original-SDK
+          path: ${{ runner.temp }}/hai-node-native-sdk-reports/
+          retention-days: 7
+          if-no-files-found: error
