@@ -76,3 +76,32 @@ remains separately failed in V8's ICU79 regexp-table generator.
 
 References: [Docker init-process semantics](https://docs.docker.com/reference/cli/docker/container/run/#specify-an-init-process),
 [exact original failed run](https://github.com/Robert-Velhorst/018-HAI/actions/runs/40272188778).
+# Hosted privileged-port boundary correction
+
+The failed original `parallel/test-net-boundsocket` case at line96 checks that
+UID10001 cannot bind TCP port1. It is not the later missing-directory pipe
+case. The artifact's original publisher inventory records Git blob
+`2d11d0d4ba83f00db9cfcb3889965519314e6888` and SHA256
+`3fd3dcf5810792e72d3ff0100bf476ef6828df46bbc79d8f08a41e8a67150765`
+for this unchanged case file.
+
+Docker normally configures `net.ipv4.ip_unprivileged_port_start=0` for its
+private network namespace. That allows a non-root process to bind port1
+without CAP_NET_BIND_SERVICE. Linux documents1024 as the conventional
+boundary. This separate source correction explicitly selects1024 only for
+the disposable worker, retains dropped capabilities and UID/GID10001, and
+records the actual namespace setting, effective capability mask and PID1 name
+before SDK execution. Unexpected policy fails closed.
+
+This adds an operating-environment guard, not a new application case. No
+original publisher source, case, helper, assertion, fixture or selection is
+changed; no root/capability grant or host sysctl change is made. The current
+init-only worker at3dd7c13 remains a separate immutable experiment. The precise
+old namespace value was not retained, so the mismatch explanation remains an
+inference until current corrected metadata and the unchanged suite are read.
+The two TLS/X.509 failures, original skipped/TODO coverage and ICU79/V8
+compatibility remain unresolved.
+
+Sources: [Linux IP sysctls](https://docs.kernel.org/networking/ip-sysctl.html#ip-variables),
+[Docker namespaced sysctls](https://docs.docker.com/reference/cli/docker/container/run/#configure-namespaced-kernel-parameters-sysctls-at-runtime),
+[Docker daemon default](https://github.com/moby/moby/blob/master/daemon/oci_linux.go).

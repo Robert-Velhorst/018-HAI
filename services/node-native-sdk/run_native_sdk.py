@@ -98,6 +98,18 @@ def main():
             or release.get('VERSION_ID', '').strip('"') != '26.10'
             or not re.fullmatch('[0-9a-f]{40}', os.environ.get('GITHUB_SHA', ''))):
         raise RuntimeError('Use only the marked non-root hosted Ubuntu26.10 SDK')
+    status = dict(line.split(':', 1) for line in Path('/proc/self/status').read_text().splitlines() if ':' in line)
+    network_boundary = {
+        'effective_uid': os.geteuid(), 'effective_gid': os.getegid(),
+        'PID1_comm': Path('/proc/1/comm').read_text().strip(),
+        'effective_capabilities_hex': status['CapEff'].strip(),
+        'ip_unprivileged_port_start': int(Path('/proc/sys/net/ipv4/ip_unprivileged_port_start').read_text().strip()),
+        'expected_namespace_policy': 'Ports below1024 require privilege; original cases are unchanged.',
+        'host_sysctl_or_live_service_changed': False,
+    }
+    (REPORTS / 'sdk-network-namespace.json').write_text(json.dumps(network_boundary, indent=2) + '\n')
+    if network_boundary['ip_unprivileged_port_start'] != 1024 or int(status['CapEff'].strip(), 16) != 0:
+        raise RuntimeError('Require the bounded unprivileged worker with the conventional namespace port boundary')
     spec = json.loads((INPUTS / 'source-spec.json').read_text())
     if platform.python_version() != spec['expected_python']:
         raise ValueError('Keep the current real Python compiler version')
