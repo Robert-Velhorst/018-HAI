@@ -2,7 +2,7 @@ name: Original Node SDK with current native providers
 
 on:
   push:
-    branches: [ci/hai-node-current-native-sdk-20261026]
+    branches: [ci/hai-node-sdk-init-20261026]
 
 permissions:
   contents: read
