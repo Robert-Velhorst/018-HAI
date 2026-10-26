@@ -215,6 +215,69 @@ jobs:
           name: public-runner-version-${{ matrix.name }}
           path: ${{ runner.temp }}/hai-runner-version-${{ matrix.name }}
           if-no-files-found: warn
+      - name: Verify adopted Alpine source, native providers and all original container cases
+        if: contains(fromJSON('["fastmcp-bridge","guardrails-runner"]'), matrix.name)
+        shell: bash
+        env:
+          HAI_ALPINE_SERVICE: ${{ matrix.name }}
+          HAI_ALPINE_IMAGE: hai-${{ matrix.name }}:ci
+          HAI_SCAN_DIRECTORY: ${{ runner.temp }}/hai-image-security-${{ matrix.name }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HAI_SCAN_DIRECTORY/reports"
+          test "$(docker image inspect --format '{{.Config.User}}' "$HAI_ALPINE_IMAGE")" = '10001:10001'
+          cmp "services/$HAI_ALPINE_SERVICE/Dockerfile" "services/$HAI_ALPINE_SERVICE/Dockerfile.alpine"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          paths=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          record={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                  'tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+                  'tracked_file_sha256':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths if p and Path(p).is_file()},
+                  'manual_deployment_or_operator_data_accessed':False}
+          (Path(os.environ['HAI_SCAN_DIRECTORY'])/'reports/source-identity.json').write_text(json.dumps(record,indent=2)+'\n')
+          PY
+          docker build --progress=plain --build-context hai-native-source=services/native-python-runtime \
+            --file "services/$HAI_ALPINE_SERVICE/Dockerfile" --target native-export \
+            --output "type=local,dest=$HAI_SCAN_DIRECTORY/reports/native-export" "services/$HAI_ALPINE_SERVICE" \
+            2>&1 | tee "$HAI_SCAN_DIRECTORY/reports/native-export.log"
+          case "$HAI_ALPINE_SERVICE" in
+            fastmcp-bridge) inventory=scripts/record_fastmcp_alpine_runtime.py ;;
+            guardrails-runner) inventory=scripts/record_guardrails_alpine_runtime.py ;;
+            *) exit 1 ;;
+          esac
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 1g --cpus 1 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m --env HAI_RUNTIME_INVENTORY=1 \
+            --mount "type=bind,src=$PWD/$inventory,dst=/review/runtime_inventory.py,readonly" \
+            --entrypoint python "$HAI_ALPINE_IMAGE" -I /review/runtime_inventory.py \
+            > "$HAI_SCAN_DIRECTORY/reports/runtime-inventory.json"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os
+          reports=Path(os.environ['HAI_SCAN_DIRECTORY'])/'reports'
+          exported=reports/'native-export'
+          inventory=json.loads((reports/'runtime-inventory.json').read_text())
+          provenance=json.loads((exported/'native-provenance.json').read_text())
+          signatures=json.loads((exported/'signing-provenance.json').read_text())
+          assert inventory['native_provenance']==provenance
+          assert inventory['signing_provenance']==signatures
+          assert provenance['build_uid']==signatures['native_compilation_uid']==10001
+          assert not signatures['private_key_exported'] and not signatures['signature_checks_bypassed']
+          digest=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+          assert digest(exported/'keys/hai-native-runtime.rsa.pub')==signatures['public_key_sha256']
+          for name,record in signatures['packages'].items():
+              assert digest(exported/(name+'.apk'))==record['sha256']
+              assert record['signature_verified'] and record['untrusted_signature_rejected']
+          for name,record in provenance['cpython']['modules'].items():
+              assert digest(exported/'lib-dynload'/name)==record['sha256']
+              assert inventory['all_native_extension_sha256']['/usr/local/lib/python3.15/lib-dynload/'+name]==record['sha256']
+          PY
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 1g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m \
+            --entrypoint python "$HAI_ALPINE_IMAGE" -m unittest discover -v -s /app -p 'test*.py' \
+            2>&1 | tee "$HAI_SCAN_DIRECTORY/reports/all-original-cases.log"
       - name: Start and health-check isolated runner container
         timeout-minutes: 2
         working-directory: services/${{ matrix.name }}
@@ -241,8 +304,31 @@ jobs:
             image --input /input/image.tar --cache-dir /cache --scanners vuln \
             --list-all-pkgs --ignorefile /dev/null --exit-code 1 --format json --timeout 10m \
             --output /reports/image-security.json || scan_status=$?
-          python scripts/verify_runner_image_security.py "$HAI_SCAN_DIRECTORY/reports/image-security.json" "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "services/${{ matrix.name }}" > "$HAI_SCAN_DIRECTORY/reports/verified-image.json"
+          # Adopted Alpine images retain complete native/lock/finding checks.
+          # All other runners retain the original distribution-specific policy.
+          case "${{ matrix.name }}" in
+            fastmcp-bridge) image_policy=scripts/verify_fastmcp_alpine_image.py ;;
+            guardrails-runner) image_policy=scripts/verify_guardrails_alpine_image.py ;;
+            *) image_policy=scripts/verify_runner_image_security.py ;;
+          esac
+          python "$image_policy" "$HAI_SCAN_DIRECTORY/reports/image-security.json" "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "services/${{ matrix.name }}" > "$HAI_SCAN_DIRECTORY/reports/verified-image.json"
           test "$scan_status" -eq 0
+      - name: Preserve complete adopted Alpine image even if another gate fails
+        if: always() && contains(fromJSON('["fastmcp-bridge","guardrails-runner"]'), matrix.name)
+        shell: bash
+        env:
+          HAI_SCAN_DIRECTORY: ${{ runner.temp }}/hai-image-security-${{ matrix.name }}
+          HAI_SCAN_IMAGE: hai-${{ matrix.name }}:ci
+        run: |
+          set -euo pipefail
+          mkdir -p "$HAI_SCAN_DIRECTORY/input" "$HAI_SCAN_DIRECTORY/reports"
+          if [ ! -f "$HAI_SCAN_DIRECTORY/input/image.tar" ]; then
+            docker image inspect "$HAI_SCAN_IMAGE" > "$HAI_SCAN_DIRECTORY/reports/image-inspect.json"
+            docker image save "$HAI_SCAN_IMAGE" -o "$HAI_SCAN_DIRECTORY/input/image.tar"
+            python scripts/runner_image_archive_identity.py "$HAI_SCAN_DIRECTORY/input/image.tar" "$HAI_SCAN_DIRECTORY/reports/image-inspect.json" "$HAI_SCAN_IMAGE" "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "$HAI_SCAN_DIRECTORY/reports/image-config-id.txt"
+          fi
+          gzip -1 -c "$HAI_SCAN_DIRECTORY/input/image.tar" > "$HAI_SCAN_DIRECTORY/reports/image.tar.gz"
+          sha256sum "$HAI_SCAN_DIRECTORY/reports/image.tar.gz" > "$HAI_SCAN_DIRECTORY/reports/image.tar.gz.sha256"
       - name: Retain exact-image security inventory and provenance
         if: always() && contains(fromJSON('["fastmcp-bridge","deepeval-runner","docling-runner","lm-eval-runner","evidently-runner","garak-runner","trivy-runner","guardrails-runner","ortools-solver","miniswe-runner"]'), matrix.name)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
