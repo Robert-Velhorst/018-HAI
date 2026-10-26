@@ -1,0 +1,49 @@
+name: Mini-SWE diff review integrity
+
+on:
+  push:
+    branches: [fix/hai-miniswe-diff-integrity-20261026]
+
+permissions:
+  contents: read
+
+jobs:
+  original-cases:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.1'
+      - name: Bind current source and original case identities
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          mkdir -p "$RUNNER_TEMP/miniswe-diff-review"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          case=Path('services/miniswe-runner/test_app.py')
+          assert hashlib.sha256(case.read_bytes()).hexdigest() == 'af76d31003691aecbb9900de34c4a3623c0f924a2b1e99cee86c4fa27cf5bc6b'
+          paths=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          receipt={'head':os.environ['GITHUB_SHA'],'tracked_file_sha256':{
+              p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths if p and Path(p).is_file()},
+              'new_application_cases_authored':False,'original_case_source_unchanged':True,
+              'security_adversarial_behavior_or_full_isolation_proven':False}
+          (Path(os.environ['RUNNER_TEMP'])/'miniswe-diff-review/source-identity.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          PY
+      - name: Run every original Mini-SWE case without edits or filters
+        run: |
+          set -euo pipefail
+          python -m unittest discover -v -s services/miniswe-runner -p 'test_app.py' \
+            2>&1 | tee "$RUNNER_TEMP/miniswe-diff-review/original-cases.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: miniswe-diff-review-original-cases
+          path: ${{ runner.temp }}/miniswe-diff-review/
+          retention-days: 7
+          if-no-files-found: error
