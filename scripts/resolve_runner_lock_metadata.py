@@ -176,7 +176,7 @@ def main():
     command += ["--workdir", "/inputs", sdk, "sh", "-c",
                 'cp /tools/uv /sdk-tools/uv && chmod 700 /sdk-tools/uv && exec /sdk-tools/uv pip compile requirements.in --find-links /inputs --upgrade --generate-hashes --no-python-downloads --python-version "$1" --python-platform x86_64-unknown-linux-gnu --emit-index-url --only-binary numpy --only-binary scipy --only-binary pandas --only-binary pyarrow --only-binary tokenizers --output-file /outputs/requirements.lock',
                 "public-metadata-resolution", version]
-    if args.runner in {"fastmcp-bridge", "deepeval-runner", "deepteam-runner"}:
+    if args.runner in {"fastmcp-bridge", "deepeval-runner", "deepteam-runner", "guardrails-runner"}:
         # Beta-only transitive packages are not current stable candidates.
         command[-3] = command[-3].replace("--upgrade --generate-hashes",
             "--upgrade --prerelease disallow --generate-hashes", 1)
