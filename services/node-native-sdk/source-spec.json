@@ -35,5 +35,147 @@
     "undici": "8.12.2",
     "amaro": "1.1.11"
   },
-  "all_bundled_components_independently_latest": false
+  "all_bundled_components_independently_latest": false,
+  "ordinary_additional_shared_providers": {
+    "libuv": {
+      "repository": "libuv/libuv",
+      "tag": "v1.53.0",
+      "commit": "840404ce8ba7cc0204be52389a6cfff9f2c90fb6",
+      "version": "1.53.0",
+      "required_case_prefix": "test/",
+      "source_identity": "Official GitHub release tag and exact Git commit; not an independent signer-verification claim",
+      "original_CTest_names": [
+        "uv_test",
+        "uv_test_a"
+      ]
+    },
+    "icu": {
+      "repository": "unicode-org/icu",
+      "tag": "release-79.1",
+      "commit": "ddc6b66926bfac6036144ca9902992a0d6d50af9",
+      "version": "79.1",
+      "required_case_prefix": "icu4c/source/test/",
+      "source_identity": "Official GitHub release tag and exact Git commit; not an independent signer-verification claim"
+    },
+    "brotli": {
+      "repository": "google/brotli",
+      "tag": "v1.2.1",
+      "commit": "db24a98aed38a16de78cc05ca15cdd8dc2a0d92d",
+      "version": "1.2.1",
+      "required_case_prefix": "tests/",
+      "source_identity": "Official GitHub release tag and exact Git commit; not an independent signer-verification claim",
+      "original_CTest_names": [
+        "compatibility/tests/testdata/10x10y.compressed",
+        "compatibility/tests/testdata/64x.compressed",
+        "compatibility/tests/testdata/alice29.txt.compressed",
+        "compatibility/tests/testdata/asyoulik.txt.compressed",
+        "compatibility/tests/testdata/backward65536.compressed",
+        "compatibility/tests/testdata/compressed_file.compressed",
+        "compatibility/tests/testdata/compressed_repeated.compressed",
+        "compatibility/tests/testdata/cp1251-utf16le.compressed",
+        "compatibility/tests/testdata/cp852-utf8.compressed",
+        "compatibility/tests/testdata/empty.compressed",
+        "compatibility/tests/testdata/empty.compressed.00",
+        "compatibility/tests/testdata/empty.compressed.01",
+        "compatibility/tests/testdata/empty.compressed.02",
+        "compatibility/tests/testdata/empty.compressed.03",
+        "compatibility/tests/testdata/empty.compressed.04",
+        "compatibility/tests/testdata/empty.compressed.05",
+        "compatibility/tests/testdata/empty.compressed.06",
+        "compatibility/tests/testdata/empty.compressed.07",
+        "compatibility/tests/testdata/empty.compressed.08",
+        "compatibility/tests/testdata/empty.compressed.09",
+        "compatibility/tests/testdata/empty.compressed.10",
+        "compatibility/tests/testdata/empty.compressed.11",
+        "compatibility/tests/testdata/empty.compressed.12",
+        "compatibility/tests/testdata/empty.compressed.13",
+        "compatibility/tests/testdata/empty.compressed.14",
+        "compatibility/tests/testdata/empty.compressed.15",
+        "compatibility/tests/testdata/empty.compressed.16",
+        "compatibility/tests/testdata/empty.compressed.17",
+        "compatibility/tests/testdata/empty.compressed.18",
+        "compatibility/tests/testdata/lcet10.txt.compressed",
+        "compatibility/tests/testdata/mapsdatazrh.compressed",
+        "compatibility/tests/testdata/monkey.compressed",
+        "compatibility/tests/testdata/plrabn12.txt.compressed",
+        "compatibility/tests/testdata/quickfox.compressed",
+        "compatibility/tests/testdata/quickfox_repeated.compressed",
+        "compatibility/tests/testdata/random_org_10k.bin.compressed",
+        "compatibility/tests/testdata/ukkonooa.compressed",
+        "compatibility/tests/testdata/x.compressed",
+        "compatibility/tests/testdata/x.compressed.00",
+        "compatibility/tests/testdata/x.compressed.01",
+        "compatibility/tests/testdata/x.compressed.02",
+        "compatibility/tests/testdata/x.compressed.03",
+        "compatibility/tests/testdata/xyzzy.compressed",
+        "compatibility/tests/testdata/zeros.compressed",
+        "compatibility/tests/testdata/zerosukkanooa.compressed",
+        "roundtrip/c/common/dictionary.h/1",
+        "roundtrip/c/common/dictionary.h/11",
+        "roundtrip/c/common/dictionary.h/6",
+        "roundtrip/c/common/dictionary.h/9",
+        "roundtrip/c/dec/decode.c/1",
+        "roundtrip/c/dec/decode.c/11",
+        "roundtrip/c/dec/decode.c/6",
+        "roundtrip/c/dec/decode.c/9",
+        "roundtrip/c/enc/encode.c/1",
+        "roundtrip/c/enc/encode.c/11",
+        "roundtrip/c/enc/encode.c/6",
+        "roundtrip/c/enc/encode.c/9",
+        "roundtrip/tests/testdata/alice29.txt/1",
+        "roundtrip/tests/testdata/alice29.txt/11",
+        "roundtrip/tests/testdata/alice29.txt/6",
+        "roundtrip/tests/testdata/alice29.txt/9",
+        "roundtrip/tests/testdata/asyoulik.txt/1",
+        "roundtrip/tests/testdata/asyoulik.txt/11",
+        "roundtrip/tests/testdata/asyoulik.txt/6",
+        "roundtrip/tests/testdata/asyoulik.txt/9",
+        "roundtrip/tests/testdata/lcet10.txt/1",
+        "roundtrip/tests/testdata/lcet10.txt/11",
+        "roundtrip/tests/testdata/lcet10.txt/6",
+        "roundtrip/tests/testdata/lcet10.txt/9",
+        "roundtrip/tests/testdata/plrabn12.txt/1",
+        "roundtrip/tests/testdata/plrabn12.txt/11",
+        "roundtrip/tests/testdata/plrabn12.txt/6",
+        "roundtrip/tests/testdata/plrabn12.txt/9"
+      ],
+      "roundtrip_fixture_inputs": [
+        {
+          "path": "tests/testdata/alice29.txt",
+          "sha": "703365523b944b721362a0fdf7a8255b313e9dd6",
+          "size": 152089
+        },
+        {
+          "path": "tests/testdata/asyoulik.txt",
+          "sha": "88dc7b60fe2afeeedd1ba1bb5d4229b17b29b041",
+          "size": 125179
+        },
+        {
+          "path": "tests/testdata/lcet10.txt",
+          "sha": "25dda6b3f1bf96b34f94531fd845d4e1a248cdfb",
+          "size": 426754
+        },
+        {
+          "path": "tests/testdata/plrabn12.txt",
+          "sha": "34088b82cd029bcd3b6b0d1adc956f95734699a9",
+          "size": 481861
+        },
+        {
+          "path": "c/enc/encode.c",
+          "sha": "ba21aa2ecff424cdd04ad253226b1c41cda7aada",
+          "size": 78417
+        },
+        {
+          "path": "c/common/dictionary.h",
+          "sha": "ed683b0aec8ec2e7d198bf11d8b456b00d878ef6",
+          "size": 1922
+        },
+        {
+          "path": "c/dec/decode.c",
+          "sha": "74db1a292b95b535e5a0ed2e7f7ab8ed61b9b55a",
+          "size": 109324
+        }
+      ]
+    }
+  }
 }

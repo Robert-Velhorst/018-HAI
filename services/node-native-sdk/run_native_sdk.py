@@ -56,7 +56,7 @@ def download(url, target, maximum):
             output.write(chunk)
 
 
-def source_snapshot(source):
+def source_snapshot(source, required_prefix='test/'):
     rows = subprocess.check_output(['git', 'ls-tree', '-r', '-z', 'HEAD'], cwd=source)
     result = {}
     for row in rows.split(b'\0'):
@@ -71,7 +71,7 @@ def source_snapshot(source):
         value = (hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest()
             if path.is_symlink() else digest(path))
         result[name] = {'mode': mode, 'Git_blob': oid, 'checkout_sha256': value}
-    if not result or not any(p.startswith('test/') for p in result):
+    if not result or not any(p.startswith(required_prefix) for p in result):
         raise ValueError('The complete original Git source and cases are required')
     subprocess.run(['git', 'diff', '--exit-code', '--'], cwd=source, check=True,
         stdout=subprocess.DEVNULL)
@@ -87,6 +87,64 @@ platform:process.platform,arch:process.arch,sqlite:db.prepare('select sqlite_ver
 sqliteCompileOptions:db.prepare('pragma compile_options').all().map(r=>r.compile_options).sort(),
 ciphers:crypto.getCiphers().sort(),hashes:crypto.getHashes().sort(),curves:crypto.getCurves().sort()}));db.close();"""
     return json.loads(subprocess.check_output([str(executable), '-e', script], env=env, text=True))
+
+
+def additional_shared_providers(spec, env):
+    """Unmodified full publisher Git trees and ordinary provider SDK commands."""
+    prefix = ROOT / 'providers/current'
+    provider_env = {**env, 'LD_LIBRARY_PATH': str(prefix / 'lib') + ':' + env['LD_LIBRARY_PATH']}
+    records = {}
+    for name, release in spec['ordinary_additional_shared_providers'].items():
+        source = ROOT / ('publisher-' + name)
+        source.mkdir()
+        command(name + '-Git-init', ['git', 'init', '-q'], source, env)
+        command(name + '-Git-origin', ['git', 'remote', 'add', 'origin',
+            'https://github.com/' + release['repository'] + '.git'], source, env)
+        command(name + '-Git-fetch', ['git', 'fetch', '--depth=1', 'origin',
+            'refs/tags/' + release['tag'] + ':refs/tags/' + release['tag']], source, env, timeout=1200)
+        actual = subprocess.check_output(['git', 'rev-parse', release['tag'] + '^{commit}'], cwd=source, text=True).strip()
+        if actual != release['commit']:
+            raise ValueError('Pinned public provider release commit differs: ' + name)
+        command(name + '-Git-checkout', ['git', 'checkout', '--detach', actual], source, env)
+        original = source_snapshot(source, release['required_case_prefix'])
+        for fixture in release.get('roundtrip_fixture_inputs', []):
+            if original[fixture['path']]['Git_blob'] != fixture['sha'] or (source / fixture['path']).stat().st_size != fixture['size']:
+                raise ValueError('Original provider fixture identity differs')
+        (REPORTS / (name + '-original-source.json')).write_text(json.dumps({
+            'release': release, 'payloads': original}, indent=2) + '\n')
+        license_file = source / 'LICENSE'
+        if not license_file.is_file() or license_file.is_symlink():
+            raise ValueError('Retain the original provider license: ' + name)
+        shutil.copyfile(license_file, REPORTS / (name + '-LICENSE'))
+        build = ROOT / ('build-' + name)
+        build.mkdir()
+        if name == 'icu':
+            command(name + '-original-configure', [str(source / 'icu4c/source/runConfigureICU'),
+                'Linux', '--prefix=' + str(prefix)], build, provider_env, timeout=1200)
+            command(name + '-original-build', ['make', '-j2'], build, provider_env, timeout=7200)
+            command(name + '-original-exhaustive-cases', ['make', '-j2', 'check-exhaustive'], build, provider_env, timeout=7200)
+            command(name + '-original-install', ['make', 'install'], build, provider_env, timeout=1200)
+        else:
+            command(name + '-original-configure', ['cmake', '-S', str(source), '-B', str(build),
+                '-DCMAKE_INSTALL_PREFIX=' + str(prefix), '-DCMAKE_INSTALL_LIBDIR=lib',
+                '-DBUILD_TESTING=ON'], source, provider_env, timeout=1200)
+            discovery = json.loads(command(name + '-original-discovery', ['ctest', '--test-dir', str(build),
+                '--show-only=json-v1'], build, provider_env))
+            if sorted(t['name'] for t in discovery['tests']) != sorted(release['original_CTest_names']):
+                raise ValueError('Every original provider CTest case must be discovered')
+            command(name + '-original-build', ['cmake', '--build', str(build), '--parallel', '2'],
+                build, provider_env, timeout=7200)
+            command(name + '-original-cases', ['ctest', '--test-dir', str(build), '--verbose',
+                '--output-on-failure', '--no-tests=error',
+                '--output-junit', str(REPORTS / (name + '-original-cases.xml'))], build, provider_env, timeout=7200)
+            command(name + '-original-install', ['cmake', '--install', str(build)], build, provider_env, timeout=1200)
+        final = source_snapshot(source, release['required_case_prefix'])
+        if final != original:
+            raise ValueError('Original provider source or cases changed: ' + name)
+        records[name] = {'commit': actual, 'all_original_Git_payloads_unchanged': len(original),
+            'original_hosted_case_command_passed': True, 'other_platform_or_full_SDK_acceptance': False}
+        (REPORTS / 'additional-provider-cases.json').write_text(json.dumps(records, indent=2) + '\n')
+    return prefix
 
 
 def main():
@@ -173,10 +231,15 @@ def main():
     baseline_binary.chmod(0o755)
     baseline = inventory(baseline_binary, env)
     (REPORTS / 'official-baseline-native-inventory.json').write_text(json.dumps(baseline, indent=2) + '\n')
-    node_env = {**env, 'LD_LIBRARY_PATH': str(provider / 'lib') + ':' + env['LD_LIBRARY_PATH'],
-        'LDFLAGS': '-Wl,-rpath,' + str(provider / 'lib') + ' -Wl,-rpath,/opt/hai-native/lib'}
+    additional = additional_shared_providers(spec, env)
+    node_env = {**env, 'PKG_CONFIG_PATH': str(additional / 'lib/pkgconfig'), 'LD_LIBRARY_PATH': str(additional / 'lib') + ':' + str(provider / 'lib') + ':' + env['LD_LIBRARY_PATH'],
+        'LDFLAGS': '-Wl,-rpath,' + str(additional / 'lib') + ' -Wl,-rpath,' + str(provider / 'lib') + ' -Wl,-rpath,/opt/hai-native/lib'}
     command('original-Node-configure', ['./configure', '--prefix=' + str(ROOT / 'installed-node'),
-        '--with-intl=full-icu', '--shared-openssl',
+        '--with-intl=system-icu', '--shared-libuv',
+        '--shared-libuv-includes=' + str(additional / 'include'),
+        '--shared-libuv-libpath=' + str(additional / 'lib'), '--shared-brotli',
+        '--shared-brotli-includes=' + str(additional / 'include'),
+        '--shared-brotli-libpath=' + str(additional / 'lib'), '--shared-openssl',
         '--shared-openssl-includes=/native-build/sdk/opt/hai-native/include',
         '--shared-openssl-libpath=/native-build/sdk/opt/hai-native/lib',
         '--shared-sqlite', '--shared-sqlite-includes=' + str(provider / 'include'),
@@ -201,6 +264,9 @@ def main():
             or candidate['versions']['openssl'] != spec['expected_openssl']
             or candidate['sqlite'] != spec['expected_sqlite']):
         raise ValueError('Actual selected native component versions differ')
+    for name, component in [('libuv', 'uv'), ('icu', 'icu'), ('brotli', 'brotli')]:
+        if candidate['versions'].get(component) != spec['ordinary_additional_shared_providers'][name]['version']:
+            raise ValueError('Actual additional provider version differs: ' + name)
     lost = {name: sorted(set(baseline[name]) - set(candidate[name])) for name in ['ciphers', 'hashes', 'curves']}
     missing_sql = sorted({x for x in baseline['sqliteCompileOptions'] if not x.startswith('COMPILER=')}
         - set(candidate['sqliteCompileOptions']))
@@ -251,7 +317,7 @@ def retain_diagnostics():
     binary = source / 'out/Release/node'
     if binary.is_file() and not binary.is_symlink():
         shutil.copyfile(binary, REPORTS / 'candidate-node')
-        env = {**os.environ, 'LD_LIBRARY_PATH': str(ROOT / 'providers/sqlite/lib') + ':' + os.environ.get('LD_LIBRARY_PATH', '')}
+        env = {**os.environ, 'LD_LIBRARY_PATH': str(ROOT / 'providers/current/lib') + ':' + str(ROOT / 'providers/sqlite/lib') + ':' + os.environ.get('LD_LIBRARY_PATH', '')}
         result = subprocess.run(['ldd', str(binary)], text=True, env=env, capture_output=True)
         (REPORTS / 'diagnostic-native-linkage.log').write_text(result.stdout + result.stderr)
         libraries = REPORTS / 'native-libraries'

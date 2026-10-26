@@ -52,3 +52,28 @@ verification, consumer-specific SQLite compilation and normal Rust installation
 completed before the missing executable stopped checksum-signature verification.
 The image now explicitly installs gpgv; the signature check remains mandatory.
 This correction does not establish Node compilation or original case success.
+
+The next local source revision prepares the original supported shared-provider
+route to libuv1.53.0, ICU79.1 and Brotli1.2.1. Each complete public Git tree is
+bound to its official release tag's exact commit, inventoried before/after its
+ordinary build and original case commands, and retains its current LICENSE.
+These additional Git identities are not claimed to have independent publisher
+signature validation; the existing mandatory signed Node tag/checksum checks
+remain intact. No publisher source, case, helper or compiler guard is patched.
+
+libuv keeps both original shared/static CTest runners. Brotli's seven original
+roundtrip inputs at four qualities and45 original compatibility fixtures produce
+73 expected CTest names; the hosted discovery must contain that exact set.
+Its original CMake conditionals cannot silently reduce this qualification set.
+ICU uses the original runConfigureICU Linux, make and check-exhaustive commands
+without disabling tools, data, samples or cases. Node uses system-icu through
+pkg-config and its ordinary shared libuv/Brotli options. The same original Node
+CI and native-version/feature gates remain required. Original CTest logs and
+JUnit reports are retained. No new application case is authored.
+
+This continuation uses a separate branch while the earlier129a34e hosted job
+continues at its immutable source head. Before publication, only Python AST,
+source and patch applicability checks ran locally. Actual provider discovery, build, ABI,
+locale/data feature and case compatibility remain unproved. npm12.2.1,
+Undici8.12.3, Amaro1.2.2, complete recursive graphs and all other SDK/platform,
+image/security and deployment gates remain separate unfinished requirements.
