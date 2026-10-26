@@ -187,10 +187,37 @@ def main():
     (REPORTS / 'official-baseline-native-inventory.json').write_text(json.dumps(baseline, indent=2) + '\n')
     node_env = {**env, 'LD_LIBRARY_PATH': str(provider / 'lib') + ':' + env['LD_LIBRARY_PATH'],
         'LDFLAGS': '-Wl,-rpath,' + str(provider / 'lib') + ' -Wl,-rpath,/opt/hai-native/lib'}
+    # The native builder stages the complete SDK beneath INSTALL, not /sdk.
+    # A nonexistent -I/-L directory can silently fall back to system headers
+    # while LD_LIBRARY_PATH later loads the newer library at runtime.
+    openssl_sdk = shared.SDK_PREFIX.resolve(strict=True)
+    sdk_files = {}
+    for relative in ['include/openssl/opensslv.h', 'include/openssl/ssl.h',
+                     'include/openssl/crypto.h', 'include/openssl/x509v3.h',
+                     'lib/libssl.so', 'lib/libcrypto.so']:
+        path = openssl_sdk / relative
+        resolved = path.resolve(strict=True)
+        if not resolved.is_relative_to(openssl_sdk) or not resolved.is_file():
+            raise ValueError('Expected a complete contained staged OpenSSL SDK: ' + relative)
+        sdk_files[relative] = {'resolved_path': str(resolved), 'sha256': digest(resolved)}
+    probe = ROOT / 'selected-openssl-header-probe.cc'
+    probe.write_text('#include <openssl/opensslv.h>\n')
+    macros = command('selected-OpenSSL-header-macros',
+        ['c++', '-E', '-dM', '-x', 'c++', '-I' + str(openssl_sdk / 'include'), str(probe)],
+        ROOT, node_env)
+    header_version = '.'.join(re.search(r'(?m)^#define OPENSSL_VERSION_' + part + r' (\d+)$', macros).group(1)
+        for part in ['MAJOR', 'MINOR', 'PATCH'])
+    if header_version != manifest['openssl']['version']:
+        raise ValueError('Selected compile-time OpenSSL headers differ from the native source profile')
+    (REPORTS / 'selected-openssl-sdk.json').write_text(json.dumps({
+        'prefix': str(openssl_sdk), 'header_version': header_version,
+        'expected_version': manifest['openssl']['version'], 'files': sdk_files,
+        'macro_log_sha256': digest(REPORTS / 'selected-OpenSSL-header-macros.log'),
+        'forced_version_macros': False, 'original_Node_source_changed': False}, indent=2) + '\n')
     command('original-Node-configure', ['./configure', '--prefix=' + str(ROOT / 'installed-node'),
         '--with-intl=full-icu', '--shared-openssl',
-        '--shared-openssl-includes=/native-build/sdk/opt/hai-native/include',
-        '--shared-openssl-libpath=/native-build/sdk/opt/hai-native/lib',
+        '--shared-openssl-includes=' + str(openssl_sdk / 'include'),
+        '--shared-openssl-libpath=' + str(openssl_sdk / 'lib'),
         '--shared-sqlite', '--shared-sqlite-includes=' + str(provider / 'include'),
         '--shared-sqlite-libpath=' + str(provider / 'lib')], source, node_env)
     command('original-Node-build', ['make', '-j2'], source, node_env, timeout=7200)

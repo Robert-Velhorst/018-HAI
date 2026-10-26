@@ -2,7 +2,7 @@ name: Original Node SDK with current native providers
 
 on:
   push:
-    branches: [ci/hai-node-sdk-network-boundary-20261026]
+    branches: [ci/hai-node-sdk-staged-openssl-20261027]
 
 permissions:
   contents: read

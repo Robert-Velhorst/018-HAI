@@ -105,3 +105,28 @@ compatibility remain unresolved.
 Sources: [Linux IP sysctls](https://docs.kernel.org/networking/ip-sysctl.html#ip-variables),
 [Docker namespaced sysctls](https://docs.docker.com/reference/cli/docker/container/run/#configure-namespaced-kernel-parameters-sysctls-at-runtime),
 [Docker daemon default](https://github.com/moby/moby/blob/master/daemon/oci_linux.go).
+
+## Staged OpenSSL SDK path correction
+
+The shared builder installs the complete OpenSSL SDK at
+`/native-build/install/opt/hai-native`. The earlier coordinator passed include
+and link paths beneath `/native-build/sdk`, which the builder does not create.
+A runtime version and dynamic linkage observation cannot establish that the
+compiler used the intended headers or linker inputs when those search paths
+are absent.
+
+Use the builder's actual `SDK_PREFIX` for both configure options. Before the
+original configure/build/cases, require the staged headers and linker files,
+retain their resolved paths and SHA-256 identities, and retain the compiler's
+header macros with an exact version check against the native source manifest.
+The compiler probe is build provenance outside the original Node source tree;
+it adds no application case and forces no version macro. Existing init,
+namespace, capability, UID/GID and original-source-preservation guards remain.
+
+Node already integrates its CN name-constraint fix with the SPKI blocklist in
+`crypto_context.cc`; do not reapply its historical standalone callback patch.
+The separately prepared upstream X509 expectation adjustment remains unapplied
+pending explicit original-assertion approval. This candidate changes no
+publisher source or original case. Both earlier workers stay at their preserved
+heads. Current header/linkage, original case and full SDK acceptance remain
+unproved until the new exact-head artifacts are inspected.
