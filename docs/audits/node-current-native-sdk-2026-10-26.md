@@ -52,3 +52,27 @@ verification, consumer-specific SQLite compilation and normal Rust installation
 completed before the missing executable stopped checksum-signature verification.
 The image now explicitly installs gpgv; the signature check remains mandatory.
 This correction does not establish Node compilation or original case success.
+# Hosted process-reaping correction
+
+The original baseline run40272188778 compiled Node26.12.1 with
+OpenSSL4.1.0 and SQLite3.54.1, then failed its original CI command. Its
+five not-ok cases include two cluster-primary cases that wait for orphaned
+workers to disappear and both time out at120 seconds. The container originally
+ran the Python coordinator as PID1, without an init process.
+
+This separate experiment adds Docker's standard `--init` process-reaping
+option while retaining UID10001, all dropped capabilities, no-new-privileges,
+memory/CPU/PID bounds, the signed original SDK and original configure/build/CI
+commands. It does not edit or select original cases, helpers or fixtures,
+change the compiler/runtime configuration or substitute an interpreter.
+
+The causal explanation is an inference from the original case source and
+container recipe until the exact corrected worker executes. The socket error
+and two TLS/X.509 failures remain unresolved, and the raw suite's713 skips
+and four TODO directives remain unqualified coverage. No pass, accepted runtime,
+ICU79 compatibility, image security or application/deployment/data acceptance
+is inferred from this environment correction. The additional-provider draft376
+remains separately failed in V8's ICU79 regexp-table generator.
+
+References: [Docker init-process semantics](https://docs.docker.com/reference/cli/docker/container/run/#specify-an-init-process),
+[exact original failed run](https://github.com/Robert-Velhorst/018-HAI/actions/runs/40272188778).
