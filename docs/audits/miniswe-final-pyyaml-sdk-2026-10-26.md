@@ -37,6 +37,13 @@ access only to that public test-tool export before mounting it read-only.
 Runtime UID, image definition, source cases, assertions and qualification gates are
 unchanged. The failed attempt remains evidence; it does not qualify the suite.
 
+Independent comparison with the official pytest9.1.1 wheel additionally found
+that its top-level `py.py` compatibility module was absent from the export.
+Both recipes now retain that original publisher module alongside the complete
+package directories; the harness allowlist requires it explicitly. This is a
+pytest-owned file, not an added runtime distribution. The earlier incomplete
+export remains unqualified even if its selected suite reports success.
+
 Local preparation is limited to AST, source/archive/hash and whitespace checks.
 No application/compiler/package-manager/scanner/vendor helper or case executes
 locally. Hosted success and independent source/tool/image reconciliation remain

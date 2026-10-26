@@ -79,6 +79,7 @@ FROM scratch AS pyyaml-test-tools-export
 # No PyYAML or other runtime distribution is exported into this test-only bundle.
 COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/_pytest/ /lib/python3.15/site-packages/_pytest/
 COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/pytest/ /lib/python3.15/site-packages/pytest/
+COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/py.py /lib/python3.15/site-packages/py.py
 COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/pluggy/ /lib/python3.15/site-packages/pluggy/
 COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/iniconfig/ /lib/python3.15/site-packages/iniconfig/
 COPY --from=pyyaml-sdk /opt/hai-venv/lib/python3.15/site-packages/pytest-9.1.1.dist-info/ /lib/python3.15/site-packages/pytest-9.1.1.dist-info/

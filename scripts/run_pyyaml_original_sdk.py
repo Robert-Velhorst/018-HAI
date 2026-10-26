@@ -39,7 +39,7 @@ def main():
             raise ValueError('Expected the immutable final runtime image and non-root user')
         bundle = Path('/review/pytest-sdk')
         site = bundle / 'lib/python3.15/site-packages'
-        expected = {'_pytest', 'pytest', 'pluggy', 'iniconfig', 'pytest-9.1.1.dist-info',
+        expected = {'_pytest', 'pytest', 'py.py', 'pluggy', 'iniconfig', 'pytest-9.1.1.dist-info',
             'pluggy-1.7.0.dist-info', 'iniconfig-2.3.1.dist-info'}
         if {p.name for p in site.iterdir()} != expected:
             raise ValueError('Test bundle must not supply PyYAML or other runtime packages')
