@@ -3,7 +3,7 @@ FROM ${HAI_NATIVE_SUPPORT_IMAGE}
 
 USER 0:0
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git gnupg rustup procps \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git gnupg gpgv rustup procps \
     && cp -a /native-build/install/usr/local/. /usr/local/ \
     && dpkg -i /native-build/out/hai-openssl4.deb /native-build/out/hai-sqlite3.deb \
     && mkdir -p /node-build /home/native-builder \

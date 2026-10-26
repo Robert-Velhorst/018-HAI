@@ -45,3 +45,10 @@ independent review. No application uses this binary until source/native/case,
 complete image/security and unchanged application contracts qualify and the
 owner separately approves adoption. No main merge, deployment or data migration
 is included.
+
+The first hosted run40270847619 stopped before Node configure: the execution
+image installed gnupg but omitted the separate gpgv package. Original tag
+verification, consumer-specific SQLite compilation and normal Rust installation
+completed before the missing executable stopped checksum-signature verification.
+The image now explicitly installs gpgv; the signature check remains mandatory.
+This correction does not establish Node compilation or original case success.
