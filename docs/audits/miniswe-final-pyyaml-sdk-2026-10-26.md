@@ -1,0 +1,40 @@
+# Original PyYAML suite inside the complete final runtime
+
+The source-matched prior final image passed five original application cases,
+health, complete package scans and independent image/native-byte inspection.
+The separate SDK stage passed 2,608 original PyYAML cases. Its PyYAML extension
+hash differed from the final image, so those cases did not validate that exact
+final binary. This adds the missing execution-location binding.
+
+Both identical Docker recipes export a separate, complete installed pytest9.1.1,
+pluggy1.7.0 and iniconfig2.3.1 bundle, including all package files, metadata,
+licences and original CLI scripts. These current public versions use normal
+installation; no runtime package is replaced or added to the production image.
+The exporter is a separate scratch target. Its package allowlist cannot supply
+PyYAML or shadow another runtime distribution.
+
+A dedicated hosted workflow retains the original full-source/native build,
+provider inventory, all five application cases, isolated health contract, saved
+complete image and all-package/all-severity fatal scan policy. It also prepares
+the complete hash-bound public PyYAML6.0.3 source and mounts it and the test tools
+read-only into the actual final image, selected by immutable Docker image ID.
+All 2,608 original default cases and the unchanged publisher smoke must pass,
+with zero failures/errors/skips. Original case/fixture/helper/assertion files
+and collection remain unchanged; no application cases are authored.
+
+The owned harness verifies all 83 runtime distribution versions, requires the
+real installed C extension, records its bytes before/after, and records the
+actual Python executable and immutable image ID. Test tooling, source hashes,
+logs and JUnit remain available alongside the complete saved image so independent
+inspection can compare the tested extension and executable to the archive.
+No network, operator-data/database mount, root runtime or new permissions are
+introduced; execution uses the existing disposable hosted non-root boundary.
+
+Local preparation is limited to AST, source/archive/hash and whitespace checks.
+No application/compiler/package-manager/scanner/vendor helper or case executes
+locally. Hosted success and independent source/tool/image reconciliation remain
+required. Upstream default collection's platform/large-file limits are preserved
+and reported separately. Current LiteLLM/native dependency ports, original SDK
+guard exception, agent isolation/CodeQL41, other HAI runners, actual deployment,
+data preservation/restore and full portfolio acceptance remain open. No merge
+or manual deployment is included.
