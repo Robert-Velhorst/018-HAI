@@ -1,0 +1,191 @@
+name: Mini-SWE PyYAML original SDK in complete final image
+
+on:
+  push:
+    branches: [fix/hai-miniswe-final-pyyaml-sdk-20261026]
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.1'
+      - name: Bind all original source before native compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          export HAI_UBUNTU_NATIVE="$RUNNER_TEMP/hai-miniswe-ubuntu-native"
+          printf '%s\n' "HAI_UBUNTU_NATIVE=$HAI_UBUNTU_NATIVE" >> "$GITHUB_ENV"
+          mkdir -p "$HAI_UBUNTU_NATIVE/reports"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          files=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          record={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+            'tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+            'tracked_file_sha256':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in files if p and Path(p).is_file()},
+            'no_operator_data_accessed':True,'full_native_or_application_acceptance':False}
+          (Path(os.environ['HAI_UBUNTU_NATIVE'])/'reports/source-identity.json').write_text(json.dumps(record,indent=2)+'\n')
+          PY
+      - name: Prepare current source-bound wheels and unchanged upstream cases
+        env:
+          HAI_MINISWE_PREPARATION: ${{ runner.temp }}/hai-miniswe-runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/resolve_runner_lock_metadata.py --runner miniswe-runner --output "$HAI_MINISWE_PREPARATION"
+          python services/miniswe-runner/compat/prepare_runtime_context.py --output "$HAI_MINISWE_PREPARATION"
+      - name: Compile complete CPython and native clients as UID10001
+        id: native
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress=plain --build-context hai-native-source=services/native-python-runtime \
+            --file services/miniswe-runner/Dockerfile.ubuntu --target native-export \
+            --output "type=local,dest=$HAI_UBUNTU_NATIVE/reports/native-export" services/miniswe-runner \
+            2>&1 | tee "$HAI_UBUNTU_NATIVE/reports/native-build.log"
+      - name: Build the complete candidate with original runtime lock and reviewed wheels
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HAI_UBUNTU_NATIVE/"{input,cache}
+          docker build --progress=plain --build-context hai-native-source=services/native-python-runtime \
+            --build-context "hai-miniswe-wheels=$RUNNER_TEMP/hai-miniswe-runtime/inputs" \
+            --file services/miniswe-runner/Dockerfile.ubuntu --target runtime \
+            --tag hai-miniswe-runner:ci services/miniswe-runner \
+            2>&1 | tee "$HAI_UBUNTU_NATIVE/reports/runtime-build.log"
+      - name: Record all actual native providers and installed distributions offline
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 1g --cpus 1 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m --env HAI_RUNTIME_INVENTORY=1 \
+            --mount "type=bind,src=$PWD/scripts/record_miniswe_ubuntu_runtime.py,dst=/review/runtime_inventory.py,readonly" \
+            --entrypoint python hai-miniswe-runner:ci -I /review/runtime_inventory.py \
+            > "$HAI_UBUNTU_NATIVE/reports/runtime-inventory.json"
+      - name: Run all unchanged original Mini-SWE cases inside the final image
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 2g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m --entrypoint python hai-miniswe-runner:ci \
+            -m unittest discover -v -s /app -p 'test*.py' \
+            2>&1 | tee "$HAI_UBUNTU_NATIVE/reports/all-original-cases.log"
+      - name: Run the unchanged isolated startup and health contract
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/python_runner_container_smoke.py --runner miniswe-runner --image hai-miniswe-runner:ci \
+            2>&1 | tee "$HAI_UBUNTU_NATIVE/reports/container-smoke.log"
+      - name: Export complete isolated test tools and verify unchanged publisher cases
+        id: pyyaml_tools
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress=plain --build-context hai-native-source=services/native-python-runtime \
+            --build-context "hai-miniswe-wheels=$RUNNER_TEMP/hai-miniswe-runtime/inputs" \
+            --file services/miniswe-runner/Dockerfile.ubuntu --target pyyaml-test-tools-export \
+            --output "type=local,dest=$HAI_UBUNTU_NATIVE/reports/pyyaml-test-tools" services/miniswe-runner \
+            2>&1 | tee "$HAI_UBUNTU_NATIVE/reports/pyyaml-test-tool-build.log"
+          # Docker's local exporter may create owner-only parent directories.
+          # This bundle contains only public SDK files and remains mounted read-only.
+          chmod -R a+rX "$HAI_UBUNTU_NATIVE/reports/pyyaml-test-tools"
+          python scripts/prepare_pyyaml_sdk_source.py --output "$RUNNER_TEMP/hai-pyyaml-final-publisher"
+      - name: Run all original PyYAML cases in the actual complete final runtime
+        id: pyyaml_cases
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.pyyaml_tools.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HAI_UBUNTU_NATIVE/reports/pyyaml-final"
+          chmod 0777 "$HAI_UBUNTU_NATIVE/reports/pyyaml-final"
+          image_id="$(docker image inspect --format '{{.Id}}' hai-miniswe-runner:ci)"
+          printf '%s\n' "$image_id" > "$HAI_UBUNTU_NATIVE/reports/pyyaml-final-runtime-image-id.txt"
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 4g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=2g --env HAI_DISPOSABLE_PUBLIC_SDK=1 \
+            --env RUNNER_ENVIRONMENT --env GITHUB_SHA --env PYTHONDONTWRITEBYTECODE=1 \
+            --env "HAI_RUNTIME_IMAGE_ID=$image_id" \
+            --mount "type=bind,src=$RUNNER_TEMP/hai-pyyaml-final-publisher,dst=/publisher-src,readonly" \
+            --mount "type=bind,src=$HAI_UBUNTU_NATIVE/reports/pyyaml-test-tools,dst=/review/pytest-sdk,readonly" \
+            --mount "type=bind,src=$HAI_UBUNTU_NATIVE/reports/pyyaml-final,dst=/reports" \
+            --mount "type=bind,src=$PWD/scripts/run_pyyaml_original_sdk.py,dst=/review/run_pyyaml_original_sdk.py,readonly" \
+            --entrypoint python "$image_id" -I /review/run_pyyaml_original_sdk.py --final-runtime
+          test "$(docker image inspect --format '{{.Id}}' hai-miniswe-runner:ci)" = "$image_id"
+      - name: Save the exact complete runtime and descriptor chain
+        id: archive
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{.Config.User}}' hai-miniswe-runner:ci)" = 10001:10001
+          docker image inspect hai-miniswe-runner:ci > "$HAI_UBUNTU_NATIVE/reports/image-inspect.json"
+          docker image save hai-miniswe-runner:ci -o "$HAI_UBUNTU_NATIVE/input/image.tar"
+          python scripts/runner_image_archive_identity.py "$HAI_UBUNTU_NATIVE/input/image.tar" \
+            "$HAI_UBUNTU_NATIVE/reports/image-inspect.json" hai-miniswe-runner:ci \
+            "$HAI_UBUNTU_NATIVE/reports/image-identity.json" "$HAI_UBUNTU_NATIVE/reports/image-config-id.txt"
+      - name: Scan every OS and language package with all findings fatal
+        if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scan_status=0
+          docker run --rm --read-only --user "$(id -u):$(id -g)" --cap-drop ALL \
+            --security-opt no-new-privileges --memory 4g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=3g \
+            --mount "type=bind,src=$HAI_UBUNTU_NATIVE/input,dst=/input,readonly" \
+            --mount "type=bind,src=$HAI_UBUNTU_NATIVE/reports,dst=/reports" \
+            --mount "type=bind,src=$HAI_UBUNTU_NATIVE/cache,dst=/cache" \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --input /input/image.tar --cache-dir /cache --scanners vuln \
+            --list-all-pkgs --ignorefile /dev/null --exit-code 1 --format json --timeout 10m \
+            --output /reports/image-security.json > "$HAI_UBUNTU_NATIVE/reports/scan.log" 2>&1 || scan_status=$?
+          printf '%s\n' "$scan_status" > "$HAI_UBUNTU_NATIVE/reports/scan.exit-status"
+          python scripts/verify_miniswe_ubuntu_image.py "$HAI_UBUNTU_NATIVE/reports/image-security.json" \
+            "$HAI_UBUNTU_NATIVE/reports/image-identity.json" "$HAI_UBUNTU_NATIVE/reports/runtime-inventory.json" \
+            services/miniswe-runner > "$HAI_UBUNTU_NATIVE/reports/verified-image.json"
+          test "$scan_status" -eq 0
+      - name: Retain the complete compressed image even when another gate fails
+        if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gzip -1 -c "$HAI_UBUNTU_NATIVE/input/image.tar" > "$HAI_UBUNTU_NATIVE/reports/image.tar.gz"
+          sha256sum "$HAI_UBUNTU_NATIVE/reports/image.tar.gz" > "$HAI_UBUNTU_NATIVE/reports/image.tar.gz.sha256"
+      - name: Retain source-bound preparation receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: miniswe-final-pyyaml-source-preparation
+          path: |
+            ${{ runner.temp }}/hai-miniswe-runtime/receipt.json
+            ${{ runner.temp }}/hai-miniswe-runtime/runtime-context.json
+            ${{ runner.temp }}/hai-miniswe-runtime/inputs/*.json
+            ${{ runner.temp }}/hai-miniswe-runtime/outputs/*.lock
+            ${{ runner.temp }}/hai-miniswe-runtime/qualification/*
+            ${{ runner.temp }}/hai-miniswe-runtime/upstream-case-results/*
+            ${{ runner.temp }}/hai-miniswe-runtime/fastuuid-build.json
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: miniswe-final-pyyaml-complete-native-export
+          path: ${{ runner.temp }}/hai-miniswe-ubuntu-native/reports/
+          retention-days: 7
+          if-no-files-found: error

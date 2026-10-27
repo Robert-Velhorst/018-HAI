@@ -1,0 +1,155 @@
+name: Current stable Ubuntu base preflight
+
+on:
+  push:
+    branches: [investigate/hai-ubuntu-base-20261025]
+  pull_request:
+    paths:
+      - services/native-python-runtime/Dockerfile.ubuntu-preflight
+      - scripts/ubuntu-base-preflight/**
+      - scripts/verify_ubuntu_base_preflight.py
+      - .github/workflows/ubuntu-base-preflight.yml
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.1'
+      - name: Bind complete source and the exact official base identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          export HAI_UBUNTU_REVIEW="$RUNNER_TEMP/hai-ubuntu-base-preflight"
+          printf '%s\n' "HAI_UBUNTU_REVIEW=$HAI_UBUNTU_REVIEW" >> "$GITHUB_ENV"
+          mkdir -p "$HAI_UBUNTU_REVIEW/"{input,reports,cache}
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          files=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          record={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+              'tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+              'tracked_file_sha256':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in files if p and Path(p).is_file()},
+              'scope':'Base preflight only; no native/application/SDK/vendor acceptance'}
+          out=Path(os.environ['HAI_UBUNTU_REVIEW'])/'reports'
+          (out/'source-identity.json').write_text(json.dumps(record,indent=2)+'\n')
+          (out/'public-image.json').write_bytes(Path('scripts/ubuntu-base-preflight/public-image.json').read_bytes())
+          PY
+      - name: Build complete base with normal signed repository updates
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress=plain --file services/native-python-runtime/Dockerfile.ubuntu-preflight \
+            --tag hai-ubuntu-base:preflight services/native-python-runtime \
+            2>&1 | tee "$HAI_UBUNTU_REVIEW/reports/build.log"
+      - name: Read actual OS and complete installed package inventory offline
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --user 65534:65534 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 256m --cpus 1 --pids-limit 64 \
+            --entrypoint cat hai-ubuntu-base:preflight /etc/os-release \
+            > "$HAI_UBUNTU_REVIEW/reports/os-release.txt"
+          docker run --rm --network none --read-only --user 65534:65534 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 256m --cpus 1 --pids-limit 64 \
+            --entrypoint dpkg-query hai-ubuntu-base:preflight --show \
+            '--showformat=${db:Status-Abbrev}\t${binary:Package}\t${Version}\n' \
+            > "$HAI_UBUNTU_REVIEW/reports/dpkg.tsv"
+          docker run --rm --network none --read-only --user 65534:65534 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 256m --cpus 1 --pids-limit 64 \
+            --entrypoint cat hai-ubuntu-base:preflight /etc/lsb-release \
+            > "$HAI_UBUNTU_REVIEW/reports/lsb-release.txt"
+          docker run --rm --network none --read-only --user 65534:65534 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 256m --cpus 1 --pids-limit 64 \
+            --entrypoint sha256sum hai-ubuntu-base:preflight /usr/bin/pebble \
+            > "$HAI_UBUNTU_REVIEW/reports/pebble.sha256"
+          python - <<'PY'
+          from pathlib import Path
+          import json,os,shlex
+          out=Path(os.environ['HAI_UBUNTU_REVIEW'])/'reports'
+          release={}
+          for line in (out/'os-release.txt').read_text().splitlines():
+              if '=' in line:
+                  k,v=line.split('=',1)
+                  values=shlex.split(v)
+                  release[k]=values[0] if values else ''
+          legacy={}
+          for line in (out/'lsb-release.txt').read_text().splitlines():
+              if '=' in line:
+                  k,v=line.split('=',1)
+                  values=shlex.split(v)
+                  legacy[k]=values[0] if values else ''
+          pebble=json.loads(Path('scripts/ubuntu-base-preflight/pebble-release.json').read_text())
+          actual_pebble=(out/'pebble.sha256').read_text().split()[0]
+          assert actual_pebble==pebble['binary_sha256']
+          assert legacy['DISTRIB_ID']=='Ubuntu' and legacy['DISTRIB_RELEASE']==release['VERSION_ID']
+          assert legacy['DISTRIB_CODENAME']==release['UBUNTU_CODENAME']
+          (out/'pebble-release.json').write_text(json.dumps(pebble,indent=2)+'\n')
+          packages={}
+          for line in (out/'dpkg.tsv').read_text().splitlines():
+              state,name,version=line.split('\t',2)
+              if len(state)>1 and state[1]=='i':
+                  packages[name]=version
+          assert release['ID']=='ubuntu' and release['VERSION_ID']=='26.10' and packages
+          (out/'base-inventory.json').write_text(json.dumps({'os_release':release,
+              'installed_packages':packages,'lsb_release':legacy,
+              'current_publisher_pebble_binary_sha256':actual_pebble,'base_preflight_only':True,
+              'operator_data_accessed':False},indent=2)+'\n')
+          PY
+      - name: Save the complete image and verify descriptor identities
+        id: archive
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker image inspect hai-ubuntu-base:preflight > "$HAI_UBUNTU_REVIEW/reports/image-inspect.json"
+          docker image save hai-ubuntu-base:preflight -o "$HAI_UBUNTU_REVIEW/input/image.tar"
+          python scripts/runner_image_archive_identity.py "$HAI_UBUNTU_REVIEW/input/image.tar" \
+            "$HAI_UBUNTU_REVIEW/reports/image-inspect.json" hai-ubuntu-base:preflight \
+            "$HAI_UBUNTU_REVIEW/reports/image-identity.json" "$HAI_UBUNTU_REVIEW/reports/image-config-id.txt"
+      - name: Scan all packages at every severity and keep all findings fatal
+        if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scan_status=0
+          docker run --rm --read-only --user "$(id -u):$(id -g)" --cap-drop ALL \
+            --security-opt no-new-privileges --memory 4g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=3g \
+            --mount "type=bind,src=$HAI_UBUNTU_REVIEW/input,dst=/input,readonly" \
+            --mount "type=bind,src=$HAI_UBUNTU_REVIEW/reports,dst=/reports" \
+            --mount "type=bind,src=$HAI_UBUNTU_REVIEW/cache,dst=/cache" \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --input /input/image.tar --cache-dir /cache --scanners vuln \
+            --list-all-pkgs --ignorefile /dev/null --exit-code 1 --format json --timeout 10m \
+            --output /reports/image-security.json > "$HAI_UBUNTU_REVIEW/reports/scan.log" 2>&1 || scan_status=$?
+          printf '%s\n' "$scan_status" > "$HAI_UBUNTU_REVIEW/reports/scan.exit-status"
+          python scripts/verify_ubuntu_base_preflight.py "$HAI_UBUNTU_REVIEW/reports/image-security.json" \
+            "$HAI_UBUNTU_REVIEW/reports/image-identity.json" "$HAI_UBUNTU_REVIEW/reports/base-inventory.json" \
+            "$HAI_UBUNTU_REVIEW/reports/scan.log" > "$HAI_UBUNTU_REVIEW/reports/verified-base.json"
+          test "$scan_status" -eq 0
+      - name: Retain complete image even when a security gate fails
+        if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gzip -1 -c "$HAI_UBUNTU_REVIEW/input/image.tar" > "$HAI_UBUNTU_REVIEW/reports/image.tar.gz"
+          sha256sum "$HAI_UBUNTU_REVIEW/reports/image.tar.gz" > "$HAI_UBUNTU_REVIEW/reports/image.tar.gz.sha256"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: current-stable-ubuntu-base-preflight
+          path: ${{ runner.temp }}/hai-ubuntu-base-preflight/reports/
+          retention-days: 7
+          if-no-files-found: error

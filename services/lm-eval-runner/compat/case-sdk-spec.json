@@ -1,0 +1,7 @@
+{
+  "python_image": "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51",
+  "compiler_image": "gcc:16.2.0-trixie@sha256:3f73339bf0d3d64081cac3f6d9fdafc6dd4cef2b9c49e0a09f91e97cb0eb139a",
+  "python_version": "3.15.1",
+  "compiler_version": "16.2.0",
+  "operator_SDK_installation": false
+}

@@ -58,10 +58,10 @@ class PythonRunnerCIPolicyTest(unittest.TestCase):
         source = (service / "requirements.in").read_text(encoding="utf-8")
         locked = (service / "requirements.lock").read_text(encoding="utf-8")
         dockerfile = (service / "Dockerfile").read_text(encoding="utf-8")
-        self.assertIn("docling==2.142.0", source)
+        self.assertIn("docling==2.142.1", source)
         self.assertIn("pillow==13.0.0", source)
-        self.assertIn("ARG DOCLING_VERSION=2.142.0", dockerfile)
-        self.assertIn('"pillow==13.0.0"', dockerfile)
+        self.assertIn("COPY requirements-build.lock requirements.lock ./", dockerfile)
+        self.assertIn("--no-build-isolation --require-hashes -r requirements.lock", dockerfile)
         self.assertIn("pillow==13.0.0 ", locked)
         self.assertRegex(locked, r"(?m)^torch==[^\s]+\+cpu ")
         self.assertRegex(locked, r"(?m)^torchvision==[^\s]+\+cpu ")
@@ -89,9 +89,9 @@ class PythonRunnerCIPolicyTest(unittest.TestCase):
                 if version == (2026, 10, 19):
                     self.assertEqual(set(re.findall(r"sha256:([0-9a-f]{64})", match.group(2))), expected_hashes)
         self.assertGreater(found, 0, "certifi manifest coverage disappeared")
-        # This image resolves Docling directly rather than installing the lock.
+        # The image installs the same audited hash lock, including its CA bundle.
         dockerfile = (ROOT / "services/docling-runner/Dockerfile").read_text(encoding="utf-8")
-        self.assertIn('"certifi==2026.10.19"', dockerfile)
+        self.assertIn("--no-build-isolation --require-hashes -r requirements.lock", dockerfile)
 
     def test_every_shipped_python_runner_has_ci_contract_coverage(self):
         names = set(re.findall(r"(?m)^          - name: ([a-z0-9-]+)$", WORKFLOW))

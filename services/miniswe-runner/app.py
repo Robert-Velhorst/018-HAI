@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 from urllib.parse import urlparse
@@ -186,24 +187,85 @@ def regular_files(root: Path) -> Iterator[Path]:
                 yield relative
 
 
-def text_lines(path: Path) -> list[str]:
-    data = path.read_bytes()
+def text_lines(path: Path, root: Path | None = None, *, missing_ok: bool = False) -> list[str]:
+    """Read a bounded regular file without following any path-component link."""
+    root = (root if root is not None else path.parent).absolute()
+    path = path.absolute()
+    try:
+        relative = path.relative_to(root)
+    except ValueError as exc:
+        raise RequestError("diff path is outside its review root") from exc
+    if not relative.parts or ".." in root.parts or ".." in relative.parts:
+        raise RequestError("diff path is not a named child file")
+    if os.open not in os.supports_dir_fd or any(
+        not hasattr(os, flag) for flag in ("O_DIRECTORY", "O_NOFOLLOW", "O_NONBLOCK")
+    ):
+        raise RequestError("diff review requires descriptor-relative no-follow file access")
+    directory = None
+    descriptor = None
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        directory = os.open(root.anchor, directory_flags)
+        for component in (*root.parts[1:], *relative.parts[:-1]):
+            child = os.open(component, directory_flags, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        descriptor = os.open(
+            relative.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory
+        )
+        attributes = os.fstat(descriptor)
+        if not stat.S_ISREG(attributes.st_mode) or attributes.st_nlink != 1:
+            raise RequestError("diff review requires a singly linked regular file")
+        # Bound the read itself; checking length after read_bytes is too late.
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = None
+            data = stream.read(MAX_FILE_BYTES + 1)
+    except FileNotFoundError as exc:
+        if missing_ok:
+            return []
+        raise RequestError("approved baseline file disappeared") from exc
+    except OSError as exc:
+        raise RequestError("diff file is linked, unavailable or unsafe") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if directory is not None:
+            os.close(directory)
     if len(data) > MAX_FILE_BYTES or b"\x00" in data:
         return ["[binary or oversized file omitted from diff]\n"]
     return data.decode("utf-8", errors="replace").splitlines(keepends=True)
 
 
-def make_diff(baseline: Path, work: Path) -> tuple[str, int, bool]:
-    before = {path for path in regular_files(baseline)}
-    after = {path for path in regular_files(work)}
+def baseline_snapshot(root: Path) -> dict[Path, list[str]]:
+    snapshot: dict[Path, list[str]] = {}
+    total = 0
+    for relative in regular_files(root):
+        if len(snapshot) >= MAX_FILES:
+            raise RequestError("baseline has too many review files")
+        lines = text_lines(root / relative, root)
+        total += sum(len(line.encode("utf-8")) for line in lines)
+        if total > MAX_SOURCE_BYTES:
+            raise RequestError("baseline exceeds review memory limits")
+        snapshot[relative] = lines
+    return snapshot
+
+
+def make_diff(
+    baseline: Path, work: Path, *, baseline_lines: dict[Path, list[str]] | None = None
+) -> tuple[str, int, bool]:
+    original = baseline_snapshot(baseline) if baseline_lines is None else baseline_lines
+    before = set(original)
+    after = set()
+    for relative in regular_files(work):
+        after.add(relative)
+        if len(after) > MAX_FILES:
+            raise RequestError("worker produced too many review files")
     changed = 0
     chunks: list[str] = []
     truncated = False
     for relative in sorted(before | after):
-        before_path = baseline / relative
-        after_path = work / relative
-        old_lines = text_lines(before_path) if before_path.exists() else []
-        new_lines = text_lines(after_path) if after_path.exists() else []
+        old_lines = original.get(relative, [])
+        new_lines = text_lines(work / relative, work, missing_ok=True)
         if old_lines == new_lines:
             continue
         changed += 1
@@ -295,8 +357,11 @@ def propose(payload: object) -> dict:
         work.mkdir()
         copy_snapshot(source, baseline)
         copy_snapshot(source, work)
+        # Keep the approved comparison in controller memory before executing the
+        # untrusted agent. Changes to its sibling baseline folder cannot rewrite it.
+        original_lines = baseline_snapshot(baseline)
         run_agent(work, task, base_url, model_id)
-        diff, changed_files, truncated = make_diff(baseline, work)
+        diff, changed_files, truncated = make_diff(baseline, work, baseline_lines=original_lines)
     digest = hashlib.sha256(diff.encode("utf-8")).hexdigest()
     summary = "No source changes were proposed." if changed_files == 0 else f"Disposable mini-SWE run proposed changes to {changed_files} file(s)."
     if truncated:

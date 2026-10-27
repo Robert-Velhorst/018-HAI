@@ -873,6 +873,8 @@ services:
   gitleaks-runner:
     build:
       context: ./services/gitleaks-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["security-scanning"]
     restart: unless-stopped
     environment:
@@ -927,6 +929,8 @@ services:
   syft-runner:
     build:
       context: ./services/syft-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["security-scanning"]
     restart: unless-stopped
     environment:
@@ -954,6 +958,8 @@ services:
   grype-runner:
     build:
       context: ./services/grype-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["security-scanning"]
     restart: unless-stopped
     environment:
@@ -1089,6 +1095,8 @@ services:
   docling-runner:
     build:
       context: ./services/docling-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["local-document-extraction"]
     restart: unless-stopped
     environment:
@@ -1118,6 +1126,9 @@ services:
   miniswe-runner:
     build:
       context: ./services/miniswe-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
+        hai-miniswe-wheels: ${HAI_MINISWE_WHEEL_CONTEXT:-./.build/miniswe-runtime/inputs}
     profiles: ["patch-proposals"]
     restart: unless-stopped
     depends_on:
@@ -1317,6 +1328,8 @@ services:
   ortools-solver:
     build:
       context: ./services/ortools-solver
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["optimization"]
     restart: unless-stopped
     mem_limit: 512m
@@ -1345,6 +1358,8 @@ services:
   evidently-runner:
     build:
       context: ./services/evidently-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["evaluation"]
     restart: unless-stopped
     mem_limit: 512m
@@ -1371,6 +1386,8 @@ services:
   guardrails-runner:
     build:
       context: ./services/guardrails-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["validation"]
     restart: unless-stopped
     mem_limit: 512m
@@ -1432,6 +1449,8 @@ services:
   fastmcp-bridge:
     build:
       context: ./services/fastmcp-bridge
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["mcp-bridge"]
     restart: unless-stopped
     depends_on:
@@ -1466,6 +1485,8 @@ services:
   lm-eval-runner:
     build:
       context: ./services/lm-eval-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["model-evaluation"]
     restart: unless-stopped
     environment:
@@ -1568,6 +1589,8 @@ services:
   deepeval-runner:
     build:
       context: ./services/deepeval-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["deepeval-evaluation"]
     restart: unless-stopped
     environment:
@@ -1611,6 +1634,8 @@ services:
   garak-runner:
     build:
       context: ./services/garak-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["garak-evaluation"]
     restart: unless-stopped
     environment:
@@ -1651,6 +1676,8 @@ services:
   whispercpp-runner:
     build:
       context: ./services/whispercpp-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["local-transcription"]
     restart: unless-stopped
     environment:
@@ -1686,6 +1713,8 @@ services:
   wasi-runner:
     build:
       context: ./services/wasi-runner
+      additional_contexts:
+        hai-native-source: ./services/native-python-runtime
     profiles: ["wasi"]
     restart: unless-stopped
     environment:

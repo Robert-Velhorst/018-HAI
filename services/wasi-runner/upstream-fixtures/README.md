@@ -1,0 +1,3 @@
+# Original Wasmtime CLI fixtures
+
+These files are unchanged from the pinned Wasmtime v50 source commit recorded in provenance.json. Preserve the upstream LICENSE. The hosted image inventory reuses the original hello_wasi_snapshot0, hello_wasi_snapshot1 and default-no-inheritance part of specify_env, preserving their expected output and failure assertions. Only configuration transport changes from the supported CLI option to its supported fixed host environment variable. No new application cases are authored. Full upstream case coverage or real admitted module/sandbox acceptance is not implied.
