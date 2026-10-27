@@ -1,6 +1,7 @@
 """Owned hosted metadata preparation; do not execute publisher tests behind resolver exceptions."""
 from pathlib import Path
 from urllib.request import urlopen
+from urllib.parse import quote
 import hashlib,json,os,re,subprocess,sys,shlex,shutil
 assert os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted'
 assert os.environ.get('GITHUB_REPOSITORY')=='Robert-Velhorst/018-HAI'
@@ -22,7 +23,7 @@ def snapshot(folder):
 project=snapshot(root);(out/'project-source-before.json').write_text(json.dumps(project,indent=2)+'\n')
 original=snapshot(sdk);assert original['head']==commit and original['tree']==tree
 (out/'publisher-source-before.json').write_text(json.dumps(original,indent=2)+'\n')
-allowed={'package.json','pnpm-workspace.yaml','.npmrc','sdk/identity/identity/package.json','pnpm-lock.yaml'}
+allowed={'package.json','pnpm-workspace.yaml','.npmrc','sdk/identity/identity/package.json','pnpm-lock.yaml','common/tools/eslint-plugin-azure-sdk/package.json'}
 commands=[];summary={'head':project['head'],'publisher_commit':commit,'publisher_tree':tree,'original_SDK_case_build_install_matrix_or_compiler_acceptance':False,'application_adoption':False,'original_cases_helpers_fixtures_assertions_selectors_timeouts_or_compiler_files_changed':False}
 try:
  with urlopen('https://api.github.com/repos/Azure/azure-sdk-for-js/git/commits/'+commit,timeout=40) as response:metadata=json.load(response)
@@ -35,6 +36,27 @@ try:
  (sdk/'package.json').write_text(json.dumps(root_manifest,indent=2)+'\n')
  manifest_path=sdk/'sdk/identity/identity/package.json';identity=json.loads(manifest_path.read_text());assert identity['name']=='@azure/identity' and identity['version']=='4.14.0' and identity['dependencies']['@azure/msal-node']=='^6.0.0'
  identity['dependencies']['@azure/msal-node']='^7.1.1';manifest_path.write_text(json.dumps(identity,indent=2)+'\n')
+ # Capture the highest public nondeprecated stable release, not an old lock or tag alone.
+ names=['typescript','typescript-eslint','eslint','@eslint/js','@typescript-eslint/eslint-plugin','@typescript-eslint/parser','@typescript-eslint/rule-tester','@typescript-eslint/utils','@typescript-eslint/typescript-estree']
+ releases={}
+ for name in names:
+  with urlopen('https://registry.npmjs.org/'+quote(name,safe=''),timeout=40) as response:packument=json.load(response)
+  stable=[version for version,row in packument['versions'].items() if re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)',version) and not row.get('deprecated')]
+  version=max(stable,key=lambda value:tuple(map(int,value.split('.'))))
+  with urlopen('https://registry.npmjs.org/'+quote(name,safe='')+'/'+version,timeout=40) as response:release=json.load(response)
+  assert release['name']==name and release['version']==version and not release.get('deprecated')
+  releases[name]=release
+ (out/'current-public-tooling-releases.json').write_text(json.dumps(releases,indent=2)+'\n')
+ plugin_path=sdk/'common/tools/eslint-plugin-azure-sdk/package.json';plugin=json.loads(plugin_path.read_text())
+ changed_declarations={}
+ for section in ['dependencies','devDependencies','peerDependencies']:
+  for name,version_range in list(plugin.get(section,{}).items()):
+   if name in releases and not version_range.startswith(('workspace:','catalog:')):
+    new_range='^'+releases[name]['version']
+    plugin[section][name]=new_range;changed_declarations[section+'/'+name]={'before':version_range,'after':new_range}
+ plugin_path.write_text(json.dumps(plugin,indent=2)+'\n')
+ summary['current_public_tooling_versions']={name:row['version'] for name,row in releases.items()}
+ summary['tooling_parent_declaration_changes']=changed_declarations
  workspace=(sdk/'pnpm-workspace.yaml').read_text();lines=workspace.splitlines(keepends=True);result=[];removed={};i=0
  forbidden={'overrides','peerDependencyRules','minimumReleaseAgeExclude'}
  while i<len(lines):
@@ -46,6 +68,10 @@ try:
   result.append(lines[i]);i+=1
  assert set(removed)==forbidden
  strict_workspace=''.join(result)+'\nstrictPeerDependencies: true\nengineStrict: true\n';assert not any(re.search(r'^'+re.escape(key)+':',strict_workspace,re.M) for key in forbidden)
+ for name in ['typescript','typescript-eslint','eslint','@eslint/js']:
+  pattern=r'(?m)^(  '+re.escape("'"+name+"'" if name.startswith('@') else name)+r': )[^\r\n]+$'
+  strict_workspace,count=re.subn(pattern,lambda match:match[1]+'^'+releases[name]['version'],strict_workspace)
+  assert count==1,name
  (sdk/'pnpm-workspace.yaml').write_text(strict_workspace)
  old_npmrc=(sdk/'.npmrc').read_text();assert [line for line in old_npmrc.splitlines() if line.strip()]==['registry=https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-js/npm/registry/']
  (sdk/'.npmrc').write_text('registry=https://registry.npmjs.org/\n')
@@ -66,7 +92,7 @@ try:
   assert checked.returncode==0 and checked.stdout.decode().strip()=='true',setting
   effective[setting]=True
  summary['verified_effective_pnpm_settings']=effective
- command=['pnpm','install','--lockfile-only','--no-frozen-lockfile']
+ command=['pnpm','update','--recursive','--lockfile-only']
  with (out/'strict-normal-lock-preflight.log').open('wb') as stream:resolution=subprocess.run(['bash','-c',shlex.join(command)],cwd=sdk,stdout=stream,stderr=subprocess.STDOUT,check=False)
  commands.append({'label':'additional-strict-normal-lock-preparation','command':command,'launcher':['bash','-c'],'cwd':'.sdk/azure-identity-source','returncode':resolution.returncode,'not_an_original_install_build_or_case_result':True})
  summary.update(normal_lock_preflight_exit=resolution.returncode,removed_resolver_exception_keys=sorted(removed),public_registry='https://registry.npmjs.org/',strict_peer_dependencies=True,engine_strict=True,proposed_MSAL_range='^7.1.1',proposed_SDK_package_manager='pnpm@12.16.1',metadata_preparation_only=True)

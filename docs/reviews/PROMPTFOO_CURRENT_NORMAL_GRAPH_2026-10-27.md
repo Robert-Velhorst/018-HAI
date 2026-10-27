@@ -42,3 +42,6 @@ The corrected shell preflight can generate the strict SDK metadata graph. That d
 
 
 Azure source preflight correction: PNPM12 reads only registry/authentication settings from `.npmrc`; the first nominal strict install at56167d therefore did not prove strict peers or engines. Its warning is retained as a failed strict-acceptance condition despite process exit0. The proposed source now puts `strictPeerDependencies: true` and `engineStrict: true` in `pnpm-workspace.yaml` and requires `pnpm config get` to return true for both before resolution. Original SDK commands, cases and compiler files remain unchanged. Reference: https://pnpm.io/cli/config .
+
+
+Next candidate targets the highest public nondeprecated stable TypeScript, TypeScript-ESLint and ESLint tooling, retaining exact registry manifests in its artifact. The SDK catalog and Azure lint-plugin dependency declarations are prepared normally; an additional recursive lock-only update refreshes allowed inherited ranges. Original publisher install/build/case commands and all compiler/case files remain unchanged. Public metadata currently identifies TypeScript7.0.2 versus TypeScript-ESLint8.72.1's declared TypeScript range below6.1, so latest-stable compatibility is explicitly unproven. No peer range in third-party packages is widened and no checker is bypassed.
