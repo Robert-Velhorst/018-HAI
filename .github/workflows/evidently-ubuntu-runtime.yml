@@ -3,6 +3,13 @@ name: Evidently Ubuntu native runtime qualification
 on:
   push:
     branches: [fix/hai-evidently-ubuntu-runtime-20261025]
+  pull_request:
+    paths:
+      - services/evidently-runner/**
+      - services/native-python-runtime/**
+      - scripts/record_evidently_ubuntu_runtime.py
+      - scripts/verify_evidently_ubuntu_image.py
+      - .github/workflows/evidently-ubuntu-runtime.yml
 
 permissions:
   contents: read
