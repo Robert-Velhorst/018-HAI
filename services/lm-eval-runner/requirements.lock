@@ -1994,7 +1994,7 @@ truststore==0.10.5 \
     # via
     #   httpcore2
     #   httpx2
-typepy==2.0.0+hai.dateutil3.1 \
+typepy[datetime]==2.0.0+hai.dateutil3.1 \
     --hash=sha256:03aee58a15216438933debc0bedf6027627e4783b5979adbab3320fdeff42bf5
     # via
     #   -r requirements.in
