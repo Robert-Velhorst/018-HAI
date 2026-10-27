@@ -18,7 +18,7 @@ for row in git('ls-tree','-r','-z','HEAD').split(b'\0'):
  data=(root/name).read_bytes();assert hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()==blob,name
  source[name]={'blob':blob,'sha256':sha(data)}
 (out/'source-before.json').write_text(json.dumps({'head':head,'tree':tree,'payloads':source},indent=2)+'\n')
-allowed={'services/promptfoo-runner/package.json','services/promptfoo-runner/package-lock.json','services/promptfoo-runner/app.mjs'}
+allowed={'services/promptfoo-runner/package.json','services/promptfoo-runner/package-lock.json','services/promptfoo-runner/app.mjs','services/promptfoo-runner/Dockerfile'}
 for name in ['package.json','package-lock.json','app.mjs','Dockerfile','test_app.mjs','test_cli_compatibility.mjs']:
  (out/('before-'+name)).write_bytes((runner/name).read_bytes())
 commands=[];summary={'head':head,'full_qualification':False,'original_cases_fixtures_helpers_assertions_commands_or_timeouts_changed':False,'local_execution':False}
@@ -48,15 +48,35 @@ try:
  expected=json.loads(json.dumps(manifest));expected.pop('overrides',None)
  assert not any(k in expected for k in ['overrides','resolutions'])
  for row in targets:expected['dependencies'][row['name']]=row['highest_stable']
+ private_path=runner/'third_party/get-uri8-basicftp6-private.tgz'
+ private_provenance=json.loads((runner/'third_party/get-uri8-basicftp6-provenance.json').read_text())
+ assert sha(private_path.read_bytes())==private_provenance['private_package_sha256']
+ expected['dependencies']['get-uri']='file:third_party/get-uri8-basicftp6-private.tgz'
  (runner/'package.json').write_text(json.dumps(expected,indent=2)+'\n')
  app=(runner/'app.mjs').read_text();needle="export const ENGINE = 'promptfoo "+old_engine+"';";assert app.count(needle)==1
  app=app.replace(needle,"export const ENGINE = 'promptfoo "+expected['dependencies']['promptfoo']+"';")
  (runner/'app.mjs').write_text(app)
+ dockerfile=(runner/'Dockerfile').read_text();marker='COPY package.json package-lock.json ./\n';assert dockerfile.count(marker)==1
+ (runner/'Dockerfile').write_text(dockerfile.replace(marker,marker+'COPY third_party ./third_party\n'))
  assert run('normal-resolve',['npm','update','--package-lock-only','--ignore-scripts','--no-audit','--no-fund'])==0
  lock=json.loads((runner/'package-lock.json').read_text());assert lock['packages']['']['dependencies']==expected['dependencies']
  assert json.loads((runner/'package.json').read_text())==expected
- for name in ['package.json','package-lock.json','app.mjs']:(out/('generated-'+name)).write_bytes((runner/name).read_bytes())
+ for name in ['package.json','package-lock.json','app.mjs','Dockerfile']:(out/('generated-'+name)).write_bytes((runner/name).read_bytes())
  install_exit=run('complete-install',['npm','ci','--ignore-scripts','--no-audit','--no-fund'])
+ if install_exit==0:
+  import tarfile,io
+  private_members={}
+  with tarfile.open(fileobj=io.BytesIO(private_path.read_bytes()),mode='r:gz') as archive:
+   for member in archive:
+    assert member.isfile() and member.name.startswith('package/')
+    name=member.name[len('package/'):];data=archive.extractfile(member).read()
+    assert name not in private_members and (runner/'node_modules/get-uri'/name).read_bytes()==data
+    private_members[name]=sha(data)
+  get_uri_rows=[(p,row) for p,row in lock['packages'].items() if p and (row.get('name') or p.split('node_modules/')[-1])=='get-uri']
+  assert len(get_uri_rows)==1 and get_uri_rows[0][0]=='node_modules/get-uri'
+  assert get_uri_rows[0][1]['resolved']=='file:third_party/get-uri8-basicftp6-private.tgz' and get_uri_rows[0][1]['version']=='8.0.1'
+  assert json.loads((runner/'node_modules/basic-ftp/package.json').read_text())['version']=='6.2.3'
+  (out/'actual-private-get-uri-installed.json').write_text(json.dumps({'private_tar_sha256':sha(private_path.read_bytes()),'private_source_payloads':private_members,'all_actual_installed_payloads_match':True,'single_normal_GetURI_lock_row':get_uri_rows,'actual_BasicFTP_version':'6.2.3','original_Linux_SDK_cases_passed':258,'full_publisher_SDK_qualified':False},indent=2)+'\n')
  with (out/'full-audit.json').open('wb') as stream:
   result=subprocess.run(['npm','audit','--json'],cwd=runner,stdout=stream,stderr=subprocess.PIPE,check=False)
  (out/'full-audit.stderr.log').write_bytes(result.stderr)
