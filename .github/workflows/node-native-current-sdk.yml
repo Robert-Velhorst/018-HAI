@@ -1,8 +1,11 @@
 name: Original Node SDK with current native providers
 
 on:
-  push:
-    branches: [ci/hai-node-sdk-staged-openssl-20261027]
+  pull_request:
+    paths:
+      - services/node-native-sdk/**
+      - services/native-python-runtime/**
+      - .github/workflows/node-native-current-sdk.yml
 
 permissions:
   contents: read
@@ -10,7 +13,7 @@ permissions:
 jobs:
   node-native-sdk:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
