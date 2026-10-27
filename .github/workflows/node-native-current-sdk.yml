@@ -3,7 +3,7 @@ name: Original Node SDK with current native providers
 on:
   pull_request:
     paths:
-      - services/node-native-sdk/**
+      - tools/node-native-sdk/**
       - services/native-python-runtime/**
       - .github/workflows/node-native-current-sdk.yml
 
@@ -53,8 +53,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker build --progress=plain --file services/node-native-sdk/Dockerfile \
-            --tag hai-node-native-sdk:ci services/node-native-sdk \
+          docker build --progress=plain --file tools/node-native-sdk/Dockerfile \
+            --tag hai-node-native-sdk:ci tools/node-native-sdk \
             2>&1 | tee "$HAI_NODE_REPORTS/node-SDK-image-build.log"
           docker image inspect hai-node-native-sdk:ci > "$HAI_NODE_REPORTS/node-SDK-image.json"
       - name: Verify signatures and run original configure build and CI cases
