@@ -1,5 +1,5 @@
 """Owned hosted regression proof; full upstream SDK acceptance remains separate."""
-from pathlib import Path
+from pathlib import Path,PureWindowsPath
 import hashlib,json,os,re,shutil,subprocess,sys
 
 assert os.environ.get('GITHUB_ACTIONS')=='true'
@@ -23,8 +23,22 @@ def command(label,args,cwd=root,env=None):
 
 def git(*args):return subprocess.check_output(['git','-C',str(sdk),*args])
 
+def read_payload(folder,name,mode):
+    path=folder/name
+    if mode=='120000' and path.is_symlink():
+        target=os.readlink(path)
+        # Windows stores native link separators differently from Git's POSIX blob.
+        # Retain the actual target as evidence and still require the exact Git hash.
+        if os.name=='nt':
+            assert not PureWindowsPath(target).is_absolute(),name
+            canonical=target.replace('\\','/')
+        else:canonical=target
+        return canonical.encode(),{'native_target':target,'canonical_Git_target':canonical}
+    assert path.resolve().is_relative_to(folder.resolve()),name
+    return path.read_bytes(),None
+
 def snapshot(folder):
-    result={};links={}
+    result={};links={};native_links={}
     rows=subprocess.check_output(['git','-C',str(folder),'ls-tree','-r','-z','HEAD'])
     for row in rows.split(b'\0'):
         if not row:continue
@@ -32,14 +46,12 @@ def snapshot(folder):
         assert name and not name.startswith('/') and '..' not in name.split('/')
         if kind=='commit':links[name]={'mode':mode,'commit':oid};continue
         assert kind=='blob' and mode in {'100644','100755','120000'}
-        path=folder/name
-        if mode=='120000' and path.is_symlink():data=os.readlink(path).encode()
-        else:
-            assert path.resolve().is_relative_to(folder.resolve()),name
-            data=path.read_bytes()
-        assert hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()==oid,name
+        data,native=read_payload(folder,name,mode)
+        if native is not None:native_links[name]=native
+        actual=hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+        assert actual==oid,{'path':name,'expected_blob':oid,'actual_blob':actual,'native_symlink':native}
         result[name]={'mode':mode,'blob':oid,'sha256':sha(data)}
-    return {'head':subprocess.check_output(['git','-C',str(folder),'rev-parse','HEAD']).decode().strip(),'tree':subprocess.check_output(['git','-C',str(folder),'rev-parse','HEAD^{tree}']).decode().strip(),'payloads':result,'unexpanded_gitlinks':links}
+    return {'head':subprocess.check_output(['git','-C',str(folder),'rev-parse','HEAD']).decode().strip(),'tree':subprocess.check_output(['git','-C',str(folder),'rev-parse','HEAD^{tree}']).decode().strip(),'payloads':result,'unexpanded_gitlinks':links,'native_symlink_targets':native_links}
 
 project=snapshot(root)
 (out/'project-source-before.json').write_text(json.dumps(project,indent=2)+'\n')
@@ -100,15 +112,16 @@ except Exception as error:
     summary.update(component_regression_qualified=False,failure=type(error).__name__+': '+str(error)[:400])
 finally:
     if 'before' in locals():
-        preserved={}
+        preserved={};native_after={}
         for name,row in before['payloads'].items():
             if name==relative:continue
-            path=sdk/name
-            current=os.readlink(path).encode() if row['mode']=='120000' and path.is_symlink() else path.read_bytes()
+            current,native=read_payload(sdk,name,row['mode'])
+            if native is not None:native_after[name]=native
             assert sha(current)==row['sha256'],name;preserved[name]=row
-        (out/'publisher-source-after.json').write_text(json.dumps({'head':commit,'tree':tree,'all_other_payloads_unchanged':preserved,'only_production_path_changed':relative,'proposed_source_sha256':sha((sdk/relative).read_bytes())},indent=2)+'\n')
+        assert native_after==before['native_symlink_targets']
+        (out/'publisher-source-after.json').write_text(json.dumps({'head':commit,'tree':tree,'all_other_payloads_unchanged':preserved,'only_production_path_changed':relative,'proposed_source_sha256':sha((sdk/relative).read_bytes()),'native_symlink_targets_unchanged':native_after},indent=2)+'\n')
     for name,row in project['payloads'].items():
-        path=root/name;data=os.readlink(path).encode() if row['mode']=='120000' and path.is_symlink() else path.read_bytes()
+        data,native=read_payload(root,name,row['mode'])
         assert sha(data)==row['sha256'],name
     (out/'project-source-after.json').write_text(json.dumps(project,indent=2)+'\n')
     (out/'commands.json').write_text(json.dumps(commands,indent=2)+'\n')

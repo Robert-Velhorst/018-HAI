@@ -19,6 +19,13 @@ All original cases, helpers, fixtures, assertions, commands and publisher packag
 metadata remain unchanged. No peer range is widened. The publisher MIT license
 is retained in the review artifact.
 
+Source receipts record native Windows symlink targets separately from their
+canonical POSIX Git representation. Only native link separators are translated
+for the Git-blob hash comparison; the exact expected blob hash is still required,
+and native targets must remain identical before and after execution. Regular
+source/case bytes are compared directly. No publisher file or link is rewritten
+to accommodate the source reader.
+
 Six additional cases run unchanged against both the original and proposed
 function: three use real ESLint 10.13.0 rule contexts for module/script/CommonJS;
 three check that legacy parser-options precedence remains intact. The isolated
