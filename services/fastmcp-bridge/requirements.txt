@@ -39,9 +39,9 @@ beartype==0.23.1 \
     # via
     #   fastmcp-slim
     #   py-key-value-aio
-cachetools==7.2.4 \
-    --hash=sha256:4cfbebf3eec4040d2073b19c460511ad47eef7b852dbf9a0d385099b4dafa31e \
-    --hash=sha256:e0203b04b75fe13e62098eeb5b2018c4eb1a14c04e2b5b450e70db3ee7e92ec5
+cachetools==7.2.6 \
+    --hash=sha256:1096513bdeed468ba505df3d123e4578a5a22c955f4a9ba3912fd71f3f95363a \
+    --hash=sha256:8722e08fc36ae0838a9a0a2ab9935554720de3343a62dad7aae7c595854c8623
     # via py-key-value-aio
 caio==0.12.10 \
     --hash=sha256:1140246b2bdd2e46c33826464fee66cc2244345e38462d96b8055081acca213e \
@@ -266,9 +266,9 @@ cryptography==50.0.2 \
     #   joserfc
     #   pyjwt
     #   secretstorage
-cyclopts==5.3.0 \
-    --hash=sha256:479f92942ea286b6c132f64262d82f12b4c71d003f3d3691f572cd6ad4528bb2 \
-    --hash=sha256:a4ce5397b78023f238ab8cbaca9adb7e39636f34102f3080d8b62b9feca7e64d
+cyclopts==5.3.1 \
+    --hash=sha256:818258c6d55f8c928f6c3b85fdc94121825f98f6f625c43ae6faabfb121412e1 \
+    --hash=sha256:a2e9bdddf3d724a5fb06cefb4a220ece34511e95e79da88ec56c25d6b9a7ee00
     # via fastmcp-slim
 dnspython==2.9.0 \
     --hash=sha256:9a4aedb833c3c1b49214d04d44d3032ab7a9135f7c1d29a549b4ff78fd82fda9 \
@@ -286,13 +286,13 @@ exceptiongroup==1.3.1 \
     --hash=sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219 \
     --hash=sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598
     # via fastmcp-slim
-fastmcp==4.1.3 \
-    --hash=sha256:a1f79e9db929a1603c75331df603f74530fc236aa711e0ee2e185821c6d9888d \
-    --hash=sha256:b983d8acc44ab1143e0c86fd6da843f25043ee0aeb64ab983b36c527bd1d33e9
+fastmcp==4.1.4 \
+    --hash=sha256:047c1c1842f42e4ffe2e153568a25851d442cb7739a41a56352b7a2852ff8738 \
+    --hash=sha256:2398be351ec343466f0510dc9e281d3a848bc3370c17b0a2807fcccc6f1ffe3b
     # via -r requirements.in
-fastmcp-slim==4.1.3 \
-    --hash=sha256:81af8699331c33d438caf85b6947f36df6e2f04118e6f318ca00374fd9afea9a \
-    --hash=sha256:d95277db0979e4cbfa84528cf9016ae079494b41ed8e88cc909fee8233db6035
+fastmcp-slim==4.1.4 \
+    --hash=sha256:0f611b246504ff0d0ee7ab77123f529b5c9aed68670eaee9c6f960a59bb024da \
+    --hash=sha256:d1034317e4e2960dd619930c01baabbc77e60825f55c09f93471afa427a68cd7
     # via fastmcp
 griffelib==2.4.1 \
     --hash=sha256:40c028dd2e623f464423f0e11e3c553158f1cf4f1368239a370534d73e1407ff \
@@ -424,7 +424,9 @@ platformdirs==4.13.5 \
 py-key-value-aio==0.4.6 \
     --hash=sha256:267c03c3e24cb99d3097612f8a5cfd8e11785c6a2975e272db0e303ea1850bfd \
     --hash=sha256:820b30c7959fc738ea3d00160cdb10cd258f51e38737b2add530defeea1ded77
-    # via fastmcp-slim
+    # via
+    #   -r requirements.in
+    #   fastmcp-slim
 pycparser==3.12 \
     --hash=sha256:a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e \
     --hash=sha256:f03387877eab82ce01bbdfd0ba7252ee55a90b1c708d5129e2ce915475cf1db6
@@ -838,9 +840,9 @@ secretstorage==3.5.0 \
     --hash=sha256:0ce65888c0725fcb2c5bc0fdb8e5438eece02c523557ea40ce0703c266248137 \
     --hash=sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be
     # via keyring
-sse-starlette==3.5.1 \
-    --hash=sha256:a6cdcfec47b952911b1d99a7b8056429b5984039b875bf6575174220364b551f \
-    --hash=sha256:dbb1461cd53c1e284537c3ddcf92f54f24178519a3f1e335e49e5283993db0f7
+sse-starlette==3.6.0 \
+    --hash=sha256:623151d6c20dc0eebf1b3379c27faae91fff883bac7ab6665f16f46440a88b3a \
+    --hash=sha256:e4dfa4d237d2712cb2b4d4918eda9b457cd6b44bbecdc838af75de836565bafd
     # via mcp
 starlette==1.10.0 \
     --hash=sha256:478c0ab3b4ced6e82719849c118fa406f0278a3499c1a898cd15cd31bdc38ce4 \

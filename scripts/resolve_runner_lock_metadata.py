@@ -149,7 +149,7 @@ def main():
         if native.returncode:
             print((native.stdout+native.stderr).decode("utf-8",errors="replace")[-12000:])
             raise RuntimeError("Source-bound FastUUID native candidate construction failed")
-    metadata_raw = urllib.request.urlopen("https://pypi.org/pypi/uv/0.13.5/json", timeout=40).read()
+    metadata_raw = urllib.request.urlopen("https://pypi.org/pypi/uv/0.13.6/json", timeout=40).read()
     metadata = json.loads(metadata_raw)
     wheels = [f for f in metadata["urls"] if f["packagetype"] == "bdist_wheel" and "manylinux_2_17_x86_64" in f["filename"]]
     assert len(wheels) == 1
