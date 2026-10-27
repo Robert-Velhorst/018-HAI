@@ -452,6 +452,34 @@ jobs:
           inputs: upstream-trivy/.github/
           version: v1.31.1
           advanced-security: false
+      - name: Retain complete unfiltered workflow findings
+        if: always()
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORTS: ${{ runner.temp }}/hai-trivy-sdk-evidence
+        run: |
+          set -euo pipefail
+          mkdir -p "$REPORTS"
+          # Reuse the executable from the pinned action's hash-verified wheel.
+          # A failed or missing installation remains fatal; no fallback is used.
+          zizmor="$RUNNER_TEMP/zizmor-wheel/unpacked/zizmor-1.31.1.data/scripts/zizmor"
+          test -x "$zizmor"
+          "$zizmor" --version > "$REPORTS/raw-workflow-lint-version.txt"
+          sha256sum "$zizmor" > "$REPORTS/raw-workflow-lint-executable.sha256"
+          set +e
+          "$zizmor" --no-ignores --persona=auditor --collect=all \
+            --strict-collection --format=json --color=never -- \
+            upstream-trivy/.github/ \
+            > "$REPORTS/raw-workflow-findings.json" \
+            2> "$REPORTS/raw-workflow-lint.stderr.log"
+          lint_status=$?
+          set -e
+          printf '%s\n' "$lint_status" > "$REPORTS/raw-workflow-lint-exit-code.txt"
+          # Preserve the scanner's status, including tool or collection errors.
+          # Informational through high findings all have nonzero exit codes.
+          exit "$lint_status"
       - name: Verify all original SDK source inputs after execution
         if: always()
         shell: bash

@@ -29,6 +29,17 @@ source and resolved input identities are checked again after SDK execution.
 Windows uses canonical LF checkout and its normal Git representation for
 symlink-target files; original publisher case/helper/fixture bytes remain protected.
 
+The original workflow-lint command remains mandatory. A companion invocation
+uses the same pinned action's hash-verified zizmor 1.31.1 executable with
+`--no-ignores --persona=auditor --collect=all --strict-collection`. It retains
+the complete JSON findings, diagnostic log, tool identity and exit status for
+the original `.github/` input scope. Persona filtering and publisher ignore
+comments/configuration cannot hide findings from this invocation. Every
+finding severity, missing tool, schema/collection error or scanner failure
+remains fatal. The source is checked again and evidence uploaded even after
+either lint command fails. This does not edit publisher workflows or dismiss
+their findings.
+
 The configured SDK jobs still require successful execution. Runtime adoption
 also requires actual binary/native identity, the complete saved final image,
 original HAI container cases, health and the raw all-package/all-severity gate. Other transitive modules have not
