@@ -158,7 +158,8 @@
     {
       "path": "litellm-rust/crates/secrets/Cargo.toml",
       "original_sha256": "1ac2afd26fd8a8cdef0969505e462aaa44d7b4c49221f049dea3d571f7fa8c98",
-      "proposed_sha256": "bd73d60632cfb6d51fd41ec1028847ea45a5c5cf729c9021e01df635a1d070fc"
+      "proposed_sha256": "bd73d60632cfb6d51fd41ec1028847ea45a5c5cf729c9021e01df635a1d070fc",
+      "overlay_path": "litellm-rust/manifests/litellm-secrets.Cargo.toml"
     },
     {
       "path": "litellm-rust/crates/testkit/Cargo.toml",

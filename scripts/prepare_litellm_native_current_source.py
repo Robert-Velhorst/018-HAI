@@ -56,7 +56,13 @@ def main():
     for overlay in spec['overlays']:
         name=overlay['path']
         if hashes.get(name)!=overlay['original_sha256']:raise ValueError('Original overlay source differs')
-        payload=(inputs/'overlays'/name).read_bytes()
+        staged=PurePosixPath(overlay.get('overlay_path',name))
+        if staged.is_absolute() or '..' in staged.parts:
+            raise ValueError('Expected a relative overlay metadata path')
+        staged_path=inputs/'overlays'/str(staged)
+        if staged_path.is_symlink() or not staged_path.resolve(strict=True).is_relative_to((inputs/'overlays').resolve(strict=True)):
+            raise ValueError('Overlay metadata must remain inside its owned staging directory')
+        payload=staged_path.read_bytes()
         if hashlib.sha256(payload).hexdigest()!=overlay['proposed_sha256']:
             raise ValueError('Reviewed overlay bytes differ')
         (source/name).write_bytes(payload);hashes[name]=overlay['proposed_sha256']
