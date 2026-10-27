@@ -220,7 +220,7 @@ def main():
         '--shared-openssl-libpath=' + str(openssl_sdk / 'lib'),
         '--shared-sqlite', '--shared-sqlite-includes=' + str(provider / 'include'),
         '--shared-sqlite-libpath=' + str(provider / 'lib')], source, node_env)
-    command('original-Node-build', ['make', '-j2'], source, node_env, timeout=7200)
+    command('original-Node-build', ['make', '-j2'], source, node_env, timeout=10800)
     executable = source / 'out/Release/node'
     tested_node_sha256 = digest(executable)
     candidate = inventory(executable, node_env)
