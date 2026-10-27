@@ -36,3 +36,6 @@ All project source and the publisher's full Git source tree are bound before and
 
 
 The first strict Azure preflight at ce44748 stopped before dependency resolution with Python ENOEXEC on PNPM 12's published shebang-less launcher. The package's own source explicitly documents shell fallback for this entry point. The reviewer now invokes its unchanged preparation arguments through the normal CI Bash shell and records the actual launcher hash/header and PNPM 12.16.1 version. No publisher launcher, lifecycle policy, original SDK command, platform/engine check or source/compiler file is changed to work around the launch error. The earlier error and artifact remain preserved and are not reported as a dependency-resolution result.
+
+
+The corrected shell preflight can generate the strict SDK metadata graph. That does not validate installed peer contexts or MSAL APIs. The next stage therefore runs the publisher's original `pnpm install` command without altered arguments against the prepared strict source, recording its result separately from the lock-only preparation. A standard-worker disk check records insufficient capacity instead of selecting paid capacity or weakening the install. No SDK build/test/compiler helper is executed or qualified by this stage; the existing compiler typing helper remains an explicit gate.

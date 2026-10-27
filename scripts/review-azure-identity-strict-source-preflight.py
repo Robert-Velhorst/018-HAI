@@ -61,6 +61,16 @@ try:
  with (out/'strict-normal-lock-preflight.log').open('wb') as stream:resolution=subprocess.run(['bash','-c',shlex.join(command)],cwd=sdk,stdout=stream,stderr=subprocess.STDOUT,check=False)
  commands.append({'label':'additional-strict-normal-lock-preparation','command':command,'launcher':['bash','-c'],'cwd':'.sdk/azure-identity-source','returncode':resolution.returncode,'not_an_original_install_build_or_case_result':True})
  summary.update(normal_lock_preflight_exit=resolution.returncode,removed_resolver_exception_keys=sorted(removed),public_registry='https://registry.npmjs.org/',strict_peer_dependencies=True,engine_strict=True,proposed_MSAL_range='^7.1.1',proposed_SDK_package_manager='pnpm@12.16.1',metadata_preparation_only=True)
+ if resolution.returncode==0:
+  disk=shutil.disk_usage(sdk);summary['standard_worker_free_disk_before_original_install']=disk.free
+  if disk.free<8*1024**3:
+   summary['original_SDK_install_not_attempted']='Less than8GiB free on the standard owned worker; no larger paid runner selected.'
+   summary['original_SDK_install_exit']=None
+  else:
+   original_install=['pnpm','install']
+   with (out/'original-SDK-install-on-strict-source.log').open('wb') as stream:installed=subprocess.run(['bash','-c',shlex.join(original_install)],cwd=sdk,stdout=stream,stderr=subprocess.STDOUT,check=False)
+   commands.append({'label':'original-SDK-install-on-strict-source','command':original_install,'launcher':['bash','-c'],'cwd':'.sdk/azure-identity-source','returncode':installed.returncode,'not_a_build_or_case_result':True})
+   summary['original_SDK_install_exit']=installed.returncode
 except Exception as error:
  summary.update(failure=type(error).__name__+': '+str(error)[:400],normal_lock_preflight_exit=None)
 finally:
@@ -80,4 +90,4 @@ finally:
  (out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
 print(json.dumps(summary))
 # Successful preparation is still not SDK acceptance; existing typing/source gates remain explicit.
-sys.exit(0 if summary.get('normal_lock_preflight_exit')==0 else 1)
+sys.exit(0 if summary.get('normal_lock_preflight_exit')==0 and summary.get('original_SDK_install_exit')==0 else 1)
