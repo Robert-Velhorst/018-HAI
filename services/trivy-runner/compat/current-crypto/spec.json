@@ -1,0 +1,33 @@
+{
+  "publisher_repository": "aquasecurity/trivy",
+  "publisher_tag": "v0.76.1",
+  "publisher_commit": "e713f67f7d54decdcd9b3132c9751833dcced698",
+  "publisher_tree": "2b2e1ef32745d09fbd85b9d040da722333dd4258",
+  "publisher_blob_count": 3412,
+  "go_version": "1.27.3",
+  "module": "golang.org/x/crypto",
+  "previous_module_version": "v0.57.0",
+  "candidate_module_version": "v0.58.0",
+  "candidate_module_origin_commit": "8fdf07b3114278fb3b78c1cf1814e08bd851eb4c",
+  "publisher_go_mod_sha256": "3b80afcc13ad1abbafa5a3054198622ea51444295967069899f907be1acaba71",
+  "prepared_go_mod_sha256": "24c617d09cfb1928ac65e67eabd6471cfb76f1e9aef262398c1d10a1c5736d1c",
+  "advisory_not_resolved_by_version_bump": "GO-2026-5932",
+  "normal_resolution_only": false,
+  "runtime_recipe_or_original_publisher_cases_changed": false,
+  "complete_original_SDK_platform_jobs_required": 12,
+  "runtime_binary_or_final_image_adoption": false,
+  "additional_module_upgrades": [
+    {
+      "module": "github.com/redis/go-redis/extra/redisotel/v9",
+      "previous_module_version": "v9.5.3",
+      "candidate_module_version": "v9.23.0",
+      "line_suffix": " // indirect"
+    }
+  ],
+  "required_selected_modules": [
+    {
+      "module": "github.com/redis/go-redis/extra/rediscmd/v9",
+      "candidate_module_version": "v9.23.0"
+    }
+  ]
+}
