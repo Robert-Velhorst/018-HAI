@@ -78,10 +78,15 @@ def main():
         path = source / "go.mod"
         original = path.read_bytes()
         assert hashlib.sha256(original).hexdigest() == spec["publisher_go_mod_sha256"]
-        old = ("\t" + spec["module"] + " " + spec["previous_module_version"] + "\n").encode()
-        new = ("\t" + spec["module"] + " " + spec["candidate_module_version"] + "\n").encode()
-        assert original.count(old) == 1
-        prepared = original.replace(old, new, 1)
+        prepared = original
+        upgrades = [spec, *spec.get("additional_module_upgrades", [])]
+        assert len({item["module"] for item in upgrades}) == len(upgrades)
+        for item in upgrades:
+            suffix = item.get("line_suffix", "")
+            old = ("\t" + item["module"] + " " + item["previous_module_version"] + suffix + "\n").encode()
+            new = ("\t" + item["module"] + " " + item["candidate_module_version"] + suffix + "\n").encode()
+            assert prepared.count(old) == 1
+            prepared = prepared.replace(old, new, 1)
         assert hashlib.sha256(prepared).hexdigest() == spec["prepared_go_mod_sha256"]
         path.write_bytes(prepared)
         (reports / "publisher-go.mod").write_bytes(original)
@@ -95,7 +100,7 @@ def main():
             "operator_data_accessed": False,
             "runtime_acceptance": False,
         }, indent=2) + "\n")
-        print("Verified complete publisher source; prepared one direct module declaration.")
+        print("Verified complete publisher source; prepared declared module upgrades.")
         return
 
     original = json.loads((reports / "publisher-payloads.json").read_text())
@@ -114,6 +119,13 @@ def main():
     selected = [row for row in modules if row["Path"] == spec["module"]]
     assert len(selected) == 1 and selected[0]["Version"] == spec["candidate_module_version"]
     assert "Replace" not in selected[0]
+    related = []
+    for item in [*spec.get("additional_module_upgrades", []),
+                 *spec.get("required_selected_modules", [])]:
+        matches = [row for row in modules if row["Path"] == item["module"]]
+        assert len(matches) == 1 and matches[0]["Version"] == item["candidate_module_version"]
+        assert "Replace" not in matches[0]
+        related.append(matches[0])
     environment = json.loads((reports / "go-environment.json").read_text())
     assert environment["GOVERSION"] == "go" + spec["go_version"]
     assert environment["GOSUMDB"] and environment["GOSUMDB"] != "off"
@@ -122,6 +134,7 @@ def main():
     receipt = {
         "publisher_commit": spec["publisher_commit"],
         "selected_module": selected[0],
+        "selected_related_modules": related,
         "original_payloads_verified": len(current),
         "all_original_code_case_helper_fixture_payloads_preserved": True,
         "unchanged_publisher_payloads": len(current) - len(changed),

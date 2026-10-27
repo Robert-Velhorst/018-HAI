@@ -3,9 +3,14 @@
 The latest public Trivy release, v0.76.1, declares
 `golang.org/x/crypto v0.57.0`. The Go module proxy currently publishes
 v0.58.0. This candidate starts from the complete immutable Trivy source at
-`e713f67f7d54decdcd9b3132c9751833dcced698` and changes that one direct
-declaration. Go 1.27.3 generates the resulting dependency graph and go.sum
-normally on a GitHub-hosted runner.
+`e713f67f7d54decdcd9b3132c9751833dcced698`. It updates that declaration
+and the indirect redisotel declaration from the publisher-withdrawn v9.5.3
+to the current public v9.23.0 release. Normal resolution must also select
+rediscmd v9.23.0, replacing its withdrawn v9.5.3. Go 1.27.3 generates the
+resulting dependency graph and go.sum normally on a GitHub-hosted runner.
+No module replacement or lower-version fallback is added. Other selected
+withdrawn modules, including hel/v2 and onpar, still need an import/API
+migration review; their publishers' suggested version resets are not applied.
 
 The source reader binds all 3,412 publisher payloads to the pinned Git tree
 before preparing the declaration. After normal resolution it requires every

@@ -10,10 +10,24 @@
   "candidate_module_version": "v0.58.0",
   "candidate_module_origin_commit": "8fdf07b3114278fb3b78c1cf1814e08bd851eb4c",
   "publisher_go_mod_sha256": "3b80afcc13ad1abbafa5a3054198622ea51444295967069899f907be1acaba71",
-  "prepared_go_mod_sha256": "e30046a8bad8af0284ee3cc598a9b8d8c2b240f86f8a11f9e7c5bf4c578ea555",
+  "prepared_go_mod_sha256": "24c617d09cfb1928ac65e67eabd6471cfb76f1e9aef262398c1d10a1c5736d1c",
   "advisory_not_resolved_by_version_bump": "GO-2026-5932",
   "normal_resolution_only": false,
   "runtime_recipe_or_original_publisher_cases_changed": false,
   "complete_original_SDK_platform_jobs_required": 12,
-  "runtime_binary_or_final_image_adoption": false
+  "runtime_binary_or_final_image_adoption": false,
+  "additional_module_upgrades": [
+    {
+      "module": "github.com/redis/go-redis/extra/redisotel/v9",
+      "previous_module_version": "v9.5.3",
+      "candidate_module_version": "v9.23.0",
+      "line_suffix": " // indirect"
+    }
+  ],
+  "required_selected_modules": [
+    {
+      "module": "github.com/redis/go-redis/extra/rediscmd/v9",
+      "candidate_module_version": "v9.23.0"
+    }
+  ]
 }
