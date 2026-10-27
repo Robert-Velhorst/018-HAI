@@ -15,6 +15,16 @@
     ".github/actions/setup-uv/action.yml",
     ".github/actions/run-pytest/action.yml"
   ],
+  "schema_dataset": {
+    "repository": "APIs-guru/openapi-directory",
+    "commit": "f7207cf0a5c56081d275ebae4cf615249323385d",
+    "tree": "a90298f286e1d9e529e99e11437e06e2de900142",
+    "blob_count": 4151,
+    "scope": "The publisher's original pinned regression corpus; not an update or acceptance of operator data."
+  },
+  "implemented_coverage_jobs": {
+    "Original 232K-schema crash-test dataset and case remain required.": "original_schema_crash"
+  },
   "required_gates_not_qualified_by_this_public_matrix": [
     "Original private GitHub OAuth integration credentials and authorized external execution are unavailable; no substitute secrets supplied.",
     "Original lowest-direct SDK job requires separate policy review; no runtime downgrade or lower-resolution mode is introduced here.",
