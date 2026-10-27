@@ -157,10 +157,189 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  original_packaging_smoke:
+    name: Complete original packaging smoke with two approved stable-only flags
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Preserve HAI source and approved packaging command recorder
+        run: |
+          set -euo pipefail
+          python tools/fastmcp-original-sdk/source_guard.py initialise
+          cp tools/fastmcp-original-sdk/record_packaging.py "$RUNNER_TEMP/hai-fastmcp-original-sdk/record_packaging.py"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: PrefectHQ/fastmcp
+          ref: 26bf9080ae338d1467dca6471b15c6911f71c75c
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind immutable publisher release tag
+        run: git fetch --depth=1 origin refs/tags/v4.1.4:refs/tags/v4.1.4
+      - name: Verify all publisher payloads and record exact approved command changes
+        id: original
+        run: |
+          set -euo pipefail
+          python "$RUNNER_TEMP/hai-fastmcp-original-sdk/source_guard.py" adopt
+          python "$RUNNER_TEMP/hai-fastmcp-original-sdk/record_packaging.py" before
+      - name: Setup uv
+        uses: ./.github/actions/setup-uv
+        with:
+          resolution: locked
+      - name: Build package wheels
+        run: uv build --all-packages --wheel --out-dir /tmp/fastmcp-dist
+
+      - name: Install bare slim wheel
+        run: |
+          uv venv /tmp/fastmcp-slim-bare-smoke
+          SLIM_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp_slim-*.whl)
+          uv pip install --python /tmp/fastmcp-slim-bare-smoke/bin/python "$SLIM_WHEEL"
+          /tmp/fastmcp-slim-bare-smoke/bin/python - <<'PY'
+          from importlib.metadata import entry_points
+
+          import fastmcp
+          import fastmcp.settings
+
+          assert any(ep.name == "fastmcp" for ep in entry_points(group="console_scripts"))
+
+          try:
+              from fastmcp.cli import app
+          except ImportError as exc:
+              assert "FastMCP CLI support is not installed" in str(exc)
+          else:
+              raise AssertionError(f"bare fastmcp-slim unexpectedly imported CLI app {app!r}")
+
+          try:
+              fastmcp.FastMCP
+          except ImportError as exc:
+              assert "fastmcp-slim[server]" in str(exc)
+          else:
+              raise AssertionError("bare fastmcp-slim unexpectedly imported FastMCP")
+          PY
+
+      - name: Install client slim wheel
+        run: |
+          uv venv /tmp/fastmcp-slim-client-smoke
+          SLIM_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp_slim-*.whl)
+          uv pip install --python /tmp/fastmcp-slim-client-smoke/bin/python "${SLIM_WHEEL}[client]"
+          /tmp/fastmcp-slim-client-smoke/bin/python - <<'PY'
+          from importlib.metadata import entry_points
+
+          from fastmcp import Client
+          from fastmcp.client.transports import StdioTransport, StreamableHttpTransport
+          from fastmcp.mcp_config import MCPConfig
+
+          assert any(ep.name == "fastmcp" for ep in entry_points(group="console_scripts"))
+
+          try:
+              from fastmcp.cli import app
+          except ImportError as exc:
+              assert "FastMCP CLI support is not installed" in str(exc)
+          else:
+              raise AssertionError(f"client-only slim unexpectedly imported CLI app {app!r}")
+
+          assert Client("https://example.com/mcp")
+          assert StreamableHttpTransport("https://example.com/mcp")
+          assert StdioTransport(command="uvx", args=["demo"])
+          assert MCPConfig.from_dict({"mcpServers": {"demo": {"url": "https://example.com/mcp"}}})
+
+          try:
+              from fastmcp import FastMCP
+          except ImportError as exc:
+              assert "fastmcp-slim[server]" in str(exc)
+          else:
+              raise AssertionError(f"client-only slim unexpectedly imported {FastMCP!r}")
+          PY
+
+      - name: Install server slim wheel
+        run: |
+          uv venv /tmp/fastmcp-slim-server-smoke
+          SLIM_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp_slim-*.whl)
+          uv pip install --python /tmp/fastmcp-slim-server-smoke/bin/python "${SLIM_WHEEL}[server]"
+          /tmp/fastmcp-slim-server-smoke/bin/python - <<'PY'
+          from importlib.metadata import entry_points
+
+          from fastmcp import FastMCP
+          from fastmcp.cli import app
+
+          assert any(
+              ep.name == "fastmcp" and ep.value == "fastmcp.cli:app"
+              for ep in entry_points(group="console_scripts")
+          )
+
+          mcp = FastMCP("smoke")
+          assert app is not None
+          assert mcp.name == "smoke"
+          PY
+
+      - name: Install full package from matching local wheels
+        run: |
+          uv venv /tmp/fastmcp-full-smoke
+          FULL_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp-*.whl)
+          uv pip install --python /tmp/fastmcp-full-smoke/bin/python --prerelease=disallow --find-links /tmp/fastmcp-dist "$FULL_WHEEL"
+          /tmp/fastmcp-full-smoke/bin/python - <<'PY'
+          from importlib.metadata import entry_points
+          from importlib.metadata import requires
+
+          from fastmcp import Client, FastMCP
+          from fastmcp.client.client import CallToolResult
+          from fastmcp.exceptions import ToolError
+
+          fastmcp_reqs = requires("fastmcp") or []
+          assert any("fastmcp-slim[client,server]" in req for req in fastmcp_reqs)
+          assert not any("fastmcp-slim[full" in req for req in fastmcp_reqs)
+
+          assert any(
+              ep.name == "fastmcp" and ep.value == "fastmcp.cli:app"
+              for ep in entry_points(group="console_scripts")
+          )
+
+          assert Client("https://example.com/mcp")
+          assert FastMCP("smoke").name == "smoke"
+          assert CallToolResult is not None
+          assert ToolError is not None
+          PY
+
+      - name: Install fastmcp-remote from matching local wheels
+        run: |
+          uv venv /tmp/fastmcp-remote-smoke
+          REMOTE_WHEEL=$(ls /tmp/fastmcp-dist/fastmcp_remote-*.whl)
+          uv pip install --python /tmp/fastmcp-remote-smoke/bin/python --prerelease=disallow --find-links /tmp/fastmcp-dist "$REMOTE_WHEEL"
+          /tmp/fastmcp-remote-smoke/bin/python - <<'PY'
+          from importlib.metadata import entry_points
+          from importlib.metadata import requires
+
+          from fastmcp_remote.cli import build_parser
+
+          remote_reqs = requires("fastmcp-remote") or []
+          assert any("fastmcp-slim[client,server]" in req for req in remote_reqs)
+          assert any(
+              ep.name == "fastmcp-remote" and ep.value == "fastmcp_remote.cli:main"
+              for ep in entry_points(group="console_scripts")
+          )
+          assert build_parser().prog == "fastmcp-remote"
+          PY
+      - name: Retain wheel and installed-distribution evidence even on failure
+        if: ${{ !cancelled() && steps.original.outcome == 'success' }}
+        run: python "$RUNNER_TEMP/hai-fastmcp-original-sdk/record_packaging.py" after
+      - name: Verify every original publisher payload after packaging
+        if: ${{ !cancelled() && steps.original.outcome == 'success' }}
+        run: python "$RUNNER_TEMP/hai-fastmcp-original-sdk/source_guard.py" verify
+      - name: Retain raw packaging and complete source evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fastmcp-original-packaging-stable-only
+          path: ${{ runner.temp }}/hai-fastmcp-original-sdk/
+          if-no-files-found: error
+          retention-days: 7
+
   complete_coverage_gate:
     name: Complete original SDK coverage remains required
     if: always()
-    needs: [original_public_cases, original_schema_crash]
+    needs: [original_public_cases, original_schema_crash, original_packaging_smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

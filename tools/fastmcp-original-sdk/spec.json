@@ -23,16 +23,27 @@
     "scope": "The publisher's original pinned regression corpus; not an update or acceptance of operator data."
   },
   "implemented_coverage_jobs": {
-    "Original 232K-schema crash-test dataset and case remain required.": "original_schema_crash"
+    "Original 232K-schema crash-test dataset and case remain required.": "original_schema_crash",
+    "Complete original package-install smoke with exactly two approved stable-only installer flags remains required.": "original_packaging_smoke"
   },
   "required_gates_not_qualified_by_this_public_matrix": [
     "Original private GitHub OAuth integration credentials and authorized external execution are unavailable; no substitute secrets supplied.",
     "Original lowest-direct SDK job requires separate policy review; no runtime downgrade or lower-resolution mode is introduced here.",
-    "Original package-install smoke contains explicit --prerelease=allow; no allowance or edited original case is introduced here.",
+    "Complete original package-install smoke with exactly two approved stable-only installer flags remains required.",
     "Original static/prek and upgrade workflow jobs remain required, including review of inherited skip/configuration rules.",
     "Original 232K-schema crash-test dataset and case remain required.",
     "Original downstream build/install/consumer matrix remains required."
   ],
   "complete_original_SDK_qualified": false,
-  "runtime_or_current_normal_graph_qualification": "Separate from the unmodified publisher SDK lock and historical interpreter compatibility matrix."
+  "runtime_or_current_normal_graph_qualification": "Separate from the unmodified publisher SDK lock and historical interpreter compatibility matrix.",
+  "approved_packaging_exception": {
+    "approval": "Robert approved exactly the two stable-only installer flags on 2026-10-27; no merge or deployment approval.",
+    "publisher_workflow_sha256": "1a6afcb444e03aa2cdabfaeef26fff34adb721876e1b81d6d8871d76bab053da",
+    "original_steps_sha256": "00d2e8d8c31f52389c4e60bc0c608476e7eac295df0d12350d0b2fa6de62d07c",
+    "executed_steps_sha256": "fece0b37516bffdb11c54f7f033148837b2ea1296a62887c903cd527dff0dc86",
+    "changes": {
+      "--prerelease=allow": "--prerelease=disallow"
+    },
+    "changed_occurrences": 2
+  }
 }
