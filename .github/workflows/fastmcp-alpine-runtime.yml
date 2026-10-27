@@ -70,7 +70,7 @@ jobs:
             --mount "type=bind,src=$PWD/scripts/record_fastmcp_alpine_runtime.py,dst=/review/runtime_inventory.py,readonly" \
             --entrypoint python hai-fastmcp-alpine:candidate -I /review/runtime_inventory.py \
             > "$HAI_ALPINE_REVIEW/reports/runtime-inventory.json"
-      - name: Run every original FastMCP case without edits or case filters
+      - name: Run every original HAI FastMCP bridge case without edits or case filters
         id: cases
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: bash
