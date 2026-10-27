@@ -1,0 +1,148 @@
+name: Evidently Ubuntu native runtime qualification
+
+on:
+  push:
+    branches: [fix/hai-evidently-ubuntu-runtime-20261025]
+  pull_request:
+    paths:
+      - services/evidently-runner/**
+      - services/native-python-runtime/**
+      - scripts/record_evidently_ubuntu_runtime.py
+      - scripts/verify_evidently_ubuntu_image.py
+      - .github/workflows/evidently-ubuntu-runtime.yml
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.1'
+      - name: Bind all original source before native compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          export HAI_UBUNTU_NATIVE="$RUNNER_TEMP/hai-evidently-ubuntu-native"
+          printf '%s\n' "HAI_UBUNTU_NATIVE=$HAI_UBUNTU_NATIVE" >> "$GITHUB_ENV"
+          mkdir -p "$HAI_UBUNTU_NATIVE/reports"
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json,os,subprocess
+          files=subprocess.check_output(['git','ls-files','-z']).decode().split('\0')
+          record={'head':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+            'tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+            'tracked_file_sha256':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in files if p and Path(p).is_file()},
+            'no_operator_data_accessed':True,'full_native_or_application_acceptance':False}
+          (Path(os.environ['HAI_UBUNTU_NATIVE'])/'reports/source-identity.json').write_text(json.dumps(record,indent=2)+'\n')
+          PY
+      - name: Build the current base with normal signed repository updates
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress=plain --file services/native-python-runtime/Dockerfile.ubuntu-preflight \
+            --tag hai-ubuntu-base:current services/native-python-runtime \
+            2>&1 | tee "$HAI_UBUNTU_NATIVE/reports/base-build.log"
+      - name: Compile complete CPython and native clients as UID10001
+        id: native
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --progress=plain --build-context hai-native-source=services/native-python-runtime \
+            --build-context hai-ubuntu-base=docker-image://hai-ubuntu-base:current \
+            --file services/evidently-runner/Dockerfile.ubuntu --target native-export \
+            --output "type=local,dest=$HAI_UBUNTU_NATIVE/reports/native-export" services/evidently-runner \
+            2>&1 | tee "$HAI_UBUNTU_NATIVE/reports/native-build.log"
+      - name: Build the complete candidate with original runtime lock and reviewed engines
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HAI_UBUNTU_NATIVE/"{input,cache}
+          docker build --progress=plain --build-context hai-native-source=services/native-python-runtime \
+            --build-context hai-ubuntu-base=docker-image://hai-ubuntu-base:current \
+            --file services/evidently-runner/Dockerfile.ubuntu --target runtime \
+            --tag hai-evidently-runner:ci services/evidently-runner \
+            2>&1 | tee "$HAI_UBUNTU_NATIVE/reports/runtime-build.log"
+      - name: Record all actual native providers and installed distributions offline
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 1g --cpus 1 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=128m --env HAI_RUNTIME_INVENTORY=1 \
+            --mount "type=bind,src=$PWD/scripts/record_evidently_ubuntu_runtime.py,dst=/review/runtime_inventory.py,readonly" \
+            --entrypoint python hai-evidently-runner:ci -I /review/runtime_inventory.py \
+            > "$HAI_UBUNTU_NATIVE/reports/runtime-inventory.json"
+      - name: Run all unchanged original Evidently cases inside the final image
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only --user 10001:10001 --cap-drop ALL \
+            --security-opt no-new-privileges --memory 2g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m --entrypoint python hai-evidently-runner:ci \
+            -m unittest discover -v -s /app -p 'test*.py' \
+            2>&1 | tee "$HAI_UBUNTU_NATIVE/reports/all-original-cases.log"
+      - name: Run the unchanged isolated startup and health contract
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/python_runner_container_smoke.py --runner evidently-runner --image hai-evidently-runner:ci \
+            2>&1 | tee "$HAI_UBUNTU_NATIVE/reports/container-smoke.log"
+      - name: Save the exact complete runtime and descriptor chain
+        id: archive
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{.Config.User}}' hai-evidently-runner:ci)" = 10001:10001
+          docker image inspect hai-evidently-runner:ci > "$HAI_UBUNTU_NATIVE/reports/image-inspect.json"
+          docker image save hai-evidently-runner:ci -o "$HAI_UBUNTU_NATIVE/input/image.tar"
+          python scripts/runner_image_archive_identity.py "$HAI_UBUNTU_NATIVE/input/image.tar" \
+            "$HAI_UBUNTU_NATIVE/reports/image-inspect.json" hai-evidently-runner:ci \
+            "$HAI_UBUNTU_NATIVE/reports/image-identity.json" "$HAI_UBUNTU_NATIVE/reports/image-config-id.txt"
+      - name: Scan every OS and language package with all findings fatal
+        if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          scan_status=0
+          docker run --rm --read-only --user "$(id -u):$(id -g)" --cap-drop ALL \
+            --security-opt no-new-privileges --memory 4g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=3g \
+            --mount "type=bind,src=$HAI_UBUNTU_NATIVE/input,dst=/input,readonly" \
+            --mount "type=bind,src=$HAI_UBUNTU_NATIVE/reports,dst=/reports" \
+            --mount "type=bind,src=$HAI_UBUNTU_NATIVE/cache,dst=/cache" \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --input /input/image.tar --cache-dir /cache --scanners vuln \
+            --list-all-pkgs --ignorefile /dev/null --exit-code 1 --format json --timeout 10m \
+            --output /reports/image-security.json > "$HAI_UBUNTU_NATIVE/reports/scan.log" 2>&1 || scan_status=$?
+          printf '%s\n' "$scan_status" > "$HAI_UBUNTU_NATIVE/reports/scan.exit-status"
+          python scripts/verify_evidently_ubuntu_image.py "$HAI_UBUNTU_NATIVE/reports/image-security.json" \
+            "$HAI_UBUNTU_NATIVE/reports/image-identity.json" "$HAI_UBUNTU_NATIVE/reports/runtime-inventory.json" \
+            services/evidently-runner > "$HAI_UBUNTU_NATIVE/reports/verified-image.json"
+          test "$scan_status" -eq 0
+      - name: Retain the complete compressed image even when another gate fails
+        if: ${{ !cancelled() && steps.archive.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gzip -1 -c "$HAI_UBUNTU_NATIVE/input/image.tar" > "$HAI_UBUNTU_NATIVE/reports/image.tar.gz"
+          sha256sum "$HAI_UBUNTU_NATIVE/reports/image.tar.gz" > "$HAI_UBUNTU_NATIVE/reports/image.tar.gz.sha256"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: evidently-ubuntu-complete-native-export
+          path: ${{ runner.temp }}/hai-evidently-ubuntu-native/reports/
+          retention-days: 7
+          if-no-files-found: error

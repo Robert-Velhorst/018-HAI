@@ -1,0 +1,18 @@
+{
+  "repository": "canonical/pebble",
+  "version": "v1.33.2",
+  "release_url": "https://github.com/canonical/pebble/releases/tag/v1.33.2",
+  "source_commit": "f5da9476802a1b58b6566d3e7f4cd37debc29fec",
+  "asset_url": "https://github.com/canonical/pebble/releases/download/v1.33.2/pebble_v1.33.2_linux_amd64.tar.gz",
+  "asset_sha256": "e9d84f9e461a89abb4437af26a784917bd85cf1612c8de142a3b4449dff332d0",
+  "binary_archive_path": "pebble",
+  "binary_sha256": "b14482f9c98f55bbcebc84affc7cac7291540b62bf6895fd480ebbf2a3c88f24",
+  "actual_embedded_go_version": "go1.27.3",
+  "go_build_info": "0w\ufffd\f\ufffdt\b\u0002A\ufffd\ufffd\u0007\ufffd\ufffd\u0018\ufffdpath\tgithub.com/canonical/pebble/cmd/pebble\nmod\tgithub.com/canonical/pebble\tv1.33.2\t\ndep\tgithub.com/GehirnInc/crypt\tv0.0.0-20230320061759-8cc1b52080c5\th1:IEjq88XO4PuBDcvmjQJcQGg+w+UaafSy8G5Kcb5tBhI=\ndep\tgithub.com/canonical/go-flags\tv0.0.0-20230403090104-105d09a091b8\th1:zGaJEJI9qPVyM+QKFJagiyrM91Ke5S9htoL1D470g6E=\ndep\tgithub.com/canonical/x-go\tv0.0.0-20230522092633-7947a7587f5b\th1:Da2fardddn+JDlVEYtrzBLTtyzoyU3nIS0Cf0GvjmwU=\ndep\tgithub.com/gorilla/websocket\tv1.5.3\th1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=\ndep\tgolang.org/x/sys\tv0.48.0\th1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=\ndep\tgolang.org/x/term\tv0.46.0\th1:3+OXuTbaKDgwk8jTi3aSLHRlmWqHEUDUtxnbFigO4YE=\ndep\tgopkg.in/tomb.v2\tv2.0.0-20161208151619-d5d1b5820637\th1:yiW+nvdHb9LVqSHQBXfZCieqV4fzYhNBql77zY0ykqs=\ndep\tgopkg.in/yaml.v2\tv2.4.0\th1:D8xgwECY7CYvx+Y2n4sBz93Jn9JRvxdiyyo8CTfuKaY=\ndep\tgopkg.in/yaml.v3\tv3.0.1\th1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=amd64\nbuild\tGOOS=linux\nbuild\tGOAMD64=v1\nbuild\tvcs=git\nbuild\tvcs.revision=f5da9476802a1b58b6566d3e7f4cd37debc29fec\nbuild\tvcs.time=2026-10-21T13:37:16Z\nbuild\tvcs.modified=false\n\ufffd2C1\ufffd\u0018 r\u0000\ufffdB\u0010A\u0016\ufffd\ufffd",
+  "archive_members": [
+    "COPYING",
+    "README.md",
+    "pebble"
+  ],
+  "local_native_or_vendor_execution": false
+}
