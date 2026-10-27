@@ -4,7 +4,7 @@ from urllib.request import urlopen
 import base64,hashlib,io,json,os,subprocess,sys,tarfile
 assert os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted'
 assert os.environ.get('GITHUB_REPOSITORY')=='Robert-Velhorst/018-HAI'
-root=Path.cwd();out=Path(os.environ['RUNNER_TEMP'])/'get-uri-basic-ftp-original-sdk';out.mkdir()
+root=Path.cwd();out=root/'review-output/get-uri-basic-ftp-original-sdk';out.mkdir(parents=True)
 publisher='TooTallNate/proxy-agents';sdk_commit='b7e5f7ccce1a3ac5b339cc4c587974e8989cbc16';sdk_tree='a39ee2fc198f46cda3d1ea692086a513b851e459'
 sha=lambda b:hashlib.sha256(b).hexdigest()
 def git(folder,*args):return subprocess.check_output(['git','-C',str(folder),*args])

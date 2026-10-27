@@ -7,7 +7,7 @@ import hashlib,json,os,re,subprocess,sys
 
 assert os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted'
 assert os.environ.get('GITHUB_REPOSITORY')=='Robert-Velhorst/018-HAI'
-root=Path.cwd();runner=root/'services/promptfoo-runner';out=Path(os.environ['RUNNER_TEMP'])/'promptfoo-current-normal-graph';out.mkdir()
+root=Path.cwd();runner=root/'services/promptfoo-runner';out=root/'review-output/promptfoo-current-normal-graph';out.mkdir(parents=True)
 sha=lambda b:hashlib.sha256(b).hexdigest()
 git=lambda *a:subprocess.check_output(['git',*a])
 head=git('rev-parse','HEAD').decode().strip();tree=git('rev-parse','HEAD^{tree}').decode().strip()

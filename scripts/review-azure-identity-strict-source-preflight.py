@@ -5,7 +5,7 @@ from urllib.parse import quote
 import hashlib,json,os,re,subprocess,sys,shlex,shutil
 assert os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted'
 assert os.environ.get('GITHUB_REPOSITORY')=='Robert-Velhorst/018-HAI'
-root=Path.cwd();sdk=root/'.sdk/azure-identity-source';out=Path(os.environ['RUNNER_TEMP'])/'azure-identity-strict-source';out.mkdir()
+root=Path.cwd();sdk=root/'.sdk/azure-identity-source';out=root/'review-output/azure-identity-strict-source';out.mkdir(parents=True)
 commit='ef2a29238eed3348a7d0688f430d405abdbcaab9';tree='2bac2f189027f2d289bfad64294ad78584659054'
 sha=lambda b:hashlib.sha256(b).hexdigest()
 def git(folder,*args):return subprocess.check_output(['git','-C',str(folder),*args])

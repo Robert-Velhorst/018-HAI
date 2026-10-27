@@ -38,6 +38,6 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: azure-identity-strict-source-preflight-evidence
-          path: ${{ runner.temp }}/azure-identity-strict-source/
+          path: review-output/azure-identity-strict-source/
           if-no-files-found: error
           retention-days: 7
