@@ -26,7 +26,16 @@ jobs:
         with:
           node-version: '26.12.1'
       - name: Select stable npm
-        run: npm install --global npm@12.2.1 --no-audit --no-fund
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@12.2.1 --no-audit --no-fund
+          npm_prefix="$(npm prefix --global)"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            printf '%s\n' "$npm_prefix" >> "$GITHUB_PATH"
+          else
+            printf '%s/bin\n' "$npm_prefix" >> "$GITHUB_PATH"
+          fi
       - name: Preserve full publisher source and compare original and port against actual ESLint
         run: python tools/review-import-eslint10-source-type.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
