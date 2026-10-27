@@ -1,0 +1,68 @@
+name: Trivy current crypto source metadata
+
+on:
+  pull_request:
+    paths:
+      - services/trivy-runner/compat/current-crypto/**
+      - .github/workflows/trivy-current-crypto-source.yml
+
+permissions:
+  contents: read
+
+jobs:
+  normal-module-resolution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out project port specification
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check out complete pinned publisher source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: aquasecurity/trivy
+          ref: e713f67f7d54decdcd9b3132c9751833dcced698
+          path: upstream-trivy
+          persist-credentials: false
+      - name: Install current stable Python for metadata readers
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.1'
+      - name: Install current stable Go SDK
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Verify complete source and prepare declared module upgrade
+        env:
+          REPORTS: ${{ runner.temp }}/hai-trivy-current-crypto
+        run: |
+          python3 -I services/trivy-runner/compat/current-crypto/prepare_source.py \
+            --phase prepare --source upstream-trivy --reports "$REPORTS"
+      - name: Resolve normally and preserve complete module graph
+        working-directory: upstream-trivy
+        env:
+          REPORTS: ${{ runner.temp }}/hai-trivy-current-crypto
+        run: |
+          set -euo pipefail
+          go env -json GOVERSION GOSUMDB GOPROXY GOTOOLCHAIN GOOS GOARCH GOWORK GOMOD > "$REPORTS/go-environment.json"
+          go mod edit -json > "$REPORTS/prepared-module-metadata.json"
+          go mod tidy 2>&1 | tee "$REPORTS/normal-module-resolution.log"
+          go mod edit -json > "$REPORTS/resolved-module-metadata.json"
+          go list -m -json all > "$REPORTS/complete-module-graph.json"
+          git diff -- go.mod go.sum > "$REPORTS/normal-dependency-input.diff"
+      - name: Reconcile unchanged publisher source and current dependency
+        env:
+          REPORTS: ${{ runner.temp }}/hai-trivy-current-crypto
+        run: |
+          python3 -I services/trivy-runner/compat/current-crypto/prepare_source.py \
+            --phase verify --source upstream-trivy --reports "$REPORTS"
+      - name: Retain complete source and module metadata evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trivy-current-crypto-normal-module-metadata
+          path: ${{ runner.temp }}/hai-trivy-current-crypto/
+          retention-days: 7
+          if-no-files-found: error
