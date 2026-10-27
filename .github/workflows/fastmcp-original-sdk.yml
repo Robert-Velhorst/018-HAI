@@ -90,10 +90,77 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  original_schema_crash:
+    name: Original FastMCP schema crash test and complete public corpus
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Preserve complete HAI source and schema recorder outside the disposable checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/fastmcp-original-sdk/source_guard.py initialise
+          cp tools/fastmcp-original-sdk/record_schema_dataset.py "$RUNNER_TEMP/hai-fastmcp-original-sdk/record_schema_dataset.py"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: PrefectHQ/fastmcp
+          ref: 26bf9080ae338d1467dca6471b15c6911f71c75c
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind the immutable publisher release tag
+        run: git fetch --depth=1 origin refs/tags/v4.1.4:refs/tags/v4.1.4
+      - name: Verify all original publisher inputs before schema setup
+        id: original
+        run: python "$RUNNER_TEMP/hai-fastmcp-original-sdk/source_guard.py" adopt
+      - name: Install current stable SDK resolver
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: '0.13.6'
+      - name: Original publisher Python setup
+        run: uv python install 3.12
+      - name: Original publisher dependency setup
+        run: uv sync
+      - name: Original publisher corpus clone
+        id: dataset
+        run: git clone --depth 1 https://github.com/APIs-guru/openapi-directory.git /tmp/openapi-directory
+      - name: Record the initial public dataset identity
+        run: python "$RUNNER_TEMP/hai-fastmcp-original-sdk/record_schema_dataset.py" before
+      - name: Run the unchanged original schema command and retain its actual exit status
+        id: schema_case
+        env:
+          RUN_REAL_WORLD_SCHEMA_TEST: '1'
+          OPENAPI_DIRECTORY_PATH: /tmp/openapi-directory
+          DUMP_SCHEMA_FAILURES: /tmp/schema_failures
+        shell: bash
+        run: |
+          set +e
+          uv run pytest tests/utilities/json_schema_type/test_real_world_schemas.py -m integration -v -n auto --timeout-method=thread \
+            2>&1 | tee "$RUNNER_TEMP/hai-fastmcp-original-sdk/schema-case.log"
+          status=${PIPESTATUS[0]}
+          printf '%s\n' "$status" > "$RUNNER_TEMP/hai-fastmcp-original-sdk/schema-case.exit-status"
+          exit "$status"
+      - name: Verify the original pinned dataset and retain raw provider counts
+        if: ${{ !cancelled() && steps.schema_case.outcome != 'skipped' && steps.schema_case.outcome != '' }}
+        run: python "$RUNNER_TEMP/hai-fastmcp-original-sdk/record_schema_dataset.py" after
+      - name: Verify every original publisher source payload after schema execution
+        if: ${{ !cancelled() && steps.original.outcome == 'success' }}
+        run: python "$RUNNER_TEMP/hai-fastmcp-original-sdk/source_guard.py" verify
+      - name: Retain corpus identity and raw results even when an original case fails
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fastmcp-original-schema-corpus-evidence
+          path: ${{ runner.temp }}/hai-fastmcp-original-sdk/
+          if-no-files-found: error
+          retention-days: 7
+
   complete_coverage_gate:
     name: Complete original SDK coverage remains required
     if: always()
-    needs: original_public_cases
+    needs: [original_public_cases, original_schema_crash]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -108,8 +175,12 @@ jobs:
           from pathlib import Path
           import json,os
           spec=json.loads(Path('tools/fastmcp-original-sdk/spec.json').read_text())
-          missing=spec['required_gates_not_qualified_by_this_public_matrix']
-          result={'observed_jobs':json.loads(os.environ['OBSERVED_JOBS']),
+          observed=json.loads(os.environ['OBSERVED_JOBS'])
+          missing=list(spec['required_gates_not_qualified_by_this_public_matrix'])
+          for reason,job in spec.get('implemented_coverage_jobs',{}).items():
+              if observed.get(job,{}).get('result')=='success':
+                  missing.remove(reason)
+          result={'observed_jobs':observed,
                   'required_unqualified_gates':missing,'complete_original_SDK_qualified':False}
           Path('fastmcp-original-SDK-coverage.json').write_text(json.dumps(result,indent=2)+'\n')
           for reason in missing:
