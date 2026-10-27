@@ -1,7 +1,7 @@
 """Owned hosted metadata preparation; do not execute publisher tests behind resolver exceptions."""
 from pathlib import Path
 from urllib.request import urlopen
-import hashlib,json,os,re,subprocess,sys
+import hashlib,json,os,re,subprocess,sys,shlex,shutil
 assert os.environ.get('GITHUB_ACTIONS')=='true' and os.environ.get('RUNNER_ENVIRONMENT')=='github-hosted'
 assert os.environ.get('GITHUB_REPOSITORY')=='Robert-Velhorst/018-HAI'
 root=Path.cwd();sdk=root/'.sdk/azure-identity-source';out=Path(os.environ['RUNNER_TEMP'])/'azure-identity-strict-source';out.mkdir()
@@ -51,9 +51,15 @@ try:
  (sdk/'.npmrc').write_text('registry=https://registry.npmjs.org/\nstrict-peer-dependencies=true\nengine-strict=true\n')
  compiler_source=sdk/'common/tools/eslint-plugin-azure-sdk/src/configs/index.ts'
  summary['publisher_compiler_assertion_shim_present_but_not_executed_or_qualified']='bypassTypeCheck' in compiler_source.read_text()
+ pnpm_path=shutil.which('pnpm');assert pnpm_path
+ resolved_pnpm=Path(pnpm_path).resolve();launcher_bytes=resolved_pnpm.read_bytes()
+ (out/'pnpm-launcher.json').write_text(json.dumps({'PATH_entry':pnpm_path,'resolved':str(resolved_pnpm),'sha256':sha(launcher_bytes),'header_hex':launcher_bytes[:16].hex(),'declares_shebang':launcher_bytes.startswith(b'#!'),'normal_CI_shell_invocation':['bash','-c'],'platform_or_engine_checks_disabled':False},indent=2)+'\n')
+ with (out/'pnpm-version.log').open('wb') as stream:version_check=subprocess.run(['bash','-c','pnpm --version'],cwd=sdk,stdout=stream,stderr=subprocess.STDOUT,check=False)
+ commands.append({'label':'normal-shell-package-manager-version','command':['pnpm','--version'],'launcher':['bash','-c'],'cwd':'.sdk/azure-identity-source','returncode':version_check.returncode,'not_an_original_install_build_or_case_result':True})
+ assert version_check.returncode==0 and (out/'pnpm-version.log').read_text().strip().endswith('12.16.1')
  command=['pnpm','install','--lockfile-only','--no-frozen-lockfile']
- with (out/'strict-normal-lock-preflight.log').open('wb') as stream:resolution=subprocess.run(command,cwd=sdk,stdout=stream,stderr=subprocess.STDOUT,check=False)
- commands.append({'label':'additional-strict-normal-lock-preparation','command':command,'cwd':'.sdk/azure-identity-source','returncode':resolution.returncode,'not_an_original_install_build_or_case_result':True})
+ with (out/'strict-normal-lock-preflight.log').open('wb') as stream:resolution=subprocess.run(['bash','-c',shlex.join(command)],cwd=sdk,stdout=stream,stderr=subprocess.STDOUT,check=False)
+ commands.append({'label':'additional-strict-normal-lock-preparation','command':command,'launcher':['bash','-c'],'cwd':'.sdk/azure-identity-source','returncode':resolution.returncode,'not_an_original_install_build_or_case_result':True})
  summary.update(normal_lock_preflight_exit=resolution.returncode,removed_resolver_exception_keys=sorted(removed),public_registry='https://registry.npmjs.org/',strict_peer_dependencies=True,engine_strict=True,proposed_MSAL_range='^7.1.1',proposed_SDK_package_manager='pnpm@12.16.1',metadata_preparation_only=True)
 except Exception as error:
  summary.update(failure=type(error).__name__+': '+str(error)[:400],normal_lock_preflight_exit=None)
