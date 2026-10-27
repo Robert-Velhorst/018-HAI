@@ -180,6 +180,10 @@ def main():
         # Beta-only transitive packages are not current stable candidates.
         command[-3] = command[-3].replace("--upgrade --generate-hashes",
             "--upgrade --prerelease disallow --generate-hashes", 1)
+    if args.runner in {"lm-eval-runner", "pydantic-ai-runner"}:
+        # Preserve the explicitly selected extras in normal requirements output.
+        command[-3] = command[-3].replace("--generate-hashes",
+            "--no-strip-extras --generate-hashes", 1)
     process = subprocess.run(command, capture_output=True, timeout=600, check=False)
     log = process.stdout + process.stderr
     (output / "resolution.log").write_bytes(log)
