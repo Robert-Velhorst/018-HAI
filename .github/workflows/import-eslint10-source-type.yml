@@ -1,0 +1,53 @@
+name: Import plugin production sourceType compatibility
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  actual-eslint10-context:
+    if: github.repository == 'Robert-Velhorst/018-HAI' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NPM_CONFIG_ENGINE_STRICT: 'true'
+      NPM_CONFIG_STRICT_PEER_DEPS: 'true'
+    steps:
+      - name: Preserve canonical publisher and project text bytes
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '26.12.1'
+      - name: Select stable npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@12.2.1 --no-audit --no-fund
+          npm_prefix="$(npm prefix --global)"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            printf '%s\n' "$npm_prefix" >> "$GITHUB_PATH"
+          else
+            printf '%s/bin\n' "$npm_prefix" >> "$GITHUB_PATH"
+          fi
+      - name: Preserve full publisher source and compare original and port against actual ESLint
+        run: python tools/review-import-eslint10-source-type.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: import-eslint10-source-type-${{ matrix.os }}
+          path: |
+            review-output/import-eslint10-source-type/*.json
+            review-output/import-eslint10-source-type/*.log
+            review-output/import-eslint10-source-type/*.js
+            review-output/import-eslint10-source-type/publisher-LICENSE
+            review-output/import-eslint10-source-type/harness/package.json
+            review-output/import-eslint10-source-type/harness/package-lock.json
+          if-no-files-found: error
+          retention-days: 7
