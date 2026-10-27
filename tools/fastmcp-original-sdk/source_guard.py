@@ -27,9 +27,23 @@ def payloads():
         assert not relative.is_absolute() and '..' not in relative.parts
         assert kind == 'blob' and mode in {'100644', '100755', '120000'}
         path = root.joinpath(*relative.parts)
+        native_target = None
         if mode == '120000' and path.is_symlink():
-            data = os.readlink(path).encode('utf-8')
+            native_target = os.readlink(path)
+            data = native_target.encode('utf-8')
             representation = 'native-symlink'
+            if os.name == 'nt':
+                # Windows exposes its native link spelling (including native
+                # separators/prefixes). Bind the canonical Git target to the
+                # exact same physical file, then preserve both spellings in
+                # the before/after record. No link or target file is omitted.
+                canonical = subprocess.check_output(['git', 'cat-file', 'blob', blob])
+                target = PurePosixPath(canonical.decode('utf-8'))
+                assert not target.is_absolute()
+                expected = path.parent.joinpath(*target.parts).resolve(strict=True)
+                assert expected.is_relative_to(root) and path.samefile(expected)
+                data = canonical
+                representation = 'Windows-Git-native-symlink'
         else:
             assert path.is_file() and not path.is_symlink()
             assert path.resolve().is_relative_to(root)
@@ -38,8 +52,14 @@ def payloads():
             data = path.read_bytes()
             representation = 'Windows-Git-symlink-target-file' if mode == '120000' else 'regular-file'
         actual = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+        if actual != blob:
+            diagnostic = {'path': name, 'mode': mode, 'representation': representation,
+                          'expected_Git_blob': blob, 'actual_canonical_blob': actual,
+                          'native_symlink_target': native_target}
+            (Path(os.environ['RUNNER_TEMP']) / 'hai-fastmcp-original-sdk' / 'source-mismatch.json').write_text(json.dumps(diagnostic, indent=2)+'\n')
         assert actual == blob, name
-        result[name] = {'blob': blob, 'sha256': hashlib.sha256(data).hexdigest(), 'mode': mode, 'representation': representation}
+        result[name] = {'blob': blob, 'sha256': hashlib.sha256(data).hexdigest(), 'mode': mode,
+                        'representation': representation, 'native_symlink_target': native_target}
     return result
 
 
