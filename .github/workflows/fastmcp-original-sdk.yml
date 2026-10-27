@@ -1,0 +1,125 @@
+name: FastMCP original publisher SDK coverage
+
+on:
+  pull_request:
+    paths:
+      - tools/fastmcp-original-sdk/**
+      - services/fastmcp-bridge/**
+      - .github/workflows/fastmcp-original-sdk.yml
+
+permissions:
+  contents: read
+
+jobs:
+  original_public_cases:
+    name: Original FastMCP ${{ matrix.test-type }} Python ${{ matrix.python }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, python: '3.10', test-type: unit-and-serial}
+          - {os: ubuntu-latest, python: '3.11', test-type: unit-and-serial}
+          - {os: ubuntu-latest, python: '3.12', test-type: unit-and-serial}
+          - {os: ubuntu-latest, python: '3.13', test-type: unit-and-serial}
+          - {os: ubuntu-latest, python: '3.14', test-type: unit-and-serial}
+          - {os: ubuntu-latest, python: '3.15', test-type: unit-and-serial}
+          - {os: windows-latest, python: '3.10', test-type: unit-and-serial}
+          - {os: windows-latest, python: '3.14', test-type: unit-and-serial}
+          - {os: ubuntu-latest, python: '3.10', test-type: conformance}
+          - {os: ubuntu-latest, python: '3.15', test-type: conformance}
+    steps:
+      - name: Preserve canonical Git payload bytes on each platform
+        shell: bash
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Retain complete HAI harness source identity outside the disposable publisher checkout
+        shell: bash
+        run: python tools/fastmcp-original-sdk/source_guard.py initialise
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: PrefectHQ/fastmcp
+          ref: 26bf9080ae338d1467dca6471b15c6911f71c75c
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind the immutable publisher release tag
+        shell: bash
+        run: git fetch --depth=1 origin refs/tags/v4.1.4:refs/tags/v4.1.4
+      - name: Verify all original publisher cases and inputs before setup
+        id: original
+        shell: bash
+        run: python "$RUNNER_TEMP/hai-fastmcp-original-sdk/source_guard.py" adopt
+      - name: Original publisher locked SDK setup
+        id: dependencies
+        uses: ./.github/actions/setup-uv
+        with:
+          python-version: ${{ matrix.python }}
+          resolution: locked
+      - name: Original publisher unit tests
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && matrix.test-type == 'unit-and-serial' }}
+        uses: ./.github/actions/run-pytest
+      - name: Original publisher serial subprocess tests
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && matrix.test-type == 'unit-and-serial' }}
+        uses: ./.github/actions/run-pytest
+        with:
+          test-type: client_process
+      - name: Original publisher conformance Node setup
+        id: conformance_node
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && matrix.test-type == 'conformance' }}
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.0.1
+        with:
+          node-version: '24'
+      - name: Original publisher conformance tests
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.conformance_node.outcome == 'success' && matrix.test-type == 'conformance' }}
+        uses: ./.github/actions/run-pytest
+        with:
+          test-type: conformance
+      - name: Verify every original source payload after SDK execution
+        if: ${{ !cancelled() && steps.original.outcome == 'success' }}
+        shell: bash
+        run: python "$RUNNER_TEMP/hai-fastmcp-original-sdk/source_guard.py" verify
+      - name: Retain complete source evidence even when an original case fails
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fastmcp-original-${{ matrix.test-type }}-${{ matrix.python }}-${{ runner.os }}
+          path: ${{ runner.temp }}/hai-fastmcp-original-sdk/
+          if-no-files-found: error
+          retention-days: 7
+
+  complete_coverage_gate:
+    name: Complete original SDK coverage remains required
+    if: always()
+    needs: original_public_cases
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Refuse to promote partial coverage to complete SDK qualification
+        env:
+          OBSERVED_JOBS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json,os
+          spec=json.loads(Path('tools/fastmcp-original-sdk/spec.json').read_text())
+          missing=spec['required_gates_not_qualified_by_this_public_matrix']
+          result={'observed_jobs':json.loads(os.environ['OBSERVED_JOBS']),
+                  'required_unqualified_gates':missing,'complete_original_SDK_qualified':False}
+          Path('fastmcp-original-SDK-coverage.json').write_text(json.dumps(result,indent=2)+'\n')
+          for reason in missing:
+              print(reason)
+          raise SystemExit(1 if missing else 0)
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: fastmcp-original-complete-coverage-gate
+          path: fastmcp-original-SDK-coverage.json
+          if-no-files-found: error
+          retention-days: 7
