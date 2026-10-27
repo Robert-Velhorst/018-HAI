@@ -1,4 +1,4 @@
-# Current crypto source port: preparation
+# Current crypto source port and original SDK qualification
 
 The latest public Trivy release, v0.76.1, declares
 `golang.org/x/crypto v0.57.0`. The Go module proxy currently publishes
@@ -15,11 +15,23 @@ the selected crypto version, checksum database, actual Go SDK version and
 absence of newly introduced module replacements. Complete graph, source
 identity, original/prepared/resolved manifests, checksums and logs are retained.
 
-This first stage does not build or replace the runtime binary. Qualification
-still requires the complete original publisher SDK workflow, including its
-platform matrix and integration jobs, actual binary/native identity, the
-complete saved final image, original HAI container cases, health and the raw
-all-package/all-severity security gate. Other transitive modules have not
+Normal resolution is followed by all eight original SDK job definitions:
+three-platform unit and build matrices, integration, Kubernetes, module, VM,
+end-to-end and workflow lint (12 platform jobs). Every original SDK command
+and platform matrix is retained. Current stable qualification tools are
+pinned, and original fixture downloads remain active without a shared cache.
+Runner capacity is measured without deleting installed tools or pruning images.
+
+Each SDK job adopts the successful same-run manifests and creates an
+ephemeral, never-pushed Git snapshot in its own hosted public-source checkout.
+This gives the original clean-tree checks a real port baseline. Complete
+source and resolved input identities are checked again after SDK execution.
+Windows uses canonical LF checkout and its normal Git representation for
+symlink-target files; original publisher case/helper/fixture bytes remain protected.
+
+The configured SDK jobs still require successful execution. Runtime adoption
+also requires actual binary/native identity, the complete saved final image,
+original HAI container cases, health and the raw all-package/all-severity gate. Other transitive modules have not
 been proven to be their highest public stable versions. No deployment or
 operator database/data operation is part of this source candidate.
 

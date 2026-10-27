@@ -1,0 +1,64 @@
+name: Complete Trivy crypto-port SDK source
+description: Adopt the same resolved public manifests without changing original publisher cases.
+inputs:
+  docker-required:
+    description: Install the current stable Docker Engine on the owned Linux runner.
+    required: false
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Check out the complete immutable publisher source
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      env:
+        GIT_CONFIG_COUNT: '1'
+        GIT_CONFIG_KEY_0: core.autocrlf
+        GIT_CONFIG_VALUE_0: 'false'
+      with:
+        repository: aquasecurity/trivy
+        ref: e713f67f7d54decdcd9b3132c9751833dcced698
+        path: upstream-trivy
+        persist-credentials: false
+    - name: Install current stable Python for source metadata guards
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: '3.15.1'
+    - name: Install current stable Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: '1.27.3'
+        cache: false
+    - name: Download the successful same-run resolved dependency inputs
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: trivy-current-crypto-normal-module-metadata
+        path: ${{ runner.temp }}/hai-trivy-current-crypto
+    - name: Bind original publisher source and the resolved port snapshot
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        METADATA: ${{ runner.temp }}/hai-trivy-current-crypto
+        REPORTS: ${{ runner.temp }}/hai-trivy-sdk-evidence
+      run: |
+        python -I services/trivy-runner/compat/current-crypto/sdk_source_guard.py \
+          --phase adopt --source upstream-trivy --metadata "$METADATA" --reports "$REPORTS"
+    - name: Set up current stable Docker for original integration workloads
+      if: inputs.docker-required == 'true' && runner.os == 'Linux'
+      uses: docker/setup-docker-action@7ec28a010822b4626af4874f9448a4b05ac6f3e5 # v5.6.0
+      with:
+        version: v29.9.2
+        set-host: true
+    - name: Record owned runner capacity without destructive cleanup
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      run: |
+        python - <<'PY'
+        from pathlib import Path
+        import json,os,shutil
+        destination=Path(os.environ['RUNNER_TEMP'])/'hai-trivy-sdk-evidence'
+        destination.mkdir(parents=True,exist_ok=True)
+        record={'runner_os':os.environ['RUNNER_OS'],
+                'workspace_disk_bytes':shutil.disk_usage(os.environ['GITHUB_WORKSPACE'])._asdict(),
+                'operator_data_accessed':False,'cleanup_or_cache_prune_performed':False}
+        (destination/'runner-capacity.json').write_text(json.dumps(record,indent=2)+'\n')
+        PY

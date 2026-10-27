@@ -1,10 +1,11 @@
-name: Trivy current crypto source metadata
+name: Trivy current crypto complete SDK
 
 on:
   pull_request:
     paths:
       - services/trivy-runner/compat/current-crypto/**
       - .github/workflows/trivy-current-crypto-source.yml
+      - .github/actions/trivy-sdk-source/**
 
 permissions:
   contents: read
@@ -64,5 +65,408 @@ jobs:
         with:
           name: trivy-current-crypto-normal-module-metadata
           path: ${{ runner.temp }}/hai-trivy-current-crypto/
+          retention-days: 7
+          if-no-files-found: error
+
+  original-sdk-test:
+    needs: normal-module-resolution
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: upstream-trivy
+    name: 'Trivy original SDK - Test'
+    runs-on: ${{ matrix.operating-system }}
+    strategy:
+      fail-fast: false
+      matrix:
+        operating-system: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Check out project SDK source guards
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Adopt complete publisher source and the same resolved graph
+        uses: ./.github/actions/trivy-sdk-source
+        with:
+          docker-required: 'false'
+      - name: go mod tidy
+        run: |
+          go mod tidy
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Run 'go mod tidy' and push it"
+            exit 1
+          fi
+        if: matrix.operating-system == 'ubuntu-latest'
+      - name: Lint
+        id: lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+          args: --verbose
+          working-directory: upstream-trivy
+          skip-save-cache: true  # Restore cache from main branch but don't save new cache
+        if: matrix.operating-system == 'ubuntu-latest'
+      - name: Check if linter failed
+        run: |
+          echo "Linter failed, running 'mage lint:fix' might help to correct some errors"
+          exit 1
+        if: ${{ failure() && steps.lint.conclusion == 'failure' }}
+      - name: Install tools
+        run: go install tool # GOBIN is added to the PATH by the setup-go action
+      - name: Check if CLI references are up-to-date
+        run: |
+          mage docs:generate
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Run 'mage docs:generate' and push it"
+            exit 1
+          fi
+        if: matrix.operating-system == 'ubuntu-latest'
+      - name: Run unit tests
+        run: mage test:unit
+      - name: Verify all original SDK source inputs after execution
+        if: always()
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          METADATA: ${{ runner.temp }}/hai-trivy-current-crypto
+          REPORTS: ${{ runner.temp }}/hai-trivy-sdk-evidence
+        run: |
+          python -I services/trivy-runner/compat/current-crypto/sdk_source_guard.py \
+            --phase verify --source upstream-trivy --metadata "$METADATA" --reports "$REPORTS"
+      - name: Retain SDK source, capacity and complete build-output metadata
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trivy-original-sdk-${{ github.job }}-${{ runner.os }}
+          path: ${{ runner.temp }}/hai-trivy-sdk-evidence/
+          retention-days: 7
+          if-no-files-found: error
+
+  original-sdk-integration:
+    needs: normal-module-resolution
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: upstream-trivy
+    name: 'Trivy original SDK - Integration Test'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out project SDK source guards
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Adopt complete publisher source and the same resolved graph
+        uses: ./.github/actions/trivy-sdk-source
+        with:
+          docker-required: 'true'
+      - name: Install Go tools
+        run: go install tool # GOBIN is added to the PATH by the setup-go action
+      - name: Generate image list digest
+        id: image-digest
+        run: |
+          source integration/testimages.ini
+          IMAGE_LIST=$(skopeo list-tags docker://$TEST_IMAGES)
+          DIGEST=$(echo "$IMAGE_LIST" | jq '.Tags += ["containerd"] | .Tags |= sort' | sha256sum | cut -d' ' -f1)
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+      - name: Run integration tests
+        run: mage test:integration
+      - name: Verify all original SDK source inputs after execution
+        if: always()
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          METADATA: ${{ runner.temp }}/hai-trivy-current-crypto
+          REPORTS: ${{ runner.temp }}/hai-trivy-sdk-evidence
+        run: |
+          python -I services/trivy-runner/compat/current-crypto/sdk_source_guard.py \
+            --phase verify --source upstream-trivy --metadata "$METADATA" --reports "$REPORTS"
+      - name: Retain SDK source, capacity and complete build-output metadata
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trivy-original-sdk-${{ github.job }}-${{ runner.os }}
+          path: ${{ runner.temp }}/hai-trivy-sdk-evidence/
+          retention-days: 7
+          if-no-files-found: error
+
+  original-sdk-k8s-integration:
+    needs: normal-module-resolution
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: upstream-trivy
+    name: 'Trivy original SDK - K8s Integration Test'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out project SDK source guards
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Adopt complete publisher source and the same resolved graph
+        uses: ./.github/actions/trivy-sdk-source
+        with:
+          docker-required: 'true'
+      - name: Install Go tools
+        run: go install tool # GOBIN is added to the PATH by the setup-go action
+      - name: Run k8s integration tests
+        run: mage test:k8s
+      - name: Verify all original SDK source inputs after execution
+        if: always()
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          METADATA: ${{ runner.temp }}/hai-trivy-current-crypto
+          REPORTS: ${{ runner.temp }}/hai-trivy-sdk-evidence
+        run: |
+          python -I services/trivy-runner/compat/current-crypto/sdk_source_guard.py \
+            --phase verify --source upstream-trivy --metadata "$METADATA" --reports "$REPORTS"
+      - name: Retain SDK source, capacity and complete build-output metadata
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trivy-original-sdk-${{ github.job }}-${{ runner.os }}
+          path: ${{ runner.temp }}/hai-trivy-sdk-evidence/
+          retention-days: 7
+          if-no-files-found: error
+
+  original-sdk-module-test:
+    needs: normal-module-resolution
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: upstream-trivy
+    name: 'Trivy original SDK - Module Integration Test'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out project SDK source guards
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Adopt complete publisher source and the same resolved graph
+        uses: ./.github/actions/trivy-sdk-source
+        with:
+          docker-required: 'true'
+      - name: Install tools
+        run: go install tool # GOBIN is added to the PATH by the setup-go action
+      - name: Generate image list digest
+        id: image-digest
+        run: |
+          source integration/testimages.ini
+          IMAGE_LIST=$(skopeo list-tags docker://$TEST_IMAGES)
+          DIGEST=$(echo "$IMAGE_LIST" | jq '.Tags += ["containerd"] | .Tags |= sort' | sha256sum | cut -d' ' -f1)
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+      - name: Run module integration tests
+        shell: bash
+        run: |
+          mage test:module
+      - name: Verify all original SDK source inputs after execution
+        if: always()
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          METADATA: ${{ runner.temp }}/hai-trivy-current-crypto
+          REPORTS: ${{ runner.temp }}/hai-trivy-sdk-evidence
+        run: |
+          python -I services/trivy-runner/compat/current-crypto/sdk_source_guard.py \
+            --phase verify --source upstream-trivy --metadata "$METADATA" --reports "$REPORTS"
+      - name: Retain SDK source, capacity and complete build-output metadata
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trivy-original-sdk-${{ github.job }}-${{ runner.os }}
+          path: ${{ runner.temp }}/hai-trivy-sdk-evidence/
+          retention-days: 7
+          if-no-files-found: error
+
+  original-sdk-vm-test:
+    needs: normal-module-resolution
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: upstream-trivy
+    name: 'Trivy original SDK - VM Integration Test'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out project SDK source guards
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Adopt complete publisher source and the same resolved graph
+        uses: ./.github/actions/trivy-sdk-source
+        with:
+          docker-required: 'true'
+      - name: Install Go tools
+        run: go install tool # GOBIN is added to the PATH by the setup-go action
+      - name: Generate image list digest
+        id: image-digest
+        run: |
+          source integration/testimages.ini
+          IMAGE_LIST=$(skopeo list-tags docker://$TEST_VM_IMAGES)
+          DIGEST=$(echo "$IMAGE_LIST" | jq '.Tags |= sort' | sha256sum | cut -d' ' -f1)
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+      - name: Run vm integration tests
+        run: |
+          mage test:vm
+      - name: Verify all original SDK source inputs after execution
+        if: always()
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          METADATA: ${{ runner.temp }}/hai-trivy-current-crypto
+          REPORTS: ${{ runner.temp }}/hai-trivy-sdk-evidence
+        run: |
+          python -I services/trivy-runner/compat/current-crypto/sdk_source_guard.py \
+            --phase verify --source upstream-trivy --metadata "$METADATA" --reports "$REPORTS"
+      - name: Retain SDK source, capacity and complete build-output metadata
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trivy-original-sdk-${{ github.job }}-${{ runner.os }}
+          path: ${{ runner.temp }}/hai-trivy-sdk-evidence/
+          retention-days: 7
+          if-no-files-found: error
+
+  original-sdk-e2e-test:
+    needs: normal-module-resolution
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: upstream-trivy
+    name: 'Trivy original SDK - E2E Test'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out project SDK source guards
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Adopt complete publisher source and the same resolved graph
+        uses: ./.github/actions/trivy-sdk-source
+        with:
+          docker-required: 'true'
+      - name: Install Go tools
+        run: go install tool # GOBIN is added to the PATH by the setup-go action
+      - name: Run E2E tests
+        run: mage test:e2e
+      - name: Verify all original SDK source inputs after execution
+        if: always()
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          METADATA: ${{ runner.temp }}/hai-trivy-current-crypto
+          REPORTS: ${{ runner.temp }}/hai-trivy-sdk-evidence
+        run: |
+          python -I services/trivy-runner/compat/current-crypto/sdk_source_guard.py \
+            --phase verify --source upstream-trivy --metadata "$METADATA" --reports "$REPORTS"
+      - name: Retain SDK source, capacity and complete build-output metadata
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trivy-original-sdk-${{ github.job }}-${{ runner.os }}
+          path: ${{ runner.temp }}/hai-trivy-sdk-evidence/
+          retention-days: 7
+          if-no-files-found: error
+
+  original-sdk-build-test:
+    needs: normal-module-resolution
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: upstream-trivy
+    name: 'Trivy original SDK - Build Test'
+    runs-on: ${{ matrix.operating-system }}
+    strategy:
+      fail-fast: false
+      matrix:
+        operating-system: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      DOCKER_CLI_EXPERIMENTAL: "enabled"
+    steps:
+      - name: Check out project SDK source guards
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Adopt complete publisher source and the same resolved graph
+        uses: ./.github/actions/trivy-sdk-source
+        with:
+          docker-required: 'false'
+      - name: Determine GoReleaser ID
+        id: goreleaser_id
+        shell: bash
+        run: |
+          if [ "${{ matrix.operating-system }}" == "windows-latest" ]; then
+            echo "id=--id build-windows" >> $GITHUB_OUTPUT
+          elif [ "${{ matrix.operating-system }}" == "macos-latest" ]; then
+            echo "id=--id build-macos --id build-bsd" >> $GITHUB_OUTPUT
+          else
+            echo "id=--id build-linux" >> $GITHUB_OUTPUT
+          fi
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          version: v2.19.0
+          workdir: upstream-trivy
+          args: build --snapshot --clean --timeout 90m ${{ steps.goreleaser_id.outputs.id }}
+
+      # This job intentionally runs on all PRs (not scoped to .github/ path changes)
+      # to keep all checks in one place. The scan itself is scoped to .github/ via the action input.
+      - name: Verify all original SDK source inputs after execution
+        if: always()
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          METADATA: ${{ runner.temp }}/hai-trivy-current-crypto
+          REPORTS: ${{ runner.temp }}/hai-trivy-sdk-evidence
+        run: |
+          python -I services/trivy-runner/compat/current-crypto/sdk_source_guard.py \
+            --phase verify --source upstream-trivy --metadata "$METADATA" --reports "$REPORTS"
+      - name: Retain SDK source, capacity and complete build-output metadata
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trivy-original-sdk-${{ github.job }}-${{ runner.os }}
+          path: ${{ runner.temp }}/hai-trivy-sdk-evidence/
+          retention-days: 7
+          if-no-files-found: error
+
+  original-sdk-zizmor:
+    needs: normal-module-resolution
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: upstream-trivy
+    name: 'Trivy original SDK - Lint GitHub Actions'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out project SDK source guards
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Adopt complete publisher source and the same resolved graph
+        uses: ./.github/actions/trivy-sdk-source
+        with:
+          docker-required: 'false'
+      - uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          inputs: upstream-trivy/.github/
+          version: v1.31.1
+          advanced-security: false
+      - name: Verify all original SDK source inputs after execution
+        if: always()
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        env:
+          METADATA: ${{ runner.temp }}/hai-trivy-current-crypto
+          REPORTS: ${{ runner.temp }}/hai-trivy-sdk-evidence
+        run: |
+          python -I services/trivy-runner/compat/current-crypto/sdk_source_guard.py \
+            --phase verify --source upstream-trivy --metadata "$METADATA" --reports "$REPORTS"
+      - name: Retain SDK source, capacity and complete build-output metadata
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trivy-original-sdk-${{ github.job }}-${{ runner.os }}
+          path: ${{ runner.temp }}/hai-trivy-sdk-evidence/
           retention-days: 7
           if-no-files-found: error

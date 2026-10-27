@@ -12,6 +12,8 @@
   "publisher_go_mod_sha256": "3b80afcc13ad1abbafa5a3054198622ea51444295967069899f907be1acaba71",
   "prepared_go_mod_sha256": "e30046a8bad8af0284ee3cc598a9b8d8c2b240f86f8a11f9e7c5bf4c578ea555",
   "advisory_not_resolved_by_version_bump": "GO-2026-5932",
-  "normal_resolution_only": true,
-  "runtime_recipe_or_original_publisher_cases_changed": false
+  "normal_resolution_only": false,
+  "runtime_recipe_or_original_publisher_cases_changed": false,
+  "complete_original_SDK_platform_jobs_required": 12,
+  "runtime_binary_or_final_image_adoption": false
 }
