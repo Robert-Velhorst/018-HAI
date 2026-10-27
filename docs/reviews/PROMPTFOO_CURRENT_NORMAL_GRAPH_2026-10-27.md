@@ -39,3 +39,6 @@ The first strict Azure preflight at ce44748 stopped before dependency resolution
 
 
 The corrected shell preflight can generate the strict SDK metadata graph. That does not validate installed peer contexts or MSAL APIs. The next stage therefore runs the publisher's original `pnpm install` command without altered arguments against the prepared strict source, recording its result separately from the lock-only preparation. A standard-worker disk check records insufficient capacity instead of selecting paid capacity or weakening the install. No SDK build/test/compiler helper is executed or qualified by this stage; the existing compiler typing helper remains an explicit gate.
+
+
+Azure source preflight correction: PNPM12 reads only registry/authentication settings from `.npmrc`; the first nominal strict install at56167d therefore did not prove strict peers or engines. Its warning is retained as a failed strict-acceptance condition despite process exit0. The proposed source now puts `strictPeerDependencies: true` and `engineStrict: true` in `pnpm-workspace.yaml` and requires `pnpm config get` to return true for both before resolution. Original SDK commands, cases and compiler files remain unchanged. Reference: https://pnpm.io/cli/config .

@@ -45,10 +45,10 @@ try:
    removed[key]=''.join(block);continue
   result.append(lines[i]);i+=1
  assert set(removed)==forbidden
- strict_workspace=''.join(result);assert not any(re.search(r'^'+re.escape(key)+':',strict_workspace,re.M) for key in forbidden)
+ strict_workspace=''.join(result)+'\nstrictPeerDependencies: true\nengineStrict: true\n';assert not any(re.search(r'^'+re.escape(key)+':',strict_workspace,re.M) for key in forbidden)
  (sdk/'pnpm-workspace.yaml').write_text(strict_workspace)
  old_npmrc=(sdk/'.npmrc').read_text();assert [line for line in old_npmrc.splitlines() if line.strip()]==['registry=https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-js/npm/registry/']
- (sdk/'.npmrc').write_text('registry=https://registry.npmjs.org/\nstrict-peer-dependencies=true\nengine-strict=true\n')
+ (sdk/'.npmrc').write_text('registry=https://registry.npmjs.org/\n')
  compiler_source=sdk/'common/tools/eslint-plugin-azure-sdk/src/configs/index.ts'
  summary['publisher_compiler_assertion_shim_present_but_not_executed_or_qualified']='bypassTypeCheck' in compiler_source.read_text()
  pnpm_path=shutil.which('pnpm');assert pnpm_path
@@ -57,6 +57,15 @@ try:
  with (out/'pnpm-version.log').open('wb') as stream:version_check=subprocess.run(['bash','-c','pnpm --version'],cwd=sdk,stdout=stream,stderr=subprocess.STDOUT,check=False)
  commands.append({'label':'normal-shell-package-manager-version','command':['pnpm','--version'],'launcher':['bash','-c'],'cwd':'.sdk/azure-identity-source','returncode':version_check.returncode,'not_an_original_install_build_or_case_result':True})
  assert version_check.returncode==0 and (out/'pnpm-version.log').read_text().strip().endswith('12.16.1')
+ effective={}
+ for setting in ['strictPeerDependencies','engineStrict']:
+  config_command=['pnpm','config','get',setting]
+  checked=subprocess.run(['bash','-c',shlex.join(config_command)],cwd=sdk,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False)
+  (out/('effective-'+setting+'.log')).write_bytes(checked.stdout)
+  commands.append({'label':'verify-effective-'+setting,'command':config_command,'launcher':['bash','-c'],'returncode':checked.returncode,'not_an_original_install_build_or_case_result':True})
+  assert checked.returncode==0 and checked.stdout.decode().strip()=='true',setting
+  effective[setting]=True
+ summary['verified_effective_pnpm_settings']=effective
  command=['pnpm','install','--lockfile-only','--no-frozen-lockfile']
  with (out/'strict-normal-lock-preflight.log').open('wb') as stream:resolution=subprocess.run(['bash','-c',shlex.join(command)],cwd=sdk,stdout=stream,stderr=subprocess.STDOUT,check=False)
  commands.append({'label':'additional-strict-normal-lock-preparation','command':command,'launcher':['bash','-c'],'cwd':'.sdk/azure-identity-source','returncode':resolution.returncode,'not_an_original_install_build_or_case_result':True})
@@ -67,6 +76,7 @@ try:
    summary['original_SDK_install_not_attempted']='Less than8GiB free on the standard owned worker; no larger paid runner selected.'
    summary['original_SDK_install_exit']=None
   else:
+   summary['metadata_preparation_only']=False
    original_install=['pnpm','install']
    with (out/'original-SDK-install-on-strict-source.log').open('wb') as stream:installed=subprocess.run(['bash','-c',shlex.join(original_install)],cwd=sdk,stdout=stream,stderr=subprocess.STDOUT,check=False)
    commands.append({'label':'original-SDK-install-on-strict-source','command':original_install,'launcher':['bash','-c'],'cwd':'.sdk/azure-identity-source','returncode':installed.returncode,'not_a_build_or_case_result':True})
