@@ -1,0 +1,563 @@
+{
+  "captured_at": "2026-10-28T18:17:36.109232+00:00",
+  "upstream_commit": "7aa740fe7412cc9bc33cdc39ca211843223cd3e1",
+  "upstream_version": "0.17.1",
+  "upstream_pyproject_sha256": "d60fb2f03520ac183a5c451105179aee65a0623e52998a4607ea53789cfb2ce4",
+  "groups": {
+    "required": [
+      "mikeshardmind-base2048>=1.0.2",
+      "transformers>=5.14.1,<5.20.0",
+      "datasets>=5.0.1,<6.0",
+      "colorama>=0.4.3",
+      "tqdm>=4.67.1",
+      "cohere>=5.16.0",
+      "anthropic>=0.40.0,<1.0.0",
+      "openai>=2.0,<3.0",
+      "replicate>=0.8.3",
+      "google-api-python-client>=2.0",
+      "backoff>=2.1.1",
+      "nltk>=3.10.3",
+      "accelerate>=0.23.0",
+      "avidtools==0.1.2",
+      "stdlibs>=2022.10.9",
+      "langchain>=1.3.14",
+      "cmd2==2.4.3",
+      "torch>=2.13.0",
+      "sentencepiece>=0.1.99",
+      "markdown>=3.10.0",
+      "numpy>=2.0.0",
+      "zalgolib>=0.2.2",
+      "ecoji>=0.1.1",
+      "deepl==1.17.0",
+      "litellm>=1.84.0",
+      "llm>=0.31",
+      "jsonpath-ng>=1.6.1",
+      "huggingface_hub>=1.0",
+      "python-magic-bin>=0.4.14; sys_platform == \"win32\"",
+      "python-magic>=0.4.21; sys_platform != \"win32\"",
+      "lorem==0.1.1",
+      "xdg-base-dirs>=6.0.1",
+      "wn==0.9.5",
+      "ollama>=0.4.7",
+      "nvidia-riva-client==2.16.0",
+      "google-cloud-translate>=2.0.4",
+      "grpcio-tools>=1.71.0",
+      "langdetect==1.0.9",
+      "tiktoken>=0.7.0",
+      "mistralai==1.5.2",
+      "pillow>=12.3.0",
+      "ftfy>=6.3.1",
+      "websockets>=13.0",
+      "boto3>=1.28.0",
+      "py-markdown-table>=1.2.0"
+    ],
+    "tests": [
+      "pytest>=9.1",
+      "pytest-mock>=3.14.0",
+      "requests-mock==1.12.1",
+      "respx>=0.21.1",
+      "pytest-cov>=5.0.0",
+      "pytest_httpserver>=1.1.0",
+      "pytest-asyncio>=0.21.0",
+      "langcodes>=3.4.0",
+      "cryptography>=47.0.0"
+    ],
+    "lint": [
+      "black>=26.5.1",
+      "pylint>=3.1.0"
+    ],
+    "calibration": [
+      "scipy>=1.14.0"
+    ],
+    "audio": [
+      "soundfile>=0.13.1",
+      "librosa>=0.10.2"
+    ],
+    "dra": [
+      "detoxify>=0.5.0"
+    ]
+  },
+  "inputs": [
+    {
+      "group": "required",
+      "requirement": "mikeshardmind-base2048>=1.0.2",
+      "name": "mikeshardmind-base2048",
+      "highest_numeric_stable": "1.0.4",
+      "source": "https://pypi.org/pypi/mikeshardmind-base2048/json",
+      "release_metadata_sha256": "62766bc685629ebcc6f85ebd777aab153190d0f746bcb14472403bc94df8a44c"
+    },
+    {
+      "group": "required",
+      "requirement": "transformers>=5.14.1,<5.20.0",
+      "name": "transformers",
+      "highest_numeric_stable": "5.21.0",
+      "source": "https://pypi.org/pypi/transformers/json",
+      "release_metadata_sha256": "9e186317f7c73f3091e645d5cf01f8d960b8c2e225cd34273bbe89221575dab3"
+    },
+    {
+      "group": "required",
+      "requirement": "datasets>=5.0.1,<6.0",
+      "name": "datasets",
+      "highest_numeric_stable": "5.1.0",
+      "source": "https://pypi.org/pypi/datasets/json",
+      "release_metadata_sha256": "86d423763897ba0bd0f05e7986d1a0bdc22468eed2bbf5526aff400fe473ca96"
+    },
+    {
+      "group": "required",
+      "requirement": "colorama>=0.4.3",
+      "name": "colorama",
+      "highest_numeric_stable": "0.4.6",
+      "source": "https://pypi.org/pypi/colorama/json",
+      "release_metadata_sha256": "d1f14045ffdb4e411f3e3c5d1686c830cc09a517f1223d31f435412ae94ec66a"
+    },
+    {
+      "group": "required",
+      "requirement": "tqdm>=4.67.1",
+      "name": "tqdm",
+      "highest_numeric_stable": "4.70.1",
+      "source": "https://pypi.org/pypi/tqdm/json",
+      "release_metadata_sha256": "1f01cc9dc65db46b976b24047ac6eac4f8037289c8ae3e96728d5938e50ccf2c"
+    },
+    {
+      "group": "required",
+      "requirement": "cohere>=5.16.0",
+      "name": "cohere",
+      "highest_numeric_stable": "7.3.0",
+      "source": "https://pypi.org/pypi/cohere/json",
+      "release_metadata_sha256": "a8a3a1e64c184784d519ea308b7efc62b11943a4cf3323ce315ed67d40d52259"
+    },
+    {
+      "group": "required",
+      "requirement": "anthropic>=0.40.0,<1.0.0",
+      "name": "anthropic",
+      "highest_numeric_stable": "2.3.0",
+      "source": "https://pypi.org/pypi/anthropic/json",
+      "release_metadata_sha256": "8a27f14583599941cb0687feb577b4f1b29b23ef682b92300a2f07a2adacd4bb"
+    },
+    {
+      "group": "required",
+      "requirement": "openai>=2.0,<3.0",
+      "name": "openai",
+      "highest_numeric_stable": "3.40.0",
+      "source": "https://pypi.org/pypi/openai/json",
+      "release_metadata_sha256": "ebeb6fda4e2f0f5db3eaa853392f8060d81a4341546d79f4beede0cb3465491a"
+    },
+    {
+      "group": "required",
+      "requirement": "replicate>=0.8.3",
+      "name": "replicate",
+      "highest_numeric_stable": "1.0.7",
+      "source": "https://pypi.org/pypi/replicate/json",
+      "release_metadata_sha256": "049e4e084b815439064fa5b76f1441b292c90145069ceca2ece7b8232385ce30"
+    },
+    {
+      "group": "required",
+      "requirement": "google-api-python-client>=2.0",
+      "name": "google-api-python-client",
+      "highest_numeric_stable": "2.201.0",
+      "source": "https://pypi.org/pypi/google-api-python-client/json",
+      "release_metadata_sha256": "7e92d10f48eb5baece1a03347c05591f756e7e8dc9f2459f9f961e5b817c49af"
+    },
+    {
+      "group": "required",
+      "requirement": "backoff>=2.1.1",
+      "name": "backoff",
+      "highest_numeric_stable": "2.2.1",
+      "source": "https://pypi.org/pypi/backoff/json",
+      "release_metadata_sha256": "96adcd12cab1a553c550c696e403adad60a574e5e7ae10d12278878859758e18"
+    },
+    {
+      "group": "required",
+      "requirement": "nltk>=3.10.3",
+      "name": "nltk",
+      "highest_numeric_stable": "3.10.4",
+      "source": "https://pypi.org/pypi/nltk/json",
+      "release_metadata_sha256": "4036f64df6336351e0a72c599b4e12e9fa028131e621976db814f72ec06370e9"
+    },
+    {
+      "group": "required",
+      "requirement": "accelerate>=0.23.0",
+      "name": "accelerate",
+      "highest_numeric_stable": "1.15.0",
+      "source": "https://pypi.org/pypi/accelerate/json",
+      "release_metadata_sha256": "331b6509761fee73432f074a6f106dcc75e8f49d4662e7a357a057d5a3603f80"
+    },
+    {
+      "group": "required",
+      "requirement": "avidtools==0.1.2",
+      "name": "avidtools",
+      "highest_numeric_stable": "0.3.2",
+      "source": "https://pypi.org/pypi/avidtools/json",
+      "release_metadata_sha256": "d147c36b56fbf96a8e1e18ad4166d771b17fcc48c764efbc47f2971725c8425e"
+    },
+    {
+      "group": "required",
+      "requirement": "stdlibs>=2022.10.9",
+      "name": "stdlibs",
+      "highest_numeric_stable": "2026.9.3",
+      "source": "https://pypi.org/pypi/stdlibs/json",
+      "release_metadata_sha256": "b1765c453b16209cc2b854abe09166c52862e9cf65260e9c89b8f903afb9c03c"
+    },
+    {
+      "group": "required",
+      "requirement": "langchain>=1.3.14",
+      "name": "langchain",
+      "highest_numeric_stable": "1.4.7",
+      "source": "https://pypi.org/pypi/langchain/json",
+      "release_metadata_sha256": "c884a13e72d744faf50ef72da724946f24c0304567a5eeb54f6d104963ea0dc9"
+    },
+    {
+      "group": "required",
+      "requirement": "cmd2==2.4.3",
+      "name": "cmd2",
+      "highest_numeric_stable": "4.3.1",
+      "source": "https://pypi.org/pypi/cmd2/json",
+      "release_metadata_sha256": "7d31416fba3f3dc746462914f977900a729f1a94bf0271c1a2406fbb5d75cb8b"
+    },
+    {
+      "group": "required",
+      "requirement": "torch>=2.13.0",
+      "name": "torch",
+      "highest_numeric_stable": "2.15.0",
+      "source": "https://pypi.org/pypi/torch/json",
+      "release_metadata_sha256": "804adcf9ed43e50c190c01a200eeb618cc0af0f0ca8d810b8bed6dc0a7446950"
+    },
+    {
+      "group": "required",
+      "requirement": "sentencepiece>=0.1.99",
+      "name": "sentencepiece",
+      "highest_numeric_stable": "0.2.2",
+      "source": "https://pypi.org/pypi/sentencepiece/json",
+      "release_metadata_sha256": "7fa5a0e72878573028bee306f8933bd21f8433e98d0a3f73e8ddca0910ffc51d"
+    },
+    {
+      "group": "required",
+      "requirement": "markdown>=3.10.0",
+      "name": "markdown",
+      "highest_numeric_stable": "3.11.2",
+      "source": "https://pypi.org/pypi/markdown/json",
+      "release_metadata_sha256": "fdc156fff1f0afa8f989907ebd31e6771bbdb636e51321018db6059cf89fc6d7"
+    },
+    {
+      "group": "required",
+      "requirement": "numpy>=2.0.0",
+      "name": "numpy",
+      "highest_numeric_stable": "2.5.4",
+      "source": "https://pypi.org/pypi/numpy/json",
+      "release_metadata_sha256": "3a511e4fc1e214b50c25e63064ea211578b4187d3d7ce19dee5c835de87def38"
+    },
+    {
+      "group": "required",
+      "requirement": "zalgolib>=0.2.2",
+      "name": "zalgolib",
+      "highest_numeric_stable": "0.2.2",
+      "source": "https://pypi.org/pypi/zalgolib/json",
+      "release_metadata_sha256": "134c976b12064c490dd598bc9c32b6febfd39c9d8d13748f1ac812755398c9c9"
+    },
+    {
+      "group": "required",
+      "requirement": "ecoji>=0.1.1",
+      "name": "ecoji",
+      "highest_numeric_stable": "0.1.1",
+      "source": "https://pypi.org/pypi/ecoji/json",
+      "release_metadata_sha256": "5b0a8756a71c5a54c50f295a0b2cded43ac09af8d60b60d70a457308827bcbf6"
+    },
+    {
+      "group": "required",
+      "requirement": "deepl==1.17.0",
+      "name": "deepl",
+      "highest_numeric_stable": "1.32.0",
+      "source": "https://pypi.org/pypi/deepl/json",
+      "release_metadata_sha256": "83a6a68215d9b57836cd4a35780e9f7fb1d26a35a58fc32e1ab4faac2a610c0c"
+    },
+    {
+      "group": "required",
+      "requirement": "litellm>=1.84.0",
+      "name": "litellm",
+      "highest_numeric_stable": "1.106.5",
+      "source": "https://pypi.org/pypi/litellm/json",
+      "release_metadata_sha256": "560d724573f20646ee598673bc4f30dbaa1495f25901153c4f0487beabccd10f"
+    },
+    {
+      "group": "required",
+      "requirement": "llm>=0.31",
+      "name": "llm",
+      "highest_numeric_stable": "0.36",
+      "source": "https://pypi.org/pypi/llm/json",
+      "release_metadata_sha256": "400311f2b9d8d63d47a2d80119df96ed83eb9017ac69adb9be5aeef7b83b351c"
+    },
+    {
+      "group": "required",
+      "requirement": "jsonpath-ng>=1.6.1",
+      "name": "jsonpath-ng",
+      "highest_numeric_stable": "1.14.0",
+      "source": "https://pypi.org/pypi/jsonpath-ng/json",
+      "release_metadata_sha256": "adf313e9683ce185bcf9b291f7af1c5941f0496fd6e956d90d6a97e4eb5b8d03"
+    },
+    {
+      "group": "required",
+      "requirement": "huggingface_hub>=1.0",
+      "name": "huggingface_hub",
+      "highest_numeric_stable": "2.3.0",
+      "source": "https://pypi.org/pypi/huggingface_hub/json",
+      "release_metadata_sha256": "32b2d5d44a792bdb2ef069e2bc65b5d8cc15e53e76f7384daacfe4f2e3aae6c0"
+    },
+    {
+      "group": "required",
+      "requirement": "python-magic-bin>=0.4.14; sys_platform == \"win32\"",
+      "name": "python-magic-bin",
+      "highest_numeric_stable": "0.4.14",
+      "source": "https://pypi.org/pypi/python-magic-bin/json",
+      "release_metadata_sha256": "847ccc511b704788f0882e01b003ddf7caf77157ae09e68b713df85a1e271424"
+    },
+    {
+      "group": "required",
+      "requirement": "python-magic>=0.4.21; sys_platform != \"win32\"",
+      "name": "python-magic",
+      "highest_numeric_stable": "0.4.27",
+      "source": "https://pypi.org/pypi/python-magic/json",
+      "release_metadata_sha256": "b76a2eecf2273881522673619ffa9b019225b3e271c806bdea5582128952ab9b"
+    },
+    {
+      "group": "required",
+      "requirement": "lorem==0.1.1",
+      "name": "lorem",
+      "highest_numeric_stable": "0.1.1",
+      "source": "https://pypi.org/pypi/lorem/json",
+      "release_metadata_sha256": "7185ed4f0d411ec299ebd9f09a88b0c944494b9a0f6719ef7fcb4bdc9a32f865"
+    },
+    {
+      "group": "required",
+      "requirement": "xdg-base-dirs>=6.0.1",
+      "name": "xdg-base-dirs",
+      "highest_numeric_stable": "6.0.3",
+      "source": "https://pypi.org/pypi/xdg-base-dirs/json",
+      "release_metadata_sha256": "92310333ee9e73b85374dc9e64944d30cb668640a892eb452b539964c75a8d9d"
+    },
+    {
+      "group": "required",
+      "requirement": "wn==0.9.5",
+      "name": "wn",
+      "highest_numeric_stable": "1.1.1",
+      "source": "https://pypi.org/pypi/wn/json",
+      "release_metadata_sha256": "721ff06a36138fa58d39844f3e1bfdc526f2d3894a07879a7c1fd3a0ecf56272"
+    },
+    {
+      "group": "required",
+      "requirement": "ollama>=0.4.7",
+      "name": "ollama",
+      "highest_numeric_stable": "0.6.3",
+      "source": "https://pypi.org/pypi/ollama/json",
+      "release_metadata_sha256": "c6ee2cafc63cfb942706490b035fb2a05ac99f8505e0d8b50c1b31ad62e81207"
+    },
+    {
+      "group": "required",
+      "requirement": "nvidia-riva-client==2.16.0",
+      "name": "nvidia-riva-client",
+      "highest_numeric_stable": "2.27.0",
+      "source": "https://pypi.org/pypi/nvidia-riva-client/json",
+      "release_metadata_sha256": "7c21dde1ac3212b500e0e21ea000bd3864bca797d2ab6d1763d5b0d94fb4c3ab"
+    },
+    {
+      "group": "required",
+      "requirement": "google-cloud-translate>=2.0.4",
+      "name": "google-cloud-translate",
+      "highest_numeric_stable": "3.28.0",
+      "source": "https://pypi.org/pypi/google-cloud-translate/json",
+      "release_metadata_sha256": "f37edd1d016e1df1e04dc9234fac73f1c5209343eaecfd6eb9c3f81fb59013b0"
+    },
+    {
+      "group": "required",
+      "requirement": "grpcio-tools>=1.71.0",
+      "name": "grpcio-tools",
+      "highest_numeric_stable": "1.85.0",
+      "source": "https://pypi.org/pypi/grpcio-tools/json",
+      "release_metadata_sha256": "4d0e243c38b6dfbea0b5c5a7192f3e14e3c46c1c7bc37a2965b5629d2eb83dd4"
+    },
+    {
+      "group": "required",
+      "requirement": "langdetect==1.0.9",
+      "name": "langdetect",
+      "highest_numeric_stable": "1.0.9",
+      "source": "https://pypi.org/pypi/langdetect/json",
+      "release_metadata_sha256": "8e48846b8b2c3e67dfeacef5992a052a144d7f6c080189dffe389ae7fa2455b7"
+    },
+    {
+      "group": "required",
+      "requirement": "tiktoken>=0.7.0",
+      "name": "tiktoken",
+      "highest_numeric_stable": "0.14.0",
+      "source": "https://pypi.org/pypi/tiktoken/json",
+      "release_metadata_sha256": "2b1a4c9bd36ad7ecb2fef5e35691cfba26ca978b6d516e225cff94c4c6bfd1c9"
+    },
+    {
+      "group": "required",
+      "requirement": "mistralai==1.5.2",
+      "name": "mistralai",
+      "highest_numeric_stable": "3.6.0",
+      "source": "https://pypi.org/pypi/mistralai/json",
+      "release_metadata_sha256": "3b02bdc75023996002baf6af291d4d0c492ec002743858658210e99bb191fef8"
+    },
+    {
+      "group": "required",
+      "requirement": "pillow>=12.3.0",
+      "name": "pillow",
+      "highest_numeric_stable": "13.0.0",
+      "source": "https://pypi.org/pypi/pillow/json",
+      "release_metadata_sha256": "e8b0b89190d2f5d3d0bdb679ecfa4e61a79dd53611562f5006b10fbbd97f15c2"
+    },
+    {
+      "group": "required",
+      "requirement": "ftfy>=6.3.1",
+      "name": "ftfy",
+      "highest_numeric_stable": "6.3.1",
+      "source": "https://pypi.org/pypi/ftfy/json",
+      "release_metadata_sha256": "e644aed71b6deb906c67f4f4de5b3195768cf5bc1e620214a7ff5c34dad78b16"
+    },
+    {
+      "group": "required",
+      "requirement": "websockets>=13.0",
+      "name": "websockets",
+      "highest_numeric_stable": "17.3",
+      "source": "https://pypi.org/pypi/websockets/json",
+      "release_metadata_sha256": "8e6073806dda831616a9621e88adfcdaa7ac5217539fa0d78e3f1e5a49565df3"
+    },
+    {
+      "group": "required",
+      "requirement": "boto3>=1.28.0",
+      "name": "boto3",
+      "highest_numeric_stable": "1.43.120",
+      "source": "https://pypi.org/pypi/boto3/json",
+      "release_metadata_sha256": "95e27fd6a3760dbbe70914f65b474f54f1b314df6ec365f9c105344e4b7564cc"
+    },
+    {
+      "group": "required",
+      "requirement": "py-markdown-table>=1.2.0",
+      "name": "py-markdown-table",
+      "highest_numeric_stable": "2.0.0",
+      "source": "https://pypi.org/pypi/py-markdown-table/json",
+      "release_metadata_sha256": "15688d0f5f65a86500bc6ae2e74a3e9b2413918f1594187df3353e5efe5cf9fc"
+    },
+    {
+      "group": "tests",
+      "requirement": "pytest>=9.1",
+      "name": "pytest",
+      "highest_numeric_stable": "9.2.0",
+      "source": "https://pypi.org/pypi/pytest/json",
+      "release_metadata_sha256": "dc7be419dae89a0c820048979663f51a370898d17e510199cbd5d524ad1e001b"
+    },
+    {
+      "group": "tests",
+      "requirement": "pytest-mock>=3.14.0",
+      "name": "pytest-mock",
+      "highest_numeric_stable": "3.17.0",
+      "source": "https://pypi.org/pypi/pytest-mock/json",
+      "release_metadata_sha256": "852e265c579932ced72cb616bb7dc0d37fdb276b2616b6866ae41995c8b11435"
+    },
+    {
+      "group": "tests",
+      "requirement": "requests-mock==1.12.1",
+      "name": "requests-mock",
+      "highest_numeric_stable": "1.12.1",
+      "source": "https://pypi.org/pypi/requests-mock/json",
+      "release_metadata_sha256": "0bf6ceddc7ddca0232f01cd91a9ef4a593b08613248c5fcc75c5cb5df7d42f1a"
+    },
+    {
+      "group": "tests",
+      "requirement": "respx>=0.21.1",
+      "name": "respx",
+      "highest_numeric_stable": "0.23.1",
+      "source": "https://pypi.org/pypi/respx/json",
+      "release_metadata_sha256": "1467f2a112a38ac40cb173065cbd0c41d183da4e3be7233843f78a5ef448e352"
+    },
+    {
+      "group": "tests",
+      "requirement": "pytest-cov>=5.0.0",
+      "name": "pytest-cov",
+      "highest_numeric_stable": "7.1.0",
+      "source": "https://pypi.org/pypi/pytest-cov/json",
+      "release_metadata_sha256": "010bc11f3ede4e8b94d8b358ac22c6e267d351ce68233389e2ca591eee9383f6"
+    },
+    {
+      "group": "tests",
+      "requirement": "pytest_httpserver>=1.1.0",
+      "name": "pytest_httpserver",
+      "highest_numeric_stable": "1.2.0",
+      "source": "https://pypi.org/pypi/pytest_httpserver/json",
+      "release_metadata_sha256": "5a38a232a35fefcfb6e455f7c5c52ca994d164cbc998cdc859e200b1266cfc60"
+    },
+    {
+      "group": "tests",
+      "requirement": "pytest-asyncio>=0.21.0",
+      "name": "pytest-asyncio",
+      "highest_numeric_stable": "1.4.1",
+      "source": "https://pypi.org/pypi/pytest-asyncio/json",
+      "release_metadata_sha256": "fb5f730a8eb162b691a6647e662320fe1a2ba0fa02fe3b8e5db9e226b1e0a834"
+    },
+    {
+      "group": "tests",
+      "requirement": "langcodes>=3.4.0",
+      "name": "langcodes",
+      "highest_numeric_stable": "3.5.1",
+      "source": "https://pypi.org/pypi/langcodes/json",
+      "release_metadata_sha256": "7717e84f1b111925e43c0a75a512354ee41fbe65847f41a0b049aef21ed90538"
+    },
+    {
+      "group": "tests",
+      "requirement": "cryptography>=47.0.0",
+      "name": "cryptography",
+      "highest_numeric_stable": "50.0.2",
+      "source": "https://pypi.org/pypi/cryptography/json",
+      "release_metadata_sha256": "7a598e40ff08a532757ad7c75739c525475a35181a1c2bc5966e909819a00c74"
+    },
+    {
+      "group": "lint",
+      "requirement": "black>=26.5.1",
+      "name": "black",
+      "highest_numeric_stable": "26.10.1",
+      "source": "https://pypi.org/pypi/black/json",
+      "release_metadata_sha256": "f500d386c870544445561fea16bb0b3eb6edd2775c68640f9f84875f85cce189"
+    },
+    {
+      "group": "lint",
+      "requirement": "pylint>=3.1.0",
+      "name": "pylint",
+      "highest_numeric_stable": "4.1.3",
+      "source": "https://pypi.org/pypi/pylint/json",
+      "release_metadata_sha256": "f8a573fcf9f38a58f4c7ec27cec09f7dd3d78bdc49c5f01d0397db4e054adb29"
+    },
+    {
+      "group": "calibration",
+      "requirement": "scipy>=1.14.0",
+      "name": "scipy",
+      "highest_numeric_stable": "1.18.1",
+      "source": "https://pypi.org/pypi/scipy/json",
+      "release_metadata_sha256": "0f5cdd87530921c745d57fbcd467d02a6f0a7caf0a24c739325b240db5ed1387"
+    },
+    {
+      "group": "audio",
+      "requirement": "soundfile>=0.13.1",
+      "name": "soundfile",
+      "highest_numeric_stable": "0.14.0",
+      "source": "https://pypi.org/pypi/soundfile/json",
+      "release_metadata_sha256": "3848cb86dc0f3cc7dbd139462a7c0c2797e84fa81fbb079d1ce4b95acd92a7fd"
+    },
+    {
+      "group": "audio",
+      "requirement": "librosa>=0.10.2",
+      "name": "librosa",
+      "highest_numeric_stable": "1.0.0",
+      "source": "https://pypi.org/pypi/librosa/json",
+      "release_metadata_sha256": "2d8f3b7ad6857190e4de75e77a9cf3cf27adc4b18cc905425d4cfd972e7564bb"
+    },
+    {
+      "group": "dra",
+      "requirement": "detoxify>=0.5.0",
+      "name": "detoxify",
+      "highest_numeric_stable": "0.5.4",
+      "source": "https://pypi.org/pypi/detoxify/json",
+      "release_metadata_sha256": "bc016c562e51cc65ff62e6025c37ed1318be93a274e569663ee1cffea3a4a3b9"
+    }
+  ],
+  "full_graph_resolution_proven": false
+}

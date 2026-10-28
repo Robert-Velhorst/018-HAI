@@ -1,0 +1,54 @@
+name: Garak complete stable dependency source port
+
+on:
+  pull_request:
+    paths:
+      - .github/qualifications/garak-complete-stable-inputs.json
+      - .github/scripts/qualify_garak_complete_graph.py
+      - .github/workflows/garak-complete-stable-source-port.yml
+
+permissions:
+  contents: read
+
+jobs:
+  complete-graph:
+    name: Complete upstream graph and unchanged SDK corpus on Python 3.15.2
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      XDG_CACHE_HOME: ${{ github.workspace }}/.cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: NVIDIA/garak
+          ref: 7aa740fe7412cc9bc33cdc39ca211843223cd3e1
+          path: vendor-garak
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.15.2'
+      - name: Prepare explicit complete metadata port and preserve every SDK payload
+        run: python .github/scripts/qualify_garak_complete_graph.py prepare
+      - name: Original upstream installer commands with complete ported requirements
+        working-directory: vendor-garak
+        run: |
+          python -m pip install --upgrade pip
+          pip install --no-cache-dir -r requirements.txt
+          python -m pip cache purge
+      - name: Verify original SDK payloads and stable installed versions
+        run: python .github/scripts/qualify_garak_complete_graph.py audit
+      - name: Original complete upstream Linux SDK test command
+        working-directory: vendor-garak
+        run: python -m pytest tests/
+      - name: Retain unsuppressed preparation and installed-graph evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: garak-complete-stable-${{ github.run_id }}-${{ github.run_attempt }}
+          path: garak-complete-graph-evidence/
+          if-no-files-found: error
+          retention-days: 14
