@@ -1,12 +1,29 @@
 """Inspect the complete immutable FastMCP SDK lock before any SDK installer."""
 from pathlib import Path
 import hashlib
+import importlib.util
 import json
 import os
 import re
 import subprocess
 import sys
 import tomllib
+
+WORKSPACES = {'fastmcp': '.', 'fastmcp-remote': 'fastmcp_remote', 'fastmcp-slim': 'fastmcp_slim', 'fastmcp-tasks': 'fastmcp_tasks'}
+
+
+def classify(package):
+    if not isinstance(package.get('name'), str):
+        raise ValueError('Missing package name')
+    version = package.get('version')
+    if version is None:
+        name = package['name']
+        if name not in WORKSPACES or package.get('source') != {'editable': WORKSPACES[name]}:
+            raise ValueError('Unreviewed versionless source')
+        return 'publisher-workspace'
+    if not isinstance(version, str):
+        raise ValueError('Invalid registry version')
+    return 'versioned'
 
 
 def stable(version):
@@ -24,7 +41,19 @@ def self_test():
         assert stable(value), value
     for value in bad:
         assert not stable(value), value
-    print(json.dumps({'owned_policy_boundary_cases': len(good) + len(bad), 'passed': True, 'SDK_cases_executed': False}))
+    for name, path in WORKSPACES.items():
+        assert classify({'name': name, 'source': {'editable': path}}) == 'publisher-workspace'
+    invalid = [{'name': 'unreviewed', 'source': {'editable': '.'}},
+               {'name': 'fastmcp', 'source': {'editable': '../outside'}},
+               {'name': 'example', 'version': 1}]
+    for package in invalid:
+        try:
+            classify(package)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(package)
+    print(json.dumps({'owned_policy_boundary_cases': len(good) + len(bad) + len(WORKSPACES) + len(invalid), 'passed': True, 'SDK_cases_executed': False}))
 
 
 def main():
@@ -45,16 +74,28 @@ def main():
     assert hashlib.sha256(raw).hexdigest() == before['uv.lock']['sha256']
     assert hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest() == before['uv.lock']['blob']
     packages = tomllib.loads(raw.decode())['package']
-    assert packages and all(isinstance(p.get('name'), str) and isinstance(p.get('version'), str) for p in packages)
+    assert packages
+    versioned = [p for p in packages if classify(p) == 'versioned']
+    workspaces = [p for p in packages if classify(p) == 'publisher-workspace']
+    assert {p['name'] for p in workspaces} == set(WORKSPACES)
     unapproved = [{'name': p['name'], 'version': p['version'], 'resolution_markers': p.get('resolution-markers')}
-                  for p in packages if not stable(p['version'])]
+                  for p in versioned if not stable(p['version'])]
     project = tomllib.loads(Path('pyproject.toml').read_text(encoding='utf-8'))
     default_groups = project.get('tool', {}).get('uv', {}).get('default-groups', ['dev'])
     default_requests = {name: project.get('dependency-groups', {}).get(name, []) for name in default_groups}
     sdk = [p for p in packages if p['name'] == 'opentelemetry-sdk']
+    # This imports only the already copied HAI metadata guard, not publisher SDK code.
+    loader = importlib.util.spec_from_file_location('hai_source_metadata', reports / 'source_guard.py')
+    source_metadata = importlib.util.module_from_spec(loader)
+    loader.loader.exec_module(source_metadata)
+    after = source_metadata.payloads()
+    assert after == before
+    (reports / 'publisher-policy-payloads-after.json').write_text(json.dumps(after, indent=2) + '\n', encoding='utf-8')
     evidence = {'schema_version': 1, 'publisher_commit': spec['publisher_commit'],
         'HAI_worker_head': os.environ['GITHUB_SHA'], 'uv_lock_blob': before['uv.lock']['blob'],
         'uv_lock_sha256': hashlib.sha256(raw).hexdigest(), 'lock_package_records': len(packages),
+        'versioned_lock_records': len(versioned), 'publisher_versionless_workspaces_bound_to_release_commit': workspaces,
+        'all_publisher_payloads_unchanged_after_metadata_read': len(after),
         'scope': 'Complete original SDK lock union across its declared Linux/Windows compatibility matrix; not a per-interpreter installation inventory.',
         'default_groups': default_groups, 'default_group_requests': default_requests,
         'locked_otel_sdk_dependencies': [{'version': p['version'], 'dependencies': p.get('dependencies', [])} for p in sdk],
