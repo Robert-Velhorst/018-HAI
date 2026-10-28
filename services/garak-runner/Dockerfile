@@ -35,8 +35,15 @@ RUN apt-get update \
     && apt-get purge -y --auto-remove build-essential libyaml-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Install dependencies while building; the immutable runtime has no package installer.
+RUN python -m pip uninstall --yes pip
+RUN ["python", "-I", "-c", "import importlib.util,json,pathlib,sysconfig; bundled=pathlib.Path(sysconfig.get_path(\"stdlib\"))/\"ensurepip\"/\"_bundled\"; wheels=list(bundled.glob(\"pip-*.whl\")); [p.unlink() for p in wheels]; assert importlib.util.find_spec(\"pip\") is None; assert not list(bundled.glob(\"*.whl\")); print(json.dumps({\"package_installer\":\"absent\",\"bootstrap_wheels\":0,\"removed_bootstrap_wheels\":len(wheels)}))"]
+
+COPY hai_local.py install_local_generator.py ./
+RUN python install_local_generator.py
+
 COPY app.py ./
-COPY test_app.py ./
+COPY test_app.py transport_security.py ./
 
 RUN python -c "import json,platform,ssl,sqlite3; from importlib.metadata import distributions; print(json.dumps({'python':platform.python_version(),'openssl':ssl.OPENSSL_VERSION,'sqlite':sqlite3.sqlite_version,'distributions':{d.metadata['Name']:d.version for d in distributions()}})); print(open('/etc/os-release',encoding='utf-8').read())"
 

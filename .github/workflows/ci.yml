@@ -123,6 +123,37 @@ jobs:
         timeout-minutes: 2
         working-directory: services/${{ matrix.name }}
         run: python ../../scripts/python_runner_container_smoke.py --runner "${{ matrix.name }}" --image "hai-${{ matrix.name }}:ci"
+      - name: Scan exact runner image without advisory exclusions
+        if: contains(fromJSON('["fastmcp-bridge","deepeval-runner","docling-runner","lm-eval-runner","evidently-runner","garak-runner","trivy-runner"]'), matrix.name)
+        timeout-minutes: 15
+        env:
+          HAI_SCAN_DIRECTORY: ${{ runner.temp }}/hai-image-security-${{ matrix.name }}
+          HAI_SCAN_IMAGE: hai-${{ matrix.name }}:ci
+        run: |
+          mkdir -p "$HAI_SCAN_DIRECTORY/input" "$HAI_SCAN_DIRECTORY/reports" "$HAI_SCAN_DIRECTORY/cache"
+          docker image inspect "$HAI_SCAN_IMAGE" > "$HAI_SCAN_DIRECTORY/reports/image-inspect.json"
+          docker image save "$HAI_SCAN_IMAGE" -o "$HAI_SCAN_DIRECTORY/input/image.tar"
+          python scripts/runner_image_archive_identity.py "$HAI_SCAN_DIRECTORY/input/image.tar" "$HAI_SCAN_DIRECTORY/reports/image-inspect.json" "$HAI_SCAN_IMAGE" "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "$HAI_SCAN_DIRECTORY/reports/image-config-id.txt"
+          scan_status=0
+          docker run --rm --read-only --user "$(id -u):$(id -g)" --cap-drop ALL \
+            --security-opt no-new-privileges --memory 4g --cpus 2 --pids-limit 128 \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=3g \
+            --mount type=bind,src="$HAI_SCAN_DIRECTORY/input",dst=/input,readonly \
+            --mount type=bind,src="$HAI_SCAN_DIRECTORY/reports",dst=/reports \
+            --mount type=bind,src="$HAI_SCAN_DIRECTORY/cache",dst=/cache \
+            aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+            image --input /input/image.tar --cache-dir /cache --scanners vuln \
+            --list-all-pkgs --ignorefile /dev/null --exit-code 1 --format json --timeout 10m \
+            --output /reports/image-security.json || scan_status=$?
+          python scripts/verify_runner_image_security.py "$HAI_SCAN_DIRECTORY/reports/image-security.json" "$HAI_SCAN_DIRECTORY/reports/image-identity.json" "services/${{ matrix.name }}" > "$HAI_SCAN_DIRECTORY/reports/verified-image.json"
+          test "$scan_status" -eq 0
+      - name: Retain exact-image security inventory and provenance
+        if: always() && contains(fromJSON('["fastmcp-bridge","deepeval-runner","docling-runner","lm-eval-runner","evidently-runner","garak-runner","trivy-runner"]'), matrix.name)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runner-image-security-${{ matrix.name }}
+          path: ${{ runner.temp }}/hai-image-security-${{ matrix.name }}/reports
+          if-no-files-found: warn
 
   secret-scan:
     name: Repository secret scan (redacted output)

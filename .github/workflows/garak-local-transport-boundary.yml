@@ -1,0 +1,35 @@
+name: Garak actual local transport boundary
+
+on:
+  pull_request:
+    paths:
+      - services/garak-runner/**
+      - .github/scripts/qualify_garak_local_transport.py
+      - .github/workflows/garak-local-transport-boundary.yml
+
+permissions:
+  contents: read
+
+jobs:
+  actual-cli-transport:
+    name: Original versus owned Garak generator transport
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Run original and candidate CLI through isolated loopback model servers
+        run: python .github/scripts/qualify_garak_local_transport.py
+      - name: Retain all source, original failures and model transport observations
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: garak-transport-${{ github.run_id }}-${{ github.run_attempt }}
+          path: garak-transport-evidence/
+          if-no-files-found: error
+          retention-days: 14
