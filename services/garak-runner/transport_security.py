@@ -4,6 +4,8 @@ from importlib.metadata import version
 import json
 import os
 import threading
+import tempfile
+from pathlib import Path
 import unittest
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -78,6 +80,48 @@ def environment(source):
               'NO_PROXY': '*', 'no_proxy': '*', 'PYTHONDONTWRITEBYTECODE': '1'}
     with patch.dict(os.environ, values, clear=True): yield
 
+@contextmanager
+def cli_witness():
+    """Forward actual commands unchanged; observe SDK errors and recorded settings."""
+    actual_run = app.subprocess.run
+    actual_parse = app.parse_report
+    parameters = []
+    def run(*args, **kwargs):
+        with tempfile.TemporaryFile() as error_stream:
+            observed_kwargs = dict(kwargs)
+            observed_kwargs['stderr'] = error_stream
+            result = actual_run(*args, **observed_kwargs)
+            error_stream.seek(0)
+            diagnostic = error_stream.read(16384).decode(errors='replace').replace(KEY, '[owned-fixture-key]')
+        OBSERVATIONS.append({'label': 'actual-cli-diagnostic', 'returncode': result.returncode,
+                             'stderr': diagnostic, 'requests': []})
+        return result
+    def parse(path, *args, **kwargs):
+        result = actual_parse(path, *args, **kwargs)
+        source = Path(path)
+        assert source.stat().st_size <= 8 * 1024 * 1024
+        attempts = {}
+        for line in source.read_text(encoding='utf-8').splitlines():
+            row = json.loads(line)
+            if row.get('entry_type') != 'attempt':
+                continue
+            settings = row.get('notes', {}).get('settings')
+            if not isinstance(settings, dict):
+                continue
+            identity = row.get('uuid') or row.get('id')
+            assert identity
+            expected = {key: settings['config_' + key] for key in ['temperature', 'top_p', 'max_tokens']}
+            if identity in attempts:
+                assert attempts[identity] == expected
+            attempts[identity] = expected
+        assert attempts
+        parameters.extend(attempts.values())
+        OBSERVATIONS.append({'label': 'actual-sdk-probe-settings', 'parameters': list(parameters), 'requests': []})
+        return result
+    with patch.object(app.subprocess, 'run', side_effect=run), patch.object(app, 'parse_report', side_effect=parse):
+        yield parameters
+
+
 class GarakTransportSecurityTests(unittest.TestCase):
     def probe_redirect(self, status):
         with endpoint(f'probe-{status}-target') as (target, target_seen):
@@ -102,7 +146,7 @@ class GarakTransportSecurityTests(unittest.TestCase):
     def cli_redirect(self, status):
         with endpoint(f'cli-{status}-target') as (target, target_seen):
             with endpoint(f'cli-{status}-source', status, target + '/collect') as (source, source_seen):
-                with environment(source), self.assertRaises(app.RequestError): app.run_scan()
+                with environment(source), cli_witness(), self.assertRaises(app.RequestError): app.run_scan()
                 self.assertTrue(any(row['method'] == 'POST' for row in source_seen), 'The actual CLI must reach the model')
                 self.assertEqual(target_seen, [])
     def test_actual_cli_307_fails_closed_without_forwarding(self): self.cli_redirect(307)
@@ -110,18 +154,19 @@ class GarakTransportSecurityTests(unittest.TestCase):
 
     def test_actual_cli_direct_control_preserves_fixed_suite_and_parameters(self):
         with endpoint('direct-cli') as (source, seen):
-            with environment(source): result = app.run_scan()
+            with environment(source), cli_witness() as expected_parameters: result = app.run_scan()
             self.assertEqual(result['suite'], app.SUITE)
             self.assertEqual(result['modelId'], MODEL)
             self.assertTrue(1 <= result['caseCount'] <= app.MAX_CASES)
             posts = [row for row in seen if row['method'] == 'POST']
             self.assertTrue(posts, 'The actual CLI must issue completions')
             self.assertTrue(all(row['fixture_authorization'] and row['contains_messages'] for row in posts))
-            self.assertTrue(all(row['model'] == MODEL and row['temperature'] == 0 and row['top_p'] == 1.0 and row['max_tokens'] == 64 for row in posts))
+            self.assertTrue(all(row['model'] == MODEL for row in posts))
+            self.assertEqual([{key: row[key] for key in ['temperature', 'top_p', 'max_tokens']} for row in posts], expected_parameters)
 
     def test_actual_cli_mixed_null_completion_fails_closed(self):
         with endpoint('mixed-null-cli', null_after=1) as (source, seen):
-            with environment(source), self.assertRaises(app.RequestError):
+            with environment(source), cli_witness(), self.assertRaises(app.RequestError):
                 app.run_scan()
             posts = [row for row in seen if row['method'] == 'POST']
             self.assertTrue(any(row.get('returned_null_content') is False for row in posts))
