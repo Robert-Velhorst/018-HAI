@@ -1,0 +1,64 @@
+name: DeepEval source port public core compatibility
+
+on:
+  push:
+    branches: [fix/hai-deepeval-ubuntu-runtime-20261025]
+    paths:
+      - .github/scripts/qualify_deepeval_sdk_port.py
+      - .github/workflows/deepeval-sdk-source-port.yml
+      - services/deepeval-runner/requirements.lock
+      - services/deepeval-runner/requirements-build.ubuntu.lock
+
+permissions:
+  contents: read
+
+jobs:
+  original-public-core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      OPENAI_API_KEY: ''
+      DEEPEVAL_TELEMETRY_OPT_OUT: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: confident-ai/deepeval
+          ref: d6cd78ac44da4623ff07c73310dfca474c212068
+          path: vendor-deepeval
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.15.2'
+      - uses: snok/install-poetry@a783c322200f0519c7926aa6faa857c4e23e9263
+        with:
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          installer-parallel: true
+      - name: Bind actual publisher payloads and prepare explicit three-bound source port
+        id: prepare
+        run: python .github/scripts/qualify_deepeval_sdk_port.py prepare
+      - name: Regenerate the source port dependency lock normally
+        working-directory: vendor-deepeval
+        run: poetry lock
+      - name: Original publisher main and dev installation commands
+        run: python .github/scripts/qualify_deepeval_sdk_port.py install
+      - name: Build the explicitly identified source port distribution
+        working-directory: vendor-deepeval
+        run: poetry build
+      - name: Install all 69 highest-release hashed inputs and check their real contracts
+        run: python .github/scripts/qualify_deepeval_sdk_port.py qualify
+      - name: Original publisher no-secrets public core and dev test commands
+        run: python .github/scripts/qualify_deepeval_sdk_port.py test
+      - name: Verify every original SDK runtime file case helper and command
+        if: ${{ always() && steps.prepare.outcome == 'success' }}
+        run: python .github/scripts/qualify_deepeval_sdk_port.py audit
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: deepeval-source-port-${{ github.run_id }}-${{ github.run_attempt }}
+          path: deepeval-sdk-port-evidence/
+          if-no-files-found: error
+          retention-days: 14

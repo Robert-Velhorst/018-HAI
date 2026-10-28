@@ -3,6 +3,14 @@ name: DeepEval Ubuntu native runtime qualification
 on:
   push:
     branches: [fix/hai-deepeval-ubuntu-runtime-20261025]
+    paths:
+      - services/native-python-runtime/**
+      - services/deepeval-runner/**
+      - scripts/record_deepeval_ubuntu_runtime.py
+      - scripts/verify_deepeval_ubuntu_image.py
+      - scripts/python_runner_container_smoke.py
+      - scripts/runner_image_archive_identity.py
+      - .github/workflows/deepeval-ubuntu-runtime.yml
 
 permissions:
   contents: read
@@ -38,6 +46,7 @@ jobs:
           retention-days: 7
           if-no-files-found: error
   native:
+    needs: dependency-resolution
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
