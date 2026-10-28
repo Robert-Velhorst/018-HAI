@@ -11,7 +11,13 @@ permissions:
   contents: read
 
 jobs:
+  sdk_lock_policy:
+    uses: ./.github/workflows/fastmcp-sdk-lock-policy.yml
+    permissions:
+      contents: read
+
   original_public_cases:
+    needs: sdk_lock_policy
     name: Original FastMCP ${{ matrix.test-type }} Python ${{ matrix.python }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -91,6 +97,7 @@ jobs:
           retention-days: 7
 
   original_schema_crash:
+    needs: sdk_lock_policy
     name: Original FastMCP schema crash test and complete public corpus
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -158,6 +165,7 @@ jobs:
           retention-days: 7
 
   original_packaging_smoke:
+    needs: sdk_lock_policy
     name: Complete original packaging smoke with two approved stable-only flags
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -339,7 +347,7 @@ jobs:
   complete_coverage_gate:
     name: Complete original SDK coverage remains required
     if: always()
-    needs: [original_public_cases, original_schema_crash, original_packaging_smoke]
+    needs: [sdk_lock_policy, original_public_cases, original_schema_crash, original_packaging_smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

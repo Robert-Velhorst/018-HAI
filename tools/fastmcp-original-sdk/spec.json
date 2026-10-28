@@ -6,10 +6,38 @@
   "publisher_blob_count": 1854,
   "publisher_test_workflow": ".github/workflows/run-tests.yml",
   "original_locked_unit_and_serial_matrix": [
-    ["ubuntu-latest", "3.10"], ["ubuntu-latest", "3.11"],
-    ["ubuntu-latest", "3.12"], ["ubuntu-latest", "3.13"],
-    ["ubuntu-latest", "3.14"], ["ubuntu-latest", "3.15"],
-    ["windows-latest", "3.10"], ["windows-latest", "3.14"]
+    [
+      "ubuntu-latest",
+      "3.10"
+    ],
+    [
+      "ubuntu-latest",
+      "3.11"
+    ],
+    [
+      "ubuntu-latest",
+      "3.12"
+    ],
+    [
+      "ubuntu-latest",
+      "3.13"
+    ],
+    [
+      "ubuntu-latest",
+      "3.14"
+    ],
+    [
+      "ubuntu-latest",
+      "3.15"
+    ],
+    [
+      "windows-latest",
+      "3.10"
+    ],
+    [
+      "windows-latest",
+      "3.14"
+    ]
   ],
   "original_case_actions_retained": [
     ".github/actions/setup-uv/action.yml",
@@ -24,7 +52,8 @@
   },
   "implemented_coverage_jobs": {
     "Original 232K-schema crash-test dataset and case remain required.": "original_schema_crash",
-    "Complete original package-install smoke with exactly two approved stable-only installer flags remains required.": "original_packaging_smoke"
+    "Complete original package-install smoke with exactly two approved stable-only installer flags remains required.": "original_packaging_smoke",
+    "Immutable original FastMCP SDK lock must pass its strict prerelease policy before any SDK installer.": "sdk_lock_policy"
   },
   "required_gates_not_qualified_by_this_public_matrix": [
     "Original private GitHub OAuth integration credentials and authorized external execution are unavailable; no substitute secrets supplied.",
@@ -32,7 +61,8 @@
     "Complete original package-install smoke with exactly two approved stable-only installer flags remains required.",
     "Original static/prek and upgrade workflow jobs remain required, including review of inherited skip/configuration rules.",
     "Original 232K-schema crash-test dataset and case remain required.",
-    "Original downstream build/install/consumer matrix remains required."
+    "Original downstream build/install/consumer matrix remains required.",
+    "Immutable original FastMCP SDK lock must pass its strict prerelease policy before any SDK installer."
   ],
   "complete_original_SDK_qualified": false,
   "runtime_or_current_normal_graph_qualification": "Separate from the unmodified publisher SDK lock and historical interpreter compatibility matrix.",
