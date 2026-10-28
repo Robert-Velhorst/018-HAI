@@ -1,4 +1,4 @@
-FROM anchore/syft:v1.54.1 AS syft
+FROM anchore/syft:v1.55.0 AS syft
 
 FROM python:3.15-slim
 COPY --from=syft /syft /usr/local/bin/syft
