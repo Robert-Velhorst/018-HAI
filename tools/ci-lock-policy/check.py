@@ -40,7 +40,7 @@ def python_rows(raw, stable):
         line = line.strip()
         if not line or line.startswith('#'):
             continue
-        if line == '--index-url https://pypi.org/simple':
+        if line in {'--index-url https://pypi.org/simple', '--extra-index-url https://download.pytorch.org/whl/cpu'}:
             continue
         if re.fullmatch(r'--hash=sha256:[0-9a-f]{64}(?:\s+\\)?', line):
             continue
@@ -97,6 +97,9 @@ def boundary_tests(stable):
         rows, errors = python_rows(raw, stable)
         assert errors
         count += 1
+    rows, errors = python_rows(b'--extra-index-url https://download.pytorch.org/whl/cpu\ntorch==2.12.0+cpu\n', stable)
+    assert not errors and len(rows) == 1 and rows[0]['stable']
+    count += 1
     root = Path.cwd().resolve()
     rows, errors, workspaces = npm_rows(json.dumps({'lockfileVersion': 3, 'packages': {
         '': {}, 'node_modules/a': {'version': '1.2.3'},
