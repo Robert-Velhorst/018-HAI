@@ -100,7 +100,7 @@ class GarakTransportSecurityTests(unittest.TestCase):
     def cli_redirect(self, status):
         with endpoint(f'cli-{status}-target') as (target, target_seen):
             with endpoint(f'cli-{status}-source', status, target + '/collect') as (source, source_seen):
-                with environment(source), self.assertRaises(app.RequestError): app.run_suite()
+                with environment(source), self.assertRaises(app.RequestError): app.run_scan()
                 self.assertTrue(any(row['method'] == 'POST' for row in source_seen), 'The actual CLI must reach the model')
                 self.assertEqual(target_seen, [])
     def test_actual_cli_307_fails_closed_without_forwarding(self): self.cli_redirect(307)
@@ -108,7 +108,7 @@ class GarakTransportSecurityTests(unittest.TestCase):
 
     def test_actual_cli_direct_control_preserves_fixed_suite_and_parameters(self):
         with endpoint('direct-cli') as (source, seen):
-            with environment(source): result = app.run_suite()
+            with environment(source): result = app.run_scan()
             self.assertEqual(result['suite'], app.SUITE)
             self.assertEqual(result['modelId'], MODEL)
             self.assertTrue(1 <= result['caseCount'] <= app.MAX_CASES)
