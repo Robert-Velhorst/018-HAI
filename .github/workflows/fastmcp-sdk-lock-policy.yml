@@ -1,0 +1,45 @@
+name: FastMCP immutable SDK lock stability policy
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    name: Reject unapproved SDK prereleases before installation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Preserve all HAI source and copy the owned metadata reader
+        run: |
+          set -euo pipefail
+          python tools/fastmcp-original-sdk/source_guard.py initialise
+          cp tools/fastmcp-original-sdk/stable_lock_policy.py "$RUNNER_TEMP/hai-fastmcp-original-sdk/stable_lock_policy.py"
+      - name: Verify owned stable/prerelease classification boundaries
+        run: python "$RUNNER_TEMP/hai-fastmcp-original-sdk/stable_lock_policy.py" --self-test
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: PrefectHQ/fastmcp
+          ref: 26bf9080ae338d1467dca6471b15c6911f71c75c
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Bind the immutable release tag and all publisher bytes
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin refs/tags/v4.1.4:refs/tags/v4.1.4
+          python "$RUNNER_TEMP/hai-fastmcp-original-sdk/source_guard.py" adopt
+      - name: Require stable SDK metadata before any original installer
+        run: python "$RUNNER_TEMP/hai-fastmcp-original-sdk/stable_lock_policy.py"
+      - name: Preserve complete original source and raw policy rejection
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: fastmcp-immutable-sdk-lock-policy
+          path: ${{ runner.temp }}/hai-fastmcp-original-sdk/
+          if-no-files-found: error
+          retention-days: 14
