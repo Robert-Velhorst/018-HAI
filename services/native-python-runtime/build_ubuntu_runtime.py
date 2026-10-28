@@ -33,7 +33,7 @@ def main():
     spec.loader.exec_module(shared)
     manifest=json.loads((root/'sources.json').read_text())
     profile=json.loads((root/'profile.json').read_text())
-    if (profile!={'python':'3.15.1'} or manifest['prefix']!='/opt/hai-native'
+    if (profile!={'python':'3.15.2'} or manifest['prefix']!='/opt/hai-native'
             or manifest['openssl']['version']!='4.1.0'
             or manifest['sqlite']['version']!='3.54.1'):
         raise RuntimeError('Keep the complete current native source profile')
@@ -48,7 +48,7 @@ def main():
         folder=Path(temporary)
         ssl=shared.extract_source(manifest['openssl'],folder/'openssl')
         sqlite=shared.extract_source(manifest['sqlite'],folder/'sqlite')
-        python=shared.extract_source(manifest['cpython']['3.15.1'],folder/'cpython')
+        python=shared.extract_source(manifest['cpython']['3.15.2'],folder/'cpython')
         tls=shared.build_openssl(manifest['openssl'],ssl,folder,architecture)
         database=shared.build_sqlite(manifest['sqlite'],sqlite,folder,architecture)
         for name in ['sqlite3.h','sqlite3ext.h']:
@@ -73,7 +73,7 @@ def main():
             "'sqlite':sqlite3.sqlite_version,'sqlite_query':d.execute('select sqlite_version()').fetchone()[0],"
             "'ca_roots':len(ssl.create_default_context().get_ca_certs()),'stdlib_names':sorted(sys.stdlib_module_names),"
             "'sha256':hashlib.sha256(b'hai-native-runtime').hexdigest()}))"],env=probe_env,text=True,timeout=30))
-        if (probe['python']!='3.15.1' or not probe['openssl'].startswith('OpenSSL 4.1.0 ')
+        if (probe['python']!='3.15.2' or not probe['openssl'].startswith('OpenSSL 4.1.0 ')
                 or probe['sqlite']!='3.54.1' or probe['sqlite_query']!='3.54.1' or probe['ca_roots']<1
                 or probe['sha256']!=hashlib.sha256(b'hai-native-runtime').hexdigest()):
             raise RuntimeError('Actual complete native runtime does not match source profile')
@@ -89,7 +89,7 @@ def main():
         if not modules or not any(n.startswith('_ssl.') for n in modules) or not any(n.startswith('_sqlite3.') for n in modules):
             raise RuntimeError('Full CPython native providers are missing')
         shared.copy_regular(python/'LICENSE',shared.OUTPUT/'CPython-LICENSE')
-        cpython={'source':manifest['cpython']['3.15.1'],'modules':modules,
+        cpython={'source':manifest['cpython']['3.15.2'],'modules':modules,
             'python_executable_sha256':hashlib.sha256(executable.read_bytes()).hexdigest(),
             'full_install_preserved':True,'source_or_case_edits':False}
         cpython['staged_OpenSSL_directory']=str(shared.SDK_PREFIX)

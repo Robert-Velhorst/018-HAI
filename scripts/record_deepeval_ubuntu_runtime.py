@@ -24,7 +24,7 @@ def main():
         'sqlite':sqlite3.sqlite_version,'sqlite_query':database.execute('select sqlite_version()').fetchone()[0],
         'ca_roots':len(ssl.create_default_context().get_ca_certs())}
     database.close()
-    if (actual['python']!='3.15.1' or not actual['openssl'].startswith('OpenSSL 4.1.0 ')
+    if (actual['python']!='3.15.2' or not actual['openssl'].startswith('OpenSSL 4.1.0 ')
             or actual['sqlite']!='3.54.1' or actual['sqlite_query']!='3.54.1' or actual['ca_roots']<1):
         raise RuntimeError('Every actual native provider must match the source profile')
     bundled=Path(sysconfig.get_path('stdlib'))/'ensurepip/_bundled'
@@ -55,7 +55,7 @@ def main():
         'metadata_sha256':hashlib.sha256(d.read_text('METADATA').encode()).hexdigest()}
         for d in importlib.metadata.distributions()]
     versions={d['name'].lower():d['version'] for d in distributions}
-    if versions.get('deepeval')!='4.3.1':
+    if versions.get('deepeval')!='4.3.2':
         raise RuntimeError('The complete locked public DeepEval engine is required')
     print(json.dumps({'actual':actual,'os_release':release,'installed_OS_packages':packages,
         'python_distributions':distributions,'all_native_extension_sha256':modules,

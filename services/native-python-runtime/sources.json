@@ -27,6 +27,12 @@
       "url": "https://www.python.org/ftp/python/3.14.9/Python-3.14.9.tar.xz",
       "checksum": "e02d9ac21cebda6e46435369744a92c65cc7cd8669697694122cf97ffacd1e53",
       "digest_algorithm": "sha256"
+    },
+    "3.15.2": {
+      "version": "3.15.2",
+      "url": "https://www.python.org/ftp/python/3.15.2/Python-3.15.2.tar.xz",
+      "checksum": "8b5536d280142ecf6cdfe15d12a21ba1c65e300bbf7b28a8d0cdb849575797de",
+      "digest_algorithm": "sha256"
     }
   }
 }
