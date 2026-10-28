@@ -6,7 +6,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Lock
 from urllib.parse import urlparse
-from urllib.request import Request as URLRequest, urlopen
+from urllib.error import HTTPError
+from urllib.request import HTTPRedirectHandler, Request as URLRequest, build_opener
 import hashlib
 import ipaddress
 import json
@@ -35,6 +36,11 @@ RUN_LOCK = Lock()
 
 class RequestError(ValueError):
     """Raised when configuration or a caller crosses the fixed-suite boundary."""
+
+
+class RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(self, _request, _response, _code, _message, _headers, _new_url):
+        return None
 
 
 def engine_name() -> str:
@@ -70,8 +76,14 @@ def configuration(environment: dict | None = None) -> tuple[str, str, str]:
 def probe() -> dict:
     base_url, model_id, api_key = configuration()
     request = URLRequest(base_url + "/models", headers={"Accept": "application/json", "Authorization": f"Bearer {api_key}"})
-    with urlopen(request, timeout=5) as response:  # nosec B310: URL is local-only validated above.
-        payload = json.loads(response.read(32 * 1024))
+    try:
+        with build_opener(RejectRedirects()).open(request, timeout=5) as response:
+            payload = json.loads(response.read(32 * 1024))
+    except HTTPError as exc:
+        if 300 <= exc.code < 400:
+            exc.close()
+            raise RequestError("local model redirects are not allowed") from None
+        raise
     models = payload.get("data", []) if isinstance(payload, dict) else []
     if not any(isinstance(item, dict) and item.get("id") == model_id for item in models):
         raise RequestError("configured local model is not reported by its endpoint")
@@ -104,7 +116,7 @@ def run_config(base_url: str) -> dict:
     return {
         "system": {"parallel_requests": False, "parallel_attempts": False, "lite": True},
         "run": {"seed": 20260720, "generations": 1, "soft_probe_prompt_cap": MAX_CASES},
-        "plugins": {"generators": {"openai": {"OpenAICompatible": {"uri": base_url, "temperature": 0, "top_p": 1.0, "max_tokens": 64}}}},
+        "plugins": {"generators": {"hai_local": {"LocalOpenAICompatible": {"uri": base_url, "temperature": 0, "top_p": 1.0, "max_tokens": 64}}}},
         "reporting": {"report_dir": "/tmp/garak-runs", "bootstrap_num_iterations": 1, "confidence_interval_method": "none"},
     }
 
@@ -145,7 +157,7 @@ def run_scan() -> dict:
         config_path.write_text(json.dumps(run_config(base_url)), encoding="utf-8")
         command = [
             "garak",
-            "--target_type", "openai.OpenAICompatible",
+            "--target_type", "hai_local.LocalOpenAICompatible",
             "--target_name", model_id,
             "--probes", PROBE,
             "--generations", "1",
