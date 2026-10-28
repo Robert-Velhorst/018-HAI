@@ -42,9 +42,12 @@ def main():
     selected=dict(re.findall(r'(?m)^([\w.-]+)==([^\s;\\]+)',(service/'requirements.lock').read_text()))
     assert selected
     reviewed_local={}
+    reviewed_prereleases={"opentelemetry-semantic-conventions":"0.66b1"}
     for name,version in selected.items():
         if '+' in version:
             assert reviewed_local.get(norm(name))==version
+        elif reviewed_prereleases.get(norm(name))==version:
+            pass
         else:
             assert re.fullmatch(r'\d+(?:\.\d+)*(?:\.post\d+)?',version),'Prerelease dependency is not permitted'
         assert version in installed.get(norm(name),set()),name
@@ -55,6 +58,7 @@ def main():
     print(json.dumps({'passed':not findings,'config_id':identity['config_id'],
         'complete_package_records':counts,'locked_versions_verified':len(selected),
         'raw_or_modified_findings':len(findings),'advisory_exclusions':False,
+        'explicit_prerelease_exceptions':{n:v for n,v in selected.items() if reviewed_prereleases.get(norm(n))==v},
         'all_components_current':False,'full_vendor_acceptance':False,'deployment_acceptance':False}))
     assert not findings,'Every raw or modified finding remains fatal'
 
