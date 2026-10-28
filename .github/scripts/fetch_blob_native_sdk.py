@@ -55,19 +55,23 @@ try:
     walk(graph.get('dependencies',{}));record['actual_installed_SDK_graph']=installed
     assert not any(r['name']=='node-domexception' for r in installed)
     for n,v in desc['candidate_package']['devDependencies'].items():assert graph['dependencies'][n]['version']==v
+    command_failures=[]
     for name,argv in [('original-test',['npm','test']),('original-coverage-report',['npm','run','report','--','--colors']),('original-declaration-build',['npm','run','prepublishOnly'])]:
         code=run(name,argv)
         text=re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]','',(out/(name+'.log')).read_text(errors='replace'))
         outcomes=[{'status':'passed' if m[0]=='√' else 'failed','name':m[1]} for m in re.findall(r'^\s*([√×])\s+(.+)$',text,re.M)]
         record[name]={'returncode':code,'reported_cases':outcomes,'passed':sum(r['status']=='passed' for r in outcomes),'failed':sum(r['status']=='failed' for r in outcomes),'known_original_unreported_cases':len(record['known_original_ignored_cases'])}
-        assert code==0
-        if name!='original-declaration-build':assert outcomes and not any(r['status']=='failed' for r in outcomes)
-    record['original_selected_test_report_and_declaration_commands_succeeded']=True
+        if code!=0 or (name!='original-declaration-build' and (not outcomes or any(r['status']=='failed' for r in outcomes))):command_failures.append(name)
+    record['original_command_failures']=command_failures
+    record['original_selected_test_report_and_declaration_commands_succeeded']=not command_failures
     record['separate_audit_returncode']=run('complete-actual-SDK-audit',['npm','audit','--json'])
     # Preserve the publisher's package-lock=false setting even if it prevents
     # this independent audit; never treat ENOLOCK as a clean audit.
-    assert run('private-port-pack',['npm','pack','--json','--pack-destination',str(out)])==0
-    record['private_pack_created']=True
+    if record['original-declaration-build']['returncode']==0:
+        assert run('private-port-pack',['npm','pack','--json','--pack-destination',str(out)])==0
+        record['private_pack_created']=True
+    else:record['private_pack_created']=False
+    assert not command_failures,'One or more original SDK commands failed; all failures retained without a waiver'
     assert record['separate_audit_returncode']==0,'Independent SDK audit failed or lacks a lock; no waiver permitted'
 except BaseException as error:
     record['failure']={'type':type(error).__name__,'message':str(error)}
