@@ -1,4 +1,4 @@
-FROM anchore/grype:v0.120.1 AS grype
+FROM anchore/grype:v0.121.0 AS grype
 
 FROM python:3.15-slim
 COPY --from=grype /grype /usr/local/bin/grype
