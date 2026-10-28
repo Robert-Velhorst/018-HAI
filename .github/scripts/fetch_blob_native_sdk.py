@@ -19,9 +19,9 @@ assert subprocess.check_output(['npm','--version']).decode().strip()=='12.2.1'
 original=snapshot(sdk);owner_before=snapshot(owner);assert len(original)==15
 for r in desc['original_payloads']:assert original[r['path']]['sha256']==r['sha256'] and original[r['path']]['index_blob']==r['blob']
 (out/'original-source.json').write_text(json.dumps(original,indent=2));(out/'owner-before.json').write_text(json.dumps(owner_before,indent=2))
-for n in ['from.js','package.json']:(out/('original-'+n)).write_bytes((sdk/n).read_bytes())
-(sdk/'from.js').write_bytes(desc['candidate_from_js'].encode());(sdk/'package.json').write_bytes((json.dumps(desc['candidate_package'],indent=2)+'\n').encode())
-candidate=snapshot(sdk,('from.js','package.json'));assert [n for n in original if original[n]!=candidate[n]]==['from.js','package.json']
+for n in ['from.js','index.js','package.json']:(out/('original-'+n)).write_bytes((sdk/n).read_bytes())
+(sdk/'index.js').write_bytes(desc['candidate_index_js'].encode());(sdk/'from.js').write_bytes(desc['candidate_from_js'].encode());(sdk/'package.json').write_bytes((json.dumps(desc['candidate_package'],indent=2)+'\n').encode())
+candidate=snapshot(sdk,('from.js','index.js','package.json'));assert [n for n in original if original[n]!=candidate[n]]==['from.js','index.js','package.json']
 (out/'candidate-before.json').write_text(json.dumps(candidate,indent=2));(out/'candidate-from.js').write_bytes((sdk/'from.js').read_bytes());(out/'candidate-package.json').write_bytes((sdk/'package.json').read_bytes())
 record={'captured_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'head':git(owner,'rev-parse','HEAD').decode().strip(),'tree':git(owner,'rev-parse','HEAD^{tree}').decode().strip(),'SDK_commit':desc['upstream_commit'],'private_port':desc['candidate_package']['version'],'node':'v26.12.1','npm':'12.2.1','steps':[],'original_case_helper_assertion_fixture_selector_timeout_or_command_changes':False,'known_original_ignored_cases':desc['inherited_original_harness_ignored_case_names'],'complete_original_harness_all_cases_or_job_matrix_qualified':False,'actual_application_parent_graph_native_saved_image_database_or_live_provider_qualified':False,'application_graph_adoption':False}
 def run(name,argv):
@@ -73,9 +73,9 @@ except BaseException as error:
     record['failure']={'type':type(error).__name__,'message':str(error)}
     raise
 finally:
-    after=snapshot(sdk,('from.js','package.json'));owner_after=snapshot(owner)
+    after=snapshot(sdk,('from.js','index.js','package.json'));owner_after=snapshot(owner)
     (out/'candidate-after.json').write_text(json.dumps(after,indent=2));(out/'owner-after.json').write_text(json.dumps(owner_after,indent=2))
-    record['all_other_original_SDK_payloads_unchanged']=len(original)-2
+    record['all_other_original_SDK_payloads_unchanged']=len(original)-3
     record['original_case_files_unchanged']=all(original[n]==after[n] for n in original if n.startswith('test/'))
     record['candidate_tracked_bytes_unchanged_during_original_commands']=candidate==after
     record['owner_tracked_bytes_unchanged_during_original_commands']=owner_before==owner_after
