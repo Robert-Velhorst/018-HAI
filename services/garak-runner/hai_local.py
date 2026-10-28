@@ -26,7 +26,7 @@ class LocalOpenAICompatible(OpenAICompatible):
         results = super()._call_model(*args, **kwargs)
         # Upstream converts nontransient HTTP errors into [None]. Such a model
         # failure must not be scored as a successful fixed safety evaluation.
-        if not results or any(result is None for result in results):
+        if not results or any(result is None or getattr(result, "text", None) is None for result in results):
             raise RuntimeError("configured local model did not return a completion")
         return results
 

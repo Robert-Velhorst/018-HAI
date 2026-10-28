@@ -58,9 +58,10 @@ finally:
 after=snapshot();assert before==after;save('owner-source-after.json',after)
 summary={'baseline_commit':base,'owner_payloads':len(before['payloads']),'owned_case_sha256':hashlib.sha256(case).hexdigest(),'profiles':records,'commands':commands,'all_original_app_and_vendor_SDK_cases_helpers_commands_unchanged':True,'original_partial_profile_and_upstream_OpenAI_constraint_unqualified':True,'whole_original_SDK_graph_and_current_native_images_unqualified':True,'no_live_provider_credentials_data_or_deployment':True};save('qualification-summary.json',summary)
 assert len(records)==2
-for r in records:assert r['commands']['original-app-cases']==0 and r['cases']['tests']==10 and not r['cases']['errors'] and not r['cases']['skipped'] and r['actual']['garak']=='0.17.1' and r['actual']['openai']=='3.37.0'
+for r in records:assert r['commands']['original-app-cases']==0 and r['cases']['tests']==11 and not r['cases']['errors'] and not r['cases']['skipped'] and r['actual']['garak']=='0.17.1' and r['actual']['openai']=='3.37.0'
 baseline,candidate=records;assert baseline['commands']['owned-actual-cli-cases']!=0 and len(baseline['cases']['failures'])>=7
 assert any(r['label'].startswith('probe-') and r['label'].endswith('-target') and any(q['fixture_authorization'] for q in r['requests']) for r in baseline['actual']['observations'])
 assert any(r['label'].startswith('cli-') and r['label'].endswith('-target') and any(q['contains_messages'] for q in r['requests']) for r in baseline['actual']['observations'])
+assert 'transport_security.GarakTransportSecurityTests.test_actual_cli_mixed_null_completion_fails_closed' in baseline['cases']['failures']
 assert candidate['commands']['owned-actual-cli-cases']==0 and not candidate['cases']['failures']
 assert all(not r['requests'] for r in candidate['actual']['observations'] if r['label'].endswith('-target'))

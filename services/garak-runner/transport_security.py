@@ -16,7 +16,7 @@ MODEL = 'owned-local-fixture'
 KEY = 'owned-fixture-not-a-live-credential'
 
 @contextmanager
-def endpoint(label, redirect_status=None, redirect_target=None):
+def endpoint(label, redirect_status=None, redirect_target=None, null_after=None):
     seen = []
     class Handler(BaseHTTPRequestHandler):
         def respond(self):
@@ -42,8 +42,10 @@ def endpoint(label, redirect_status=None, redirect_target=None):
             if self.command == 'GET':
                 value = {'object': 'list', 'data': [{'id': MODEL, 'object': 'model', 'created': 0, 'owned_by': 'fixture'}]}
             else:
+                null_content = null_after is not None and sum(row['method'] == 'POST' for row in seen) > null_after
+                seen[-1]['returned_null_content'] = null_content
                 value = {'id': 'owned-completion', 'object': 'chat.completion', 'created': 0, 'model': MODEL,
-                         'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': 'Safe owned fixture response.'}, 'finish_reason': 'stop'}],
+                         'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': None if null_content else 'Safe owned fixture response.'}, 'finish_reason': 'stop'}],
                          'usage': {'prompt_tokens': 1, 'completion_tokens': 1, 'total_tokens': 2}}
             data = json.dumps(value).encode()
             self.send_response(200)
@@ -116,6 +118,14 @@ class GarakTransportSecurityTests(unittest.TestCase):
             self.assertTrue(posts, 'The actual CLI must issue completions')
             self.assertTrue(all(row['fixture_authorization'] and row['contains_messages'] for row in posts))
             self.assertTrue(all(row['model'] == MODEL and row['temperature'] == 0 and row['top_p'] == 1.0 and row['max_tokens'] == 64 for row in posts))
+
+    def test_actual_cli_mixed_null_completion_fails_closed(self):
+        with endpoint('mixed-null-cli', null_after=1) as (source, seen):
+            with environment(source), self.assertRaises(app.RequestError):
+                app.run_scan()
+            posts = [row for row in seen if row['method'] == 'POST']
+            self.assertTrue(any(row.get('returned_null_content') is False for row in posts))
+            self.assertTrue(any(row.get('returned_null_content') is True for row in posts))
 
     def test_actual_generator_recreation_preserves_policy_and_cleanup(self):
         module_name, classes = next(iter(app.run_config('http://127.0.0.1:1/v1')['plugins']['generators'].items()))
