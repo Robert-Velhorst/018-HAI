@@ -2,15 +2,17 @@
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.metadata import version
+import asyncio
 import hashlib
 import json
 import os
 import re
 from urllib.parse import urlparse
-from urllib.request import Request as URLRequest, urlopen
+from urllib.error import HTTPError
+from urllib.request import HTTPRedirectHandler, Request as URLRequest, build_opener
 import ipaddress
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -43,6 +45,13 @@ destructive, and sensitive actions require approval. HAI will separately validat
 
 class RequestError(ValueError):
     """Raised when a caller crosses the deliberately narrow proposal boundary."""
+
+
+class RejectRedirects(HTTPRedirectHandler):
+    """Keep the authenticated probe at its admitted provider endpoint."""
+
+    def redirect_request(self, _request, _response, _code, _message, _headers, _new_url):
+        return None
 
 
 class PlanProposal(BaseModel):
@@ -164,8 +173,17 @@ def request_digest(request: str, criteria: list[str]) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def create_agent(base_url: str, model_id: str, api_key: str) -> Agent[None, PlanProposal]:
-    client = AsyncOpenAI(base_url=base_url, api_key=api_key, max_retries=0)
+def local_client(base_url: str, api_key: str) -> AsyncOpenAI:
+    return AsyncOpenAI(
+        base_url=base_url, api_key=api_key, max_retries=0,
+        http_client=DefaultAsyncHttpxClient(follow_redirects=False),
+    )
+
+
+def create_agent(
+    base_url: str, model_id: str, api_key: str, *, client: AsyncOpenAI | None = None
+) -> Agent[None, PlanProposal]:
+    client = client if client is not None else local_client(base_url, api_key)
     model = OpenAIChatModel(model_id, provider=OpenAIProvider(openai_client=client))
     return Agent(
         model,
@@ -174,6 +192,13 @@ def create_agent(base_url: str, model_id: str, api_key: str) -> Agent[None, Plan
         retries=0,
         model_settings={"temperature": 0, "max_tokens": 600},
     )
+
+
+async def run_agent(base_url: str, model_id: str, api_key: str, prompt: str):
+    # The custom transport is owned by this request and closes on success or failure.
+    async with local_client(base_url, api_key) as client:
+        agent = create_agent(base_url, model_id, api_key, client=client)
+        return await agent.run(prompt)
 
 
 def guidance_context(guidance: list[dict]) -> str:
@@ -191,7 +216,7 @@ def propose(payload: object) -> dict:
     request, criteria, guidance = validate_payload(payload)
     base_url, model_id, api_key = configured()
     prompt = "Task request:\n" + request + "\n\nExplicit success criteria:\n" + ("\n".join(f"- {item}" for item in criteria) if criteria else "- None supplied; propose measurable criteria.") + guidance_context(guidance)
-    result = create_agent(base_url, model_id, api_key).run_sync(prompt)
+    result = asyncio.run(run_agent(base_url, model_id, api_key, prompt))
     proposal = validate_proposal(result.output)
     response = {
         "engine": f"pydantic-ai {version('pydantic-ai-slim')}",
@@ -207,8 +232,15 @@ def propose(payload: object) -> dict:
 def probe() -> dict:
     base_url, model_id, api_key = configured()
     request = URLRequest(base_url + "/models", headers={"Accept": "application/json", "Authorization": f"Bearer {api_key}"})
-    with urlopen(request, timeout=5) as response:  # nosec B310: URL is local-only and validated above.
-        data = json.loads(response.read(32 * 1024))
+    opener = build_opener(RejectRedirects())
+    try:
+        with opener.open(request, timeout=5) as response:
+            data = json.loads(response.read(32 * 1024))
+    except HTTPError as exc:
+        if 300 <= exc.code < 400:
+            exc.close()
+            raise RequestError("local model redirects are not allowed") from None
+        raise
     models = data.get("data", []) if isinstance(data, dict) else []
     if not any(isinstance(item, dict) and item.get("id") == model_id for item in models):
         raise RequestError("configured local model is not reported by its endpoint")

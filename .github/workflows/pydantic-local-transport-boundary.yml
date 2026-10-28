@@ -1,0 +1,39 @@
+name: PydanticAI local transport boundary
+
+on:
+  pull_request:
+    paths:
+      - services/pydantic-ai-runner/**
+      - .github/scripts/qualify_pydantic_transport.py
+      - .github/workflows/pydantic-local-transport-boundary.yml
+
+permissions:
+  contents: read
+
+jobs:
+  real-transport-boundary:
+    name: Original versus candidate real local-model redirects
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.15.2'
+      - name: Install unchanged hash-locked service dependencies
+        run: python -m pip install --disable-pip-version-check --require-hashes -r services/pydantic-ai-runner/requirements.lock
+      - name: Check installed dependency consistency
+        run: python -m pip check
+      - name: Compare original and candidate using actual loopback HTTP and SDK
+        run: python .github/scripts/qualify_pydantic_transport.py
+      - name: Preserve unsuppressed baseline and candidate source and transport evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pydantic-transport-${{ github.run_id }}-${{ github.run_attempt }}
+          path: pydantic-transport-evidence/
+          if-no-files-found: error
+          retention-days: 14
