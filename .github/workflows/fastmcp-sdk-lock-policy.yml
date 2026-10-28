@@ -1,8 +1,6 @@
 name: FastMCP immutable SDK lock stability policy
 
 on:
-  push:
-    branches: [qualify/fastmcp-sdk-lock-policy-20261029]
   workflow_call:
 
 permissions:

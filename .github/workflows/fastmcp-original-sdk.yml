@@ -1,6 +1,8 @@
 name: FastMCP original publisher SDK coverage
 
 on:
+  push:
+    branches: [qualify/fastmcp-sdk-lock-policy-20261029]
   pull_request:
     paths:
       - tools/fastmcp-original-sdk/**
