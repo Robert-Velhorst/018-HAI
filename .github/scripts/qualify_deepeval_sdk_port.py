@@ -57,7 +57,74 @@ def publisher_command(step):
     return "".join(line[indent:] if line.strip() else "\n" for line in content)
 
 
+def current_python_profile(original):
+    """Preserve original constraints outside 3.15; pin current inputs inside it."""
+    document = tomllib.loads(original)
+    dependencies = document["tool"]["poetry"]["dependencies"]
+    selected = {}
+    for name in ["requirements.lock", "requirements-build.ubuntu.lock"]:
+        text = (OWNER / "services/deepeval-runner" / name).read_text()
+        for project, version in re.findall(r"(?m)^([\w.-]+)==([^\s;\\]+)", text):
+            selected[re.sub(r"[-_.]+", "-", project.lower())] = version
+
+    def render(value):
+        if isinstance(value, dict):
+            return "{ " + ", ".join(key + " = " + render(item) for key, item in value.items()) + " }"
+        if isinstance(value, list):
+            return "[" + ", ".join(render(item) for item in value) + "]"
+        return json.dumps(value)
+
+    start = original.index("[tool.poetry.dependencies]")
+    end = original.find("\n[", start + 1)
+    if end == -1:
+        end = len(original)
+    section = original[start:end]
+    expected = json.loads(json.dumps(document))
+    changes = {}
+    for name, value in dependencies.items():
+        normalized = re.sub(r"[-_.]+", "-", name.lower())
+        if name == "python" or normalized not in selected:
+            continue
+        if isinstance(value, str):
+            old = [{"version": value, "python": "<3.15 || >=3.16"}]
+            modern = {"version": selected[normalized], "python": ">=3.15,<3.16"}
+        else:
+            # The pinned publisher source has one existing multi-Python dependency.
+            # Keep both original branches, excluding only the explicitly ported minor.
+            assert name == "posthog" and isinstance(value, list)
+            assert [row["python"] for row in value] == ["<3.10", ">=3.10"]
+            old = [dict(row) for row in value]
+            old[1]["python"] = ">=3.10,<3.15 || >=3.16"
+            modern = {**value[1], "version": selected[normalized], "python": ">=3.15,<3.16"}
+        replacement = old + [modern]
+        expression = re.search(r"(?m)^" + re.escape(name) + r"\s*=\s*", section)
+        assert expression
+        value_start = expression.end()
+        remaining = section[value_start:].splitlines(keepends=True)
+        chunk = ""
+        for line in remaining:
+            chunk += line
+            try:
+                parsed = tomllib.loads("value = " + chunk)["value"]
+            except tomllib.TOMLDecodeError:
+                continue
+            assert parsed == value
+            break
+        else:
+            raise AssertionError("Cannot identify exact original dependency declaration")
+        section = section[:value_start] + render(replacement) + "\n" + section[value_start + len(chunk):]
+        expected["tool"]["poetry"]["dependencies"][name] = replacement
+        changes[name] = {"original": value, "source_port": replacement}
+    candidate = original[:start] + section + original[end:]
+    assert tomllib.loads(candidate) == expected
+    assert expected["tool"]["poetry"]["version"] == "4.3.2"
+    assert expected["tool"]["poetry"]["dependencies"]["python"] == dependencies["python"]
+    assert changes["pydantic"]["source_port"][-1]["version"] == selected["pydantic"]
+    return candidate, changes
+
+
 def prepare():
+    assert not os.environ.get("PYO3_USE_ABI3_FORWARD_COMPATIBILITY"), "No native ABI guard override is permitted"
     assert subprocess.check_output(["git", "-C", str(SDK), "rev-parse", "HEAD"]).decode().strip() == COMMIT
     before = tracked()
     archive = EVIDENCE / "publisher-deepeval-4.3.2.whl"
@@ -77,15 +144,7 @@ def prepare():
     path = SDK / "pyproject.toml"
     original = path.read_text()
     assert tomllib.loads(original)["tool"]["poetry"]["version"] == "4.3.2"
-    replacements = {
-        'click = ">=8.0.0,<8.4.0"': 'click = ">=8.0.0,<9.0.0"',
-        'rich = ">=13.6.0, <15.0.0"': 'rich = ">=13.6.0, <16.0.0"',
-        'tabulate = "^0.9.0"': 'tabulate = ">=0.9.0,<0.11.0"',
-    }
-    candidate = original
-    for old, new in replacements.items():
-        assert candidate.count(old) == 1
-        candidate = candidate.replace(old, new, 1)
+    candidate, replacements = current_python_profile(original)
     assert tomllib.loads(candidate)["tool"]["poetry"]["version"] == "4.3.2"
     path.write_bytes(candidate.encode())
     commands = {step: publisher_command(step) for step in [
@@ -94,10 +153,11 @@ def prepare():
     record = {"upstream_commit": COMMIT, "publisher_wheel_sha256": WHEEL_SHA,
               "packaged_SDK_files_compared": compared, "original_source": before,
               "declaration_changes": replacements, "publisher_commands": commands,
+              "original_python_constraints_preserved_outside_python315": True,
               "source_port_not_unmodified_publisher_release": True,
               "version_not_relabelled": True, "full_vendor_acceptance": False}
     (EVIDENCE / "source-port-identity.json").write_bytes((json.dumps(record, indent=2) + "\n").encode())
-    print(json.dumps({"publisher_payloads_matched": len(compared), "declarations_changed": 3,
+    print(json.dumps({"publisher_payloads_matched": len(compared), "declarations_changed": len(replacements),
                       "original_case_and_runtime_source_edits": False}), flush=True)
 
 
@@ -149,6 +209,8 @@ def audit():
     assert current.keys() == record["original_source"].keys()
     changed = [name for name in current if current[name] != record["original_source"][name]]
     assert set(changed) <= {"pyproject.toml", "poetry.lock"}, changed
+    for name in ["pyproject.toml", "poetry.lock"]:
+        (EVIDENCE / ("ported-" + name)).write_bytes((SDK / name).read_bytes())
     (EVIDENCE / "source-preservation-after.json").write_bytes((json.dumps({
         "changed_publisher_files": changed, "all_original_SDK_cases_helpers_and_runtime_code_unchanged": True,
         "original_publisher_commands": record["publisher_commands"], "full_vendor_acceptance": False}, indent=2) + "\n").encode())
