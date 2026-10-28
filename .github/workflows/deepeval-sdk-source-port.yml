@@ -43,6 +43,8 @@ jobs:
       - name: Regenerate the source port dependency lock normally
         working-directory: vendor-deepeval
         run: poetry lock
+      - name: Check selected versions before any original SDK installer runs
+        run: python .github/scripts/qualify_deepeval_sdk_port.py plan
       - name: Original publisher main and dev installation commands
         run: python .github/scripts/qualify_deepeval_sdk_port.py install
       - name: Build the explicitly identified source port distribution

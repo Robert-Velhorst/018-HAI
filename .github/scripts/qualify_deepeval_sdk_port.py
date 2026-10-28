@@ -20,7 +20,7 @@ SDK = OWNER / "vendor-deepeval"
 EVIDENCE = OWNER / "deepeval-sdk-port-evidence"
 EVIDENCE.mkdir(exist_ok=True)
 MODE = argparse.ArgumentParser()
-MODE.add_argument("mode", choices=["prepare", "install", "qualify", "test", "audit"])
+MODE.add_argument("mode", choices=["prepare", "plan", "install", "qualify", "test", "audit"])
 
 
 def tracked():
@@ -57,15 +57,19 @@ def publisher_command(step):
     return "".join(line[indent:] if line.strip() else "\n" for line in content)
 
 
-def current_python_profile(original):
+def current_python_profile(original, selected=None, group_profile=None):
     """Preserve original constraints outside 3.15; pin current inputs inside it."""
     document = tomllib.loads(original)
     dependencies = document["tool"]["poetry"]["dependencies"]
-    selected = {}
-    for name in ["requirements.lock", "requirements-build.ubuntu.lock"]:
-        text = (OWNER / "services/deepeval-runner" / name).read_text()
-        for project, version in re.findall(r"(?m)^([\w.-]+)==([^\s;\\]+)", text):
-            selected[re.sub(r"[-_.]+", "-", project.lower())] = version
+    if selected is None:
+        selected = {}
+        for name in ["requirements.lock", "requirements-build.ubuntu.lock"]:
+            text = (OWNER / "services/deepeval-runner" / name).read_text()
+            for project, version in re.findall(r"(?m)^([\w.-]+)==([^\s;\\]+)", text):
+                selected[re.sub(r"[-_.]+", "-", project.lower())] = version
+    if group_profile is None:
+        group_profile = json.loads((OWNER / ".github/qualifications/deepeval-sdk-group-current-profile.json").read_bytes())
+    assert group_profile["upstream_commit"] == COMMIT
 
     def render(value):
         if isinstance(value, dict):
@@ -116,11 +120,83 @@ def current_python_profile(original):
         expected["tool"]["poetry"]["dependencies"][name] = replacement
         changes[name] = {"original": value, "source_port": replacement}
     candidate = original[:start] + section + original[end:]
+    unsupported = []
+    for group, original_rows in group_profile["original_groups"].items():
+        assert document["tool"]["poetry"]["group"][group]["dependencies"] == original_rows
+        heading = "[tool.poetry.group." + group + ".dependencies]"
+        start = candidate.index(heading)
+        end = candidate.find("\n[", start + 1)
+        if end == -1:
+            end = len(candidate)
+        section = candidate[start:end]
+        for name, value in original_rows.items():
+            normalized = re.sub(r"[-_.]+", "-", name.lower())
+            release = group_profile["releases"][normalized]
+            version = release["version"]
+            assert re.fullmatch(r"\d+(?:\.\d+)*(?:\.post\d+)?", version)
+            if normalized in selected:
+                assert selected[normalized] == version, "Do not downgrade a current runtime input"
+            if not supports_python315(release["requires_python"]):
+                unsupported.append({"group": group, "name": name, "version": version,
+                                    "requires_python": release["requires_python"],
+                                    "original_declaration_retained": value})
+                continue
+            if isinstance(value, str):
+                base = {"version": value}
+            else:
+                assert isinstance(value, dict)
+                base = dict(value)
+                assert "python" not in base.get("markers", ""), "Review mixed Python/platform markers explicitly"
+            old = dict(base)
+            original_scope = base.get("python")
+            if not original_scope:
+                old["python"] = "<3.15 || >=3.16"
+            elif supports_python315(original_scope):
+                old["python"] = original_scope + ",<3.15 || " + original_scope + ",>=3.16"
+            modern = {**base, "version": version, "python": ">=3.15,<3.16"}
+            replacement = [old, modern]
+            expression = re.search(r"(?m)^" + re.escape(name) + r"\s*=\s*", section)
+            assert expression
+            value_start = expression.end()
+            chunk = ""
+            for line in section[value_start:].splitlines(keepends=True):
+                chunk += line
+                try:
+                    parsed = tomllib.loads("value = " + chunk)["value"]
+                except tomllib.TOMLDecodeError:
+                    continue
+                assert parsed == value
+                break
+            else:
+                raise AssertionError("Cannot identify exact original group declaration")
+            section = section[:value_start] + render(replacement) + "\n" + section[value_start + len(chunk):]
+            expected["tool"]["poetry"]["group"][group]["dependencies"][name] = replacement
+            changes["group:" + group + ":" + name] = {"original": value, "source_port": replacement}
+        candidate = candidate[:start] + section + candidate[end:]
     assert tomllib.loads(candidate) == expected
     assert expected["tool"]["poetry"]["version"] == "4.3.2"
     assert expected["tool"]["poetry"]["dependencies"]["python"] == dependencies["python"]
     assert changes["pydantic"]["source_port"][-1]["version"] == selected["pydantic"]
-    return candidate, changes
+    return candidate, changes, unsupported
+
+
+def supports_python315(specification):
+    if not specification:
+        return True
+    actual = (3, 15, 2)
+    for alternative in specification.split("||"):
+        accepted = True
+        for clause in alternative.split(","):
+            match = re.fullmatch(r"\s*(>=|<=|==|!=|>|<)\s*(\d+(?:\.\d+)*)\s*", clause)
+            assert match, "Review unsupported Python constraint syntax explicitly"
+            value = tuple(map(int, match[2].split(".")))
+            value += (0,) * (3 - len(value))
+            comparisons = {">=": actual >= value, "<=": actual <= value, "==": actual == value,
+                           "!=": actual != value, ">": actual > value, "<": actual < value}
+            accepted = accepted and comparisons[match[1]]
+        if accepted:
+            return True
+    return False
 
 
 def prepare():
@@ -144,7 +220,7 @@ def prepare():
     path = SDK / "pyproject.toml"
     original = path.read_text()
     assert tomllib.loads(original)["tool"]["poetry"]["version"] == "4.3.2"
-    candidate, replacements = current_python_profile(original)
+    candidate, replacements, unsupported = current_python_profile(original)
     assert tomllib.loads(candidate)["tool"]["poetry"]["version"] == "4.3.2"
     path.write_bytes(candidate.encode())
     commands = {step: publisher_command(step) for step in [
@@ -154,11 +230,55 @@ def prepare():
               "packaged_SDK_files_compared": compared, "original_source": before,
               "declaration_changes": replacements, "publisher_commands": commands,
               "original_python_constraints_preserved_outside_python315": True,
+              "original_dependency_groups_preserved": True,
+              "public_dependencies_still_excluding_python315": unsupported,
               "source_port_not_unmodified_publisher_release": True,
               "version_not_relabelled": True, "full_vendor_acceptance": False}
     (EVIDENCE / "source-port-identity.json").write_bytes((json.dumps(record, indent=2) + "\n").encode())
     print(json.dumps({"publisher_payloads_matched": len(compared), "declarations_changed": len(replacements),
                       "original_case_and_runtime_source_edits": False}), flush=True)
+
+
+def plan():
+    # Hosted metadata-only preflight, before running any original installer.
+    from pip._vendor.packaging.markers import Marker, default_environment
+
+    project = tomllib.loads((SDK / "pyproject.toml").read_text())["tool"]["poetry"]
+    groups = {"main", "dev"}
+    groups.update(name for name, value in project.get("group", {}).items() if not value.get("optional", False))
+    environment = default_environment()
+    environment["extra"] = ""
+    lock = tomllib.loads((SDK / "poetry.lock").read_text())
+    rejected = []
+    allowed = []
+    for package in lock["package"]:
+        version = package["version"]
+        if re.fullmatch(r"\d+(?:\.\d+)*(?:\.post\d+)?", version):
+            continue
+        relevant = groups.intersection(package["groups"])
+        if not relevant:
+            continue
+        markers = package.get("markers")
+        if isinstance(markers, str):
+            applies = Marker(markers).evaluate(environment)
+        elif isinstance(markers, dict):
+            applies = any(Marker(markers[group]).evaluate(environment) if group in markers else True for group in relevant)
+        else:
+            assert markers is None
+            applies = True
+        if not applies:
+            continue
+        name = re.sub(r"[-_.]+", "-", package["name"].lower())
+        row = {"name": name, "version": version, "groups": sorted(relevant), "markers": markers}
+        if name == "opentelemetry-semantic-conventions" and version == "0.66b1":
+            allowed.append(row)
+        else:
+            rejected.append(row)
+    record = {"actual_python": sys.version, "selected_groups": sorted(groups),
+              "approved_exact_exception": allowed, "unapproved_versions": rejected,
+              "installer_commands_modified": False, "SDK_or_runtime_acceptance": False}
+    (EVIDENCE / "preinstall-version-policy.json").write_bytes((json.dumps(record, indent=2) + "\n").encode())
+    assert not rejected, "Unapproved versions in the current SDK installation scope; do not install"
 
 
 def qualify():
@@ -220,6 +340,8 @@ if __name__ == "__main__":
     mode = MODE.parse_args().mode
     if mode == "prepare":
         prepare()
+    elif mode == "plan":
+        plan()
     elif mode == "qualify":
         qualify()
     elif mode == "audit":
