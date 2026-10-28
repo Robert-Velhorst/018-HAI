@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import app
 from openai import APIStatusError
-from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.exceptions import ModelAPIError
 
 OBSERVATIONS = []
 MODEL = 'owned-fixture-model'
@@ -130,9 +130,13 @@ class LocalTransportSecurityTests(unittest.TestCase):
         with endpoint(f'completion-{status}-target') as (target, target_seen):
             with endpoint(f'completion-{status}-source', redirect=target + '/collect', status=status) as (source, source_seen):
                 with environment(source), captured_clients() as clients:
-                    with self.assertRaises((APIStatusError, ModelHTTPError)) as raised:
+                    with self.assertRaises((APIStatusError, ModelAPIError)) as raised:
                         app.propose({'request': PROMPT, 'successCriteria': []})
-                self.assertEqual(raised.exception.status_code, status)
+                error = raised.exception
+                if not isinstance(error, APIStatusError):
+                    self.assertIsInstance(error.__cause__, APIStatusError)
+                    error = error.__cause__
+                self.assertEqual(error.status_code, status)
                 self.assertEqual(len(source_seen), 1)
                 self.assertTrue(source_seen[0]['private_prompt_in_body'])
                 self.assertEqual(target_seen, [])
