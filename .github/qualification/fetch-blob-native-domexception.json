@@ -1,0 +1,317 @@
+{
+  "upstream_repository": "node-fetch/fetch-blob",
+  "upstream_commit": "fc7f8e2e5c48a0a1c0fd74179f894df7709112e1",
+  "upstream_public_version": "4.0.0",
+  "original_payloads": [
+    {
+      "path": ".codecov.yml",
+      "blob": "3f58de53fd74eac048fb69281d050608d1c99460",
+      "mode": "100644",
+      "sha256": "86a012895c6b04eda17cf244c0502502d8d8790ae99c58089c5a530770f1f0d9"
+    },
+    {
+      "path": ".github/PULL_REQUEST_TEMPLATE.md",
+      "blob": "ea09a2302efb84e8b614100d4008b4774b55982e",
+      "mode": "100644",
+      "sha256": "f7d613dd695ff545a7d1b6acf3e47fdcb07034a1e557a0c092964dc99b923870"
+    },
+    {
+      "path": ".github/dependabot.yml",
+      "blob": "0b256c4c9b17a9ea6c4033592ed862d06ccb64cd",
+      "mode": "100644",
+      "sha256": "6abb1e21276bc4fe6b7ac87cee706ceff6d4cc891320477ea44f2246c34e5aa4"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "blob": "d352efc9445b45f48f09fbafb0f85bae7221e3ae",
+      "mode": "100644",
+      "sha256": "c57948af2610aecad162497f3d76059d5e55449ae65b30e3ed49050e870dcf44"
+    },
+    {
+      "path": ".gitignore",
+      "blob": "4d8cac9e5f6a41061d36b3fe5546e53ab95fbf9f",
+      "mode": "100644",
+      "sha256": "2f6b4f7951a21bf70fe98b3bc017cdc173a5aee1b1be21efb34a8034ce794457"
+    },
+    {
+      "path": ".npmrc",
+      "blob": "5c69597ecac94b361c3003d8d78988c36d19e11b",
+      "mode": "100644",
+      "sha256": "e813a0644523a0a873ae072f3e1e9ac4ea1b64da4459725ae1da24c18a902941"
+    },
+    {
+      "path": "LICENSE",
+      "blob": "0d317232f7e1b9a9d64690c39956b436a10131fe",
+      "mode": "100644",
+      "sha256": "a5edccac92c3aa845694dcfaa72a0c098c1ae40d5ca6a37e4e59d778cf8e29bd"
+    },
+    {
+      "path": "README.md",
+      "blob": "7368a10e0a5cfd3192437384d3ac5b1c4c2dc34b",
+      "mode": "100644",
+      "sha256": "b7a0d3d4ef80149b710aea57aca101336f6c70ffcc38bbc9702e6ff0f5d293d3"
+    },
+    {
+      "path": "file.js",
+      "blob": "b2739c9fc44a7223515ba8041e1d89b84f272c4d",
+      "mode": "100644",
+      "sha256": "9da0d04dea04a3d5b64a1f94848e51792953f4e35e698002658df63328191707"
+    },
+    {
+      "path": "from.js",
+      "blob": "d54d12914ba5666694e935fd68f570289a214d1e",
+      "mode": "100644",
+      "sha256": "4d67ea60d843ee63c87b8bf36521aab74fd4847dd5377ff5a76b103c3b1208be"
+    },
+    {
+      "path": "index.js",
+      "blob": "0683fa5a5f34972b9ed475784426993144836e34",
+      "mode": "100644",
+      "sha256": "8bc6cc3a313df36a6916f3e829b2c4fc3b969768be189332e643cd34d0bbe24e"
+    },
+    {
+      "path": "package.json",
+      "blob": "2a8fbd5a2b97fb7b2580a4d3afab7fb277c90f83",
+      "mode": "100644",
+      "sha256": "cf93ab41c1eafd7f637a514602b18de212da1242dcb5a356c0a9c510a1edb26f"
+    },
+    {
+      "path": "test/http-loader.js",
+      "blob": "5910a7ad6322b70d854830f3f3457b73f1ca0962",
+      "mode": "100644",
+      "sha256": "1358f35da1b469ca723172791c7ad3cc383293c6f5ebc33253fec7a93b063f39"
+    },
+    {
+      "path": "test/own-misc-test.js",
+      "blob": "b1336c92dbd3f9746e4fe7c6fe6cc5c1b4f2028a",
+      "mode": "100644",
+      "sha256": "823b66d9f9fd70fa2e76bc01868a2f6b2b7ca537701df2ddcba892a40a1f41ff"
+    },
+    {
+      "path": "test/test-wpt-in-node.js",
+      "blob": "96f06f5e2274106d005dbd773e8ccd23e5c6e322",
+      "mode": "100644",
+      "sha256": "e8ec95e9f8491575f2c0e68e1cb3385e83905728f9b862165af6d91eff0c734d"
+    }
+  ],
+  "candidate_from_js": "import {\n  realpathSync,\n  statSync,\n  rmSync,\n  createReadStream,\n  promises as fs\n} from 'node:fs'\nimport { basename, sep, join } from 'node:path'\nimport { tmpdir } from 'node:os'\nimport process from 'node:process'\nconst { DOMException } = globalThis\nif (typeof DOMException !== 'function') throw new Error('This private port requires native DOMException on Node 26.12.1 or newer')\n\nimport { File } from './file.js'\nimport { Blob } from './index.js'\n\nconst { stat, mkdtemp } = fs\nlet i = 0, tempDir, registry\n\n/**\n * @param {string} path filepath on the disk\n * @param {string} [type] mimetype to use\n */\nconst blobFromSync = (path, type) => fromBlob(statSync(path), path, type)\n\n/**\n * @param {string} path filepath on the disk\n * @param {string} [type] mimetype to use\n * @returns {Promise<Blob>}\n */\nconst blobFrom = (path, type) => stat(path).then(stat => fromBlob(stat, path, type))\n\n/**\n * @param {string} path filepath on the disk\n * @param {string} [type] mimetype to use\n * @returns {Promise<File>}\n */\nconst fileFrom = (path, type) => stat(path).then(stat => fromFile(stat, path, type))\n\n/**\n * @param {string} path filepath on the disk\n * @param {string} [type] mimetype to use\n */\nconst fileFromSync = (path, type) => fromFile(statSync(path), path, type)\n\n// @ts-ignore\nconst fromBlob = (stat, path, type = '') => new Blob([new BlobDataItem({\n  path,\n  size: stat.size,\n  lastModified: stat.mtimeMs,\n  start: 0\n})], { type })\n\n// @ts-ignore\nconst fromFile = (stat, path, type = '') => new File([new BlobDataItem({\n  path,\n  size: stat.size,\n  lastModified: stat.mtimeMs,\n  start: 0\n})], basename(path), { type, lastModified: stat.mtimeMs })\n\n/**\n * Creates a temporary blob backed by the filesystem.\n * NOTE: requires node.js v14 or higher to use FinalizationRegistry\n *\n * @param {*} data Same as fs.writeFile data\n * @param {BlobPropertyBag & {signal?: AbortSignal}} options\n * @param {AbortSignal} [signal] in case you wish to cancel the write operation\n * @returns {Promise<Blob>}\n */\nconst createTemporaryBlob = async (data, {signal, type} = {}) => {\n  registry = registry || new FinalizationRegistry(fs.unlink)\n  tempDir = tempDir || await mkdtemp(realpathSync(tmpdir()) + sep)\n  const id = `${i++}`\n  const destination = join(tempDir, id)\n  if (data instanceof ArrayBuffer) data = new Uint8Array(data)\n  await fs.writeFile(destination, data, { signal })\n  const blob = await blobFrom(destination, type)\n  registry.register(blob, destination)\n  return blob\n}\n\n/**\n * Creates a temporary File backed by the filesystem.\n * Pretty much the same as constructing a new File(data, name, options)\n *\n * NOTE: requires node.js v14 or higher to use FinalizationRegistry\n * @param {*} data\n * @param {string} name\n * @param {FilePropertyBag & {signal?: AbortSignal}} opts\n * @returns {Promise<File>}\n */\nconst createTemporaryFile = async (data, name, opts) => {\n  const blob = await createTemporaryBlob(data)\n  return new File([blob], name, opts)\n}\n\n/**\n * This is a blob backed up by a file on the disk\n * with minium requirement. Its wrapped around a Blob as a blobPart\n * so you have no direct access to this.\n *\n * @private\n */\nclass BlobDataItem {\n  #path\n  #start\n\n  constructor (options) {\n    this.#path = options.path\n    this.#start = options.start\n    this.size = options.size\n    this.lastModified = options.lastModified\n    this.originalSize = options.originalSize === undefined\n      ? options.size\n      : options.originalSize\n  }\n\n  /**\n   * Slicing arguments is first validated and formatted\n   * to not be out of range by Blob.prototype.slice\n   */\n  slice (start, end) {\n    return new BlobDataItem({\n      path: this.#path,\n      lastModified: this.lastModified,\n      originalSize: this.originalSize,\n      size: end - start,\n      start: this.#start + start\n    })\n  }\n\n  async * stream () {\n    const { mtimeMs, size } = await stat(this.#path)\n\n    if (mtimeMs > this.lastModified || this.originalSize !== size) {\n      throw new DOMException('The requested file could not be read, typically due to permission problems that have occurred after a reference to a file was acquired.', 'NotReadableError')\n    }\n\n    yield * createReadStream(this.#path, {\n      start: this.#start,\n      end: this.#start + this.size - 1\n    })\n  }\n\n  get [Symbol.toStringTag] () {\n    return 'Blob'\n  }\n}\n\nprocess.once('exit', () => {\n  tempDir && rmSync(tempDir, { recursive: true })\n})\n\nexport default blobFromSync\nexport {\n  Blob,\n  blobFrom,\n  blobFromSync,\n  createTemporaryBlob,\n  File,\n  fileFrom,\n  fileFromSync,\n  createTemporaryFile\n}",
+  "candidate_index_js": "/*! fetch-blob. MIT License. Jimmy W\u00e4rting <https://jimmy.warting.se/opensource> */\n\nif (!globalThis.ReadableStream) {\n  try {\n    const process = await import('node:process').then(m => m.default)\n    const { emitWarning } = process\n    try {\n      process.emitWarning = () => {}\n      const streams = await import('node:stream/web').then(m => m.default)\n      Object.assign(globalThis, streams)\n      process.emitWarning = emitWarning\n    } catch (error) {\n      process.emitWarning = emitWarning\n      throw error\n    }\n  } catch (error) {}\n}\n\n// 64 KiB (same size chrome slice theirs blob into Uint8array's)\nconst POOL_SIZE = 65536\n\n/**\n * @param {(Blob | Uint8Array)[]} parts\n * @param {boolean} clone\n * @returns {AsyncIterableIterator<Uint8Array>}\n */\nasync function * toIterator (parts, clone) {\n  for (const part of parts) {\n    if (ArrayBuffer.isView(part)) {\n      if (clone) {\n        let position = part.byteOffset\n        const end = part.byteOffset + part.byteLength\n        while (position !== end) {\n          const size = Math.min(end - position, POOL_SIZE)\n          const chunk = part.buffer.slice(position, position + size)\n          position += chunk.byteLength\n          yield new Uint8Array(chunk)\n        }\n      } else {\n        yield part\n      }\n    } else {\n      // @ts-ignore TS Think blob.stream() returns a node:stream\n      yield * part.stream()\n    }\n  }\n}\n\n// File API slice arguments use Web IDL [Clamp] long long conversion.\nconst clampLongLong = value => {\n  let number = +value\n  if (Number.isNaN(number)) return 0\n  number = Math.min(Number.MAX_SAFE_INTEGER, Math.max(-Number.MAX_SAFE_INTEGER, number))\n  const floor = Math.floor(number)\n  const fraction = number - floor\n  const integer = fraction < 0.5 ? floor : fraction > 0.5 ? floor + 1 : floor % 2 === 0 ? floor : floor + 1\n  return integer === 0 ? 0 : integer\n}\n\nconst _Blob = class Blob {\n  /** @type {Array.<(Blob|Uint8Array)>} */\n  #parts = []\n  #type = ''\n  #size = 0\n  #endings = 'transparent'\n\n  /**\n   * The Blob() constructor returns a new Blob object. The content\n   * of the blob consists of the concatenation of the values given\n   * in the parameter array.\n   *\n   * @param {*} blobParts\n   * @param {{ type?: string, endings?: string }} [options]\n   */\n  constructor (blobParts = [], options = {}) {\n    if (typeof blobParts !== 'object' || blobParts === null) {\n      throw new TypeError('Failed to construct \\'Blob\\': The provided value cannot be converted to a sequence.')\n    }\n\n    if (typeof blobParts[Symbol.iterator] !== 'function') {\n      throw new TypeError('Failed to construct \\'Blob\\': The object must have a callable @@iterator property.')\n    }\n\n    if (typeof options !== 'object' && typeof options !== 'function') {\n      throw new TypeError('Failed to construct \\'Blob\\': parameter 2 cannot convert to dictionary.')\n    }\n\n    if (options === null) options = {}\n\n    const encoder = new TextEncoder()\n    for (const element of blobParts) {\n      let part\n      if (ArrayBuffer.isView(element)) {\n        part = new Uint8Array(element.buffer.slice(element.byteOffset, element.byteOffset + element.byteLength))\n      } else if (element instanceof ArrayBuffer) {\n        part = new Uint8Array(element.slice(0))\n      } else if (element instanceof Blob) {\n        part = element\n      } else {\n        part = encoder.encode(`${element}`)\n      }\n\n      const size = ArrayBuffer.isView(part) ? part.byteLength : part.size\n      // Avoid pushing empty parts into the array to better GC them\n      if (size) {\n        this.#size += size\n        this.#parts.push(part)\n      }\n    }\n\n    this.#endings = `${options.endings === undefined ? 'transparent' : options.endings}`\n    const type = options.type === undefined ? '' : String(options.type)\n    this.#type = /^[\\x20-\\x7E]*$/.test(type) ? type : ''\n  }\n\n  /**\n   * The Blob interface's size property returns the\n   * size of the Blob in bytes.\n   */\n  get size () {\n    return this.#size\n  }\n\n  /**\n   * The type property of a Blob object returns the MIME type of the file.\n   */\n  get type () {\n    return this.#type\n  }\n\n  /**\n   * The text() method in the Blob interface returns a Promise\n   * that resolves with a string containing the contents of\n   * the blob, interpreted as UTF-8.\n   *\n   * @return {Promise<string>}\n   */\n  async text () {\n    // More optimized than using this.arrayBuffer()\n    // that requires twice as much ram\n    const decoder = new TextDecoder()\n    let str = ''\n    for await (const part of toIterator(this.#parts, false)) {\n      str += decoder.decode(part, { stream: true })\n    }\n    // Remaining\n    str += decoder.decode()\n    return str\n  }\n\n  /**\n   * The arrayBuffer() method in the Blob interface returns a\n   * Promise that resolves with the contents of the blob as\n   * binary data contained in an ArrayBuffer.\n   *\n   * @return {Promise<ArrayBuffer>}\n   */\n  async arrayBuffer () {\n    const data = new Uint8Array(this.size)\n    let offset = 0\n    for await (const chunk of toIterator(this.#parts, false)) {\n      data.set(chunk, offset)\n      offset += chunk.length\n    }\n\n    return data.buffer\n  }\n\n  stream () {\n    const it = toIterator(this.#parts, true)\n\n    return new globalThis.ReadableStream({\n      // @ts-ignore\n      type: 'bytes',\n      async pull (ctrl) {\n        const chunk = await it.next()\n        chunk.done ? ctrl.close() : ctrl.enqueue(chunk.value)\n      },\n\n      async cancel () {\n        await it.return()\n      }\n    })\n  }\n\n  /**\n   * The Blob interface's slice() method creates and returns a\n   * new Blob object which contains data from a subset of the\n   * blob on which it's called.\n   *\n   * @param {number} [start]\n   * @param {number} [end]\n   * @param {string} [type]\n   */\n  slice (start = 0, end = this.size, type = '') {\n    start = clampLongLong(start)\n    end = clampLongLong(end)\n    const { size } = this\n\n    let relativeStart = start < 0 ? Math.max(size + start, 0) : Math.min(start, size)\n    let relativeEnd = end < 0 ? Math.max(size + end, 0) : Math.min(end, size)\n\n    const span = Math.max(relativeEnd - relativeStart, 0)\n    const parts = this.#parts\n    const blobParts = []\n    let added = 0\n\n    for (const part of parts) {\n      // don't add the overflow to new blobParts\n      if (added >= span) {\n        break\n      }\n\n      const size = ArrayBuffer.isView(part) ? part.byteLength : part.size\n      if (relativeStart && size <= relativeStart) {\n        // Skip the beginning and change the relative\n        // start & end position as we skip the unwanted parts\n        relativeStart -= size\n        relativeEnd -= size\n      } else {\n        let chunk\n        if (ArrayBuffer.isView(part)) {\n          chunk = part.subarray(relativeStart, Math.min(size, relativeEnd))\n          added += chunk.byteLength\n        } else {\n          chunk = part.slice(relativeStart, Math.min(size, relativeEnd))\n          added += chunk.size\n        }\n        relativeEnd -= size\n        blobParts.push(chunk)\n        relativeStart = 0 // All next sequential parts should start at 0\n      }\n    }\n\n    const blob = new Blob([], { type: `${type}` })\n    blob.#size = span\n    blob.#parts = blobParts\n\n    return blob\n  }\n\n  get [Symbol.toStringTag] () {\n    return 'Blob'\n  }\n\n  static [Symbol.hasInstance] (object) {\n    return (\n      object &&\n      typeof object === 'object' &&\n      typeof object.constructor === 'function' &&\n      (\n        typeof object.stream === 'function' ||\n        typeof object.arrayBuffer === 'function'\n      ) &&\n      /^(Blob|File)$/.test(object[Symbol.toStringTag])\n    )\n  }\n}\n\nObject.defineProperties(_Blob.prototype, {\n  size: { enumerable: true },\n  type: { enumerable: true },\n  slice: { enumerable: true }\n})\n\n/** @type {typeof globalThis.Blob} */\nexport const Blob = _Blob\n",
+  "candidate_package": {
+    "name": "fetch-blob",
+    "version": "4.0.0+hai.native-domexception.2",
+    "description": "Blob & File implementation in Node.js, originally from node-fetch.",
+    "main": "index.js",
+    "type": "module",
+    "files": [
+      "from.js",
+      "file.js",
+      "file.d.ts",
+      "index.js",
+      "index.d.ts",
+      "from.d.ts"
+    ],
+    "scripts": {
+      "test": "node --experimental-loader ./test/http-loader.js ./test/test-wpt-in-node.js",
+      "report": "c8 --reporter json --reporter text npm run test",
+      "coverage": "npm run report && codecov -f coverage/coverage-final.json",
+      "prepublishOnly": "tsc --declaration --emitDeclarationOnly --allowJs index.js from.js"
+    },
+    "repository": "https://github.com/node-fetch/fetch-blob.git",
+    "keywords": [
+      "blob",
+      "file",
+      "node-fetch"
+    ],
+    "engines": {
+      "node": ">=26.12.1"
+    },
+    "author": "Jimmy W\u00e4rting <jimmy@warting.se> (https://jimmy.warting.se)",
+    "license": "MIT",
+    "bugs": {
+      "url": "https://github.com/node-fetch/fetch-blob/issues"
+    },
+    "homepage": "https://github.com/node-fetch/fetch-blob#readme",
+    "devDependencies": {
+      "@types/node": "26.6.5",
+      "c8": "12.0.0",
+      "typescript": "7.0.2"
+    },
+    "funding": [
+      {
+        "type": "github",
+        "url": "https://github.com/sponsors/jimmywarting"
+      },
+      {
+        "type": "paypal",
+        "url": "https://paypal.me/jimmywarting"
+      }
+    ],
+    "dependencies": {}
+  },
+  "original_scripts": {
+    "test": "node --experimental-loader ./test/http-loader.js ./test/test-wpt-in-node.js",
+    "report": "c8 --reporter json --reporter text npm run test",
+    "coverage": "npm run report && codecov -f coverage/coverage-final.json",
+    "prepublishOnly": "tsc --declaration --emitDeclarationOnly --allowJs index.js from.js"
+  },
+  "WPT_original_URL_inputs": [
+    {
+      "path": "resources/testharness.js",
+      "bytes": 198420,
+      "sha256": "7a108d7cfa98ac413ddb38f82fd509fb2037dfcc25ccf466567520cbb6bdf1fa",
+      "imports": [],
+      "origin": "https://wpt.live/resources/testharness.js",
+      "git_blob": "dd841a084662637b32b7f064b1816ab0b35f89d1",
+      "GitHub_WPT_blob_verified": true,
+      "GitHub_blob_metadata": {
+        "sha": "dd841a084662637b32b7f064b1816ab0b35f89d1",
+        "size": 198420
+      }
+    },
+    {
+      "path": "FileAPI/file/File-constructor.any.js",
+      "bytes": 5759,
+      "sha256": "106ca99025bf075fbcad76a37c919064f07036845b5805be9963eecc51a4ae85",
+      "imports": [],
+      "origin": "https://wpt.live/FileAPI/file/File-constructor.any.js",
+      "git_blob": "0b0185c40bf83c5781630c72878764f2ef5588c6",
+      "GitHub_WPT_blob_verified": true,
+      "GitHub_blob_metadata": {
+        "sha": "0b0185c40bf83c5781630c72878764f2ef5588c6",
+        "size": 5759
+      }
+    },
+    {
+      "path": "FileAPI/blob/Blob-constructor.any.js",
+      "bytes": 15919,
+      "sha256": "60f7890b6f934b965d57182923db3d66f75303e08b4935f2c13e71c6df9fdeb2",
+      "imports": [],
+      "origin": "https://wpt.live/FileAPI/blob/Blob-constructor.any.js",
+      "git_blob": "bdcc1941600338d8d0d4fff6c7877aed3777fee0",
+      "GitHub_WPT_blob_verified": true,
+      "GitHub_blob_metadata": {
+        "sha": "bdcc1941600338d8d0d4fff6c7877aed3777fee0",
+        "size": 15919
+      }
+    },
+    {
+      "path": "FileAPI/blob/Blob-array-buffer.any.js",
+      "bytes": 1794,
+      "sha256": "eb5ac8ab115dfb3f91202132c144b33c1e530a456f463324066dbe11ade2f60b",
+      "imports": [],
+      "origin": "https://wpt.live/FileAPI/blob/Blob-array-buffer.any.js",
+      "git_blob": "2310646e5fdeab300bcea66e4035adbdf3651685",
+      "GitHub_WPT_blob_verified": true,
+      "GitHub_blob_metadata": {
+        "sha": "2310646e5fdeab300bcea66e4035adbdf3651685",
+        "size": 1794
+      }
+    },
+    {
+      "path": "FileAPI/blob/Blob-slice-overflow.any.js",
+      "bytes": 1060,
+      "sha256": "5da17f7ad6fa2e15a0ae6e8435f9cfd0413b64a39ea337bedd99e915048d8d5d",
+      "imports": [],
+      "origin": "https://wpt.live/FileAPI/blob/Blob-slice-overflow.any.js",
+      "git_blob": "388fd9282c94abe8a296eee6dfe45dca4de400e2",
+      "GitHub_WPT_blob_verified": true,
+      "GitHub_blob_metadata": {
+        "sha": "388fd9282c94abe8a296eee6dfe45dca4de400e2",
+        "size": 1060
+      }
+    },
+    {
+      "path": "FileAPI/blob/Blob-slice.any.js",
+      "bytes": 7020,
+      "sha256": "506fc067d18adb43b2b3b01fcc1123fadaaaf78bfed311b8e863c5f7edd64cda",
+      "imports": [],
+      "origin": "https://wpt.live/FileAPI/blob/Blob-slice.any.js",
+      "git_blob": "bedc8d737302a0f4c0464db103c66bfe1ca2e3e2",
+      "GitHub_WPT_blob_verified": true,
+      "GitHub_blob_metadata": {
+        "sha": "bedc8d737302a0f4c0464db103c66bfe1ca2e3e2",
+        "size": 7020
+      }
+    },
+    {
+      "path": "FileAPI/blob/Blob-stream.any.js",
+      "bytes": 3214,
+      "sha256": "7cdb21fa95a5e9f0383fa9d3a4519a542e5f58df14fa6a358158d35dbf469504",
+      "imports": [],
+      "origin": "https://wpt.live/FileAPI/blob/Blob-stream.any.js",
+      "git_blob": "453144cac964a627bb2a004d435887b15ddc96d3",
+      "GitHub_WPT_blob_verified": true,
+      "GitHub_blob_metadata": {
+        "sha": "453144cac964a627bb2a004d435887b15ddc96d3",
+        "size": 3214
+      }
+    },
+    {
+      "path": "FileAPI/blob/Blob-text.any.js",
+      "bytes": 4366,
+      "sha256": "30903a3cf782cb650bfd87401584c385ac8178bbb752a557504d417674725f99",
+      "imports": [],
+      "origin": "https://wpt.live/FileAPI/blob/Blob-text.any.js",
+      "git_blob": "997b8781898fe38ce8287cff3a149e5145b180f7",
+      "GitHub_WPT_blob_verified": true,
+      "GitHub_blob_metadata": {
+        "sha": "997b8781898fe38ce8287cff3a149e5145b180f7",
+        "size": 4366
+      }
+    }
+  ],
+  "original_test_payloads": [
+    {
+      "path": "test/http-loader.js",
+      "blob": "5910a7ad6322b70d854830f3f3457b73f1ca0962",
+      "mode": "100644",
+      "sha256": "1358f35da1b469ca723172791c7ad3cc383293c6f5ebc33253fec7a93b063f39"
+    },
+    {
+      "path": "test/own-misc-test.js",
+      "blob": "b1336c92dbd3f9746e4fe7c6fe6cc5c1b4f2028a",
+      "mode": "100644",
+      "sha256": "823b66d9f9fd70fa2e76bc01868a2f6b2b7ca537701df2ddcba892a40a1f41ff"
+    },
+    {
+      "path": "test/test-wpt-in-node.js",
+      "blob": "96f06f5e2274106d005dbd773e8ccd23e5c6e322",
+      "mode": "100644",
+      "sha256": "e8ec95e9f8491575f2c0e68e1cb3385e83905728f9b862165af6d91eff0c734d"
+    }
+  ],
+  "native_replacement": "Use globalThis.DOMException in place of retired node-domexception and supported rmSync in process-owned temporary-directory cleanup",
+  "highest_public_stable_SDK_tools": [
+    {
+      "name": "@types/node",
+      "highest_public_stable": "26.6.5",
+      "integrity": "sha512-uMzsv9stDdofIZBx4UGh4Z9ZgXnGC9seRDscilBcTHAeOFk67MZg/k9bWVfO+bk4qZmG+l52hRnLwUiH2LnJTg==",
+      "published_at": "2026-10-09T18:46:47.657Z",
+      "metadata_sha256": "ca6bd5e530819935a1ada29877fc227e3869367e433dd33460fa00d9355890f4"
+    },
+    {
+      "name": "c8",
+      "highest_public_stable": "12.0.0",
+      "integrity": "sha512-4zpJvrd1nKWutnnKC2pXkFmb6iM1l+ffN//o1CzlTNwW7GSOs9a1xrLqkC48nU8oEkjmPZLPiwMsIaOvoF4Pqg==",
+      "published_at": "2026-07-14T13:51:32.917Z",
+      "metadata_sha256": "2b152c480246446e80d6feb52df3f418fbf7b7530c566a7a6b357daa8107d7c6"
+    },
+    {
+      "name": "typescript",
+      "highest_public_stable": "7.0.2",
+      "integrity": "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==",
+      "published_at": "2026-07-08T15:55:18.431Z",
+      "metadata_sha256": "9156fefd519abede18227ea6f19c1dfaddc46e889fb52be439ce8081c907dadd"
+    }
+  ],
+  "inherited_original_harness_ignored_case_names": [
+    "Blob with type \"A\"",
+    "Blob with type \"TEXT/HTML\"",
+    "Getters and value conversions should happen in order until an exception is thrown.",
+    "Using type in File constructor: TEXT/PLAIN",
+    "Using type in File constructor: text/plain;charset=UTF-8"
+  ],
+  "original_cases_helpers_assertions_fixtures_selectors_timeouts_commands_changed": false,
+  "original_harness_completion_or_all_ignored_assertions_qualified": false,
+  "adopted_into_application_graph": false
+}
