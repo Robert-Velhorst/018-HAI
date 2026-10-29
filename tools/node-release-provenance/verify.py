@@ -76,8 +76,22 @@ for row in subprocess.check_output(['git', 'ls-tree', '-r', '-z', 'HEAD'], cwd=s
     else:
         assert path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(source)
         raw = path.read_bytes()
-    assert hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest() == blob, name
-    payloads[name] = {'mode': mode, 'blob': blob, 'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)}
+    canonical = raw
+    attributes = None
+    representation = 'canonical-Git-bytes'
+    if hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest() != blob:
+        fields = subprocess.check_output(['git', 'check-attr', '-z', 'text', 'eol', '--', name], cwd=source, env=env).decode().split('\0')
+        assert fields[-1] == '' and len(fields) == 7
+        attributes = {fields[i + 1]: fields[i + 2] for i in range(0, len(fields) - 1, 3)}
+        assert all(fields[i] == name for i in range(0, len(fields) - 1, 3))
+        assert attributes == {'text': 'auto', 'eol': 'crlf'} or attributes == {'text': 'set', 'eol': 'crlf'}, name
+        canonical = subprocess.check_output(['git', 'cat-file', 'blob', blob], cwd=source, env=env)
+        assert b'\r\n' not in canonical and raw == canonical.replace(b'\n', b'\r\n'), name
+        representation = 'publisher-declared-Git-eol-crlf'
+    assert hashlib.sha1(b'blob ' + str(len(canonical)).encode() + b'\0' + canonical).hexdigest() == blob, name
+    payloads[name] = {'mode': mode, 'blob': blob, 'sha256': hashlib.sha256(canonical).hexdigest(),
+                      'canonical_bytes': len(canonical), 'checkout_sha256': hashlib.sha256(raw).hexdigest(),
+                      'checkout_bytes': len(raw), 'representation': representation, 'Git_attributes': attributes}
 (reports / 'complete-publisher-payloads.json').write_text(json.dumps(payloads, indent=2) + '\n')
 assert payloads['test/parallel/test-x509-escaping.js']['sha256'] == spec['known_X509_case_sha256']
 assert not git('status', '--porcelain', '--untracked-files=no')
@@ -101,6 +115,7 @@ result = {'worker_head': os.environ['GITHUB_SHA'], 'publisher': spec['publisher'
     'signer_is_member_of_unchanged_previously_pinned_approved_active_bundle': True,
     'all_publisher_source_payloads_bound_and_unmodified': len(payloads),
     'all_HAI_payloads_unchanged': len(project_after), 'known_X509_case_unchanged': True,
+    'publisher_declared_checkout_representation_differences': [name for name, record in payloads.items() if record['representation'] != 'canonical-Git-bytes'],
     'UNAPPLIED_target_spec_changes_only_five_release_identity_fields_and_public_key_asset': True,
     'compiler_package_manager_SDK_or_case_execution': False,
     'full_Node_SDK_or_latest_native_dependencies_or_runtime_acceptance': False,
