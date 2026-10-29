@@ -8,5 +8,11 @@
   "existing_signer_key_sha256": "5115095e2f8010c75da052ecb1cfb3af630e084f0f8daa93a863557b01b0f90a",
   "existing_active_keyring_sha256": "140f2ad5260fd62773b6243ce8e1d3009645d558f121b8262c55e383dc285932",
   "known_X509_case_sha256": "746322e0fb0e9ae4fece99b7c4ee5d92f7c7ed22645a8646b4235b41b72074c1",
-  "no_original_case_patch_or_additional_exception_applied": true
+  "no_original_case_patch_or_additional_exception_applied": true,
+  "expected_current_signer_fingerprint": "C82FA3AE1CBEDC6BE46B9360C43CEC45C17AB93C",
+  "current_signer_public_key_sha256": "84b1ca614406f341cb86e72920f5a64687a13ab67ab84038bcf2abba97898a84",
+  "unchanged_official_key_repository_commit": "481637f813e912c4aa3622d7964ab426c97b8e8d",
+  "current_key_Git_blob": "dfeea1499c4097c1a14b75037584dd24705824fb",
+  "existing_active_bundle_Git_blob": "bae91a9ce595d5775a2e2a998af04dee044c865d",
+  "existing_approved_active_key_bundle_bytes_unchanged": true
 }

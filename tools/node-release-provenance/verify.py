@@ -40,13 +40,22 @@ def command(name, args, cwd=source):
     return result.stdout.decode(errors='replace')
 
 
-command('import-existing-approved-public-key', ['gpg', '--batch', '--import', str(project / 'tools/node-native-sdk/release-signer.asc')])
+approved_bundle = public_home / 'approved-active-keyring.kbx'
+approved_bundle.write_bytes((project / 'tools/node-native-sdk/active-release-keys.kbx').read_bytes())
+membership = command('verify-current-key-is-in-existing-approved-active-bundle', [
+    'gpg', '--batch', '--no-default-keyring', '--keyring', str(approved_bundle),
+    '--with-colons', '--fingerprint', '--list-keys', spec['expected_current_signer_fingerprint']])
+fingerprints = [line.split(':')[9] for line in membership.splitlines() if line.startswith('fpr:')]
+assert spec['expected_current_signer_fingerprint'] in fingerprints
+current_key = project / 'tools/node-release-provenance/release-signer-current.asc'
+assert hashlib.sha256(current_key.read_bytes()).hexdigest() == spec['current_signer_public_key_sha256']
+command('import-matching-official-key-from-existing-trust-set', ['gpg', '--batch', '--import', str(current_key)])
 command('init', ['git', 'init', '-q'])
 command('origin', ['git', 'remote', 'add', 'origin', 'https://github.com/nodejs/node.git'])
 command('fetch-signed-release', ['git', 'fetch', '--depth=1', 'origin', 'refs/tags/' + spec['tag'] + ':refs/tags/' + spec['tag']])
 signature = command('verify-signed-release', ['git', 'verify-tag', '--raw', spec['tag']])
 valid = [line.split() for line in signature.splitlines() if line.startswith('[GNUPG:] VALIDSIG ')]
-assert any(spec['existing_approved_signer_fingerprint'] in (line[2], line[-1]) for line in valid)
+assert any(spec['expected_current_signer_fingerprint'] in (line[2], line[-1]) for line in valid)
 command('checkout-exact-publisher-commit', ['git', 'checkout', '--detach', spec['commit']])
 git = lambda *args: subprocess.check_output(['git', *args], cwd=source, env=env).decode().strip()
 assert git('rev-parse', 'HEAD') == spec['commit']
@@ -74,21 +83,25 @@ assert payloads['test/parallel/test-x509-escaping.js']['sha256'] == spec['known_
 assert not git('status', '--porcelain', '--untracked-files=no')
 next_spec = json.loads((project / 'tools/node-native-sdk/source-spec.json').read_bytes())
 old_spec = dict(next_spec)
-next_spec.update(tag=spec['tag'], commit=spec['commit'], tag_object_sha=spec['tag_object'])
+next_spec.update(tag=spec['tag'], commit=spec['commit'], tag_object_sha=spec['tag_object'],
+                 tag_signer_fingerprint=spec['expected_current_signer_fingerprint'],
+                 signer_key_sha256=spec['current_signer_public_key_sha256'])
 gyp_sha = payloads['deps/sqlite/sqlite.gyp']['sha256']
 assert gyp_sha == next_spec['publisher_sqlite_gyp_sha256']
-assert {k for k in next_spec if next_spec[k] != old_spec[k]} == {'tag', 'commit', 'tag_object_sha'}
+assert {k for k in next_spec if next_spec[k] != old_spec[k]} == {'tag', 'commit', 'tag_object_sha', 'tag_signer_fingerprint', 'signer_key_sha256'}
 (reports / 'UNAPPLIED-source-spec.json').write_text(json.dumps(next_spec, indent=2) + '\n')
+(reports / 'UNAPPLIED-release-signer.asc').write_bytes(current_key.read_bytes())
 project_after = metadata.payloads()
 assert project_before == project_after
 (reports / 'HAI-source-after.json').write_text(json.dumps(project_after, indent=2) + '\n')
 result = {'worker_head': os.environ['GITHUB_SHA'], 'publisher': spec['publisher'], 'tag': spec['tag'],
     'publisher_commit': spec['commit'], 'publisher_tree': spec['tree'], 'tag_object': spec['tag_object'],
     'tag_signature_verified_with_existing_pinned_official_public_key': True,
-    'approved_signer_fingerprint': spec['existing_approved_signer_fingerprint'],
+    'approved_signer_fingerprint': spec['expected_current_signer_fingerprint'],
+    'signer_is_member_of_unchanged_previously_pinned_approved_active_bundle': True,
     'all_publisher_source_payloads_bound_and_unmodified': len(payloads),
     'all_HAI_payloads_unchanged': len(project_after), 'known_X509_case_unchanged': True,
-    'UNAPPLIED_target_spec_changes_only_three_release_identity_fields': True,
+    'UNAPPLIED_target_spec_changes_only_five_release_identity_fields_and_public_key_asset': True,
     'compiler_package_manager_SDK_or_case_execution': False,
     'full_Node_SDK_or_latest_native_dependencies_or_runtime_acceptance': False,
     'known_case_exception_and_other_latest_component_gates_remain_unresolved': True}
