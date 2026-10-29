@@ -5,6 +5,8 @@ on:
     paths:
       - services/garak-runner/requirements.in
       - services/evidently-runner/requirements.in
+      - services/evidently-runner/requirements-port.in
+      - services/evidently-runner/compat/**
       - scripts/resolve_runner_lock_metadata.py
       - .github/workflows/runner-lock-metadata.yml
 
@@ -41,4 +43,7 @@ jobs:
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/outputs/requirements.lock
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/receipt.json
             ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/resolution.log
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/inputs/*.whl
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.json
+            ${{ runner.temp }}/public-runner-metadata/${{ matrix.runner }}/port-build.log
           if-no-files-found: error
