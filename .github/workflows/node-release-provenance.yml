@@ -1,0 +1,27 @@
+name: Node current release source provenance only
+
+on:
+  push:
+    branches: [qualify/node26130-release-provenance-20261029]
+
+permissions:
+  contents: read
+
+jobs:
+  provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify signed publisher identity and all source without SDK execution
+        run: python tools/node-release-provenance/verify.py
+      - name: Retain release identity and known unresolved gates
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: node26130-release-provenance-only
+          path: ${{ runner.temp }}/hai-node-release-provenance/
+          if-no-files-found: error
+          retention-days: 14

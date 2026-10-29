@@ -1,0 +1,12 @@
+{
+  "publisher": "nodejs/node",
+  "tag": "v26.13.0",
+  "commit": "18b32a3b1552e199a01f1a8d9fd64aa756d3b75b",
+  "tree": "48b8ff59875b66f70dd9edee17d12ef5792324e3",
+  "tag_object": "daaa22aeddb87085542376ea1f4854dcea080baf",
+  "existing_approved_signer_fingerprint": "5BE8A3F6C8A5C01D106C0AD820B1A390B168D356",
+  "existing_signer_key_sha256": "5115095e2f8010c75da052ecb1cfb3af630e084f0f8daa93a863557b01b0f90a",
+  "existing_active_keyring_sha256": "140f2ad5260fd62773b6243ce8e1d3009645d558f121b8262c55e383dc285932",
+  "known_X509_case_sha256": "746322e0fb0e9ae4fece99b7c4ee5d92f7c7ed22645a8646b4235b41b72074c1",
+  "no_original_case_patch_or_additional_exception_applied": true
+}
